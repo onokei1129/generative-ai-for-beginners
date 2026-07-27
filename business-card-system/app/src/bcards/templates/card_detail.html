@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ card.person.full_name }}
+  {% if card.is_latest %}<span class="badge latest">最新</span>{% else %}<span class="badge past">過去の名刺</span>{% endif %}
+  {% if card.deleted_at %}<span class="badge deleted">削除済み</span>{% endif %}
+</h1>
+<p class="page-desc">{{ card.company_display }} {{ card.department_name or "" }} {{ card.title or "" }}</p>
+
+<div class="review">
+  <div>
+    {% for image in images %}
+      {% if image.variant == "display" %}
+      <div class="panel">
+        <div class="small muted">{{ "表面" if image.side == "front" else "裏面" }}（表示用）</div>
+        <img src="/images/{{ image.card_image_id }}" alt="名刺画像">
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="panel muted">画像は登録されていません。</div>
+    {% endfor %}
+    {% for image in images %}
+      {% if image.variant == "original" %}
+      <p class="small"><a href="/images/{{ image.card_image_id }}" target="_blank">原本画像を開く（{{ image.width }}×{{ image.height }}）</a></p>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div>
+    <div class="panel">
+      <table>
+        <tr><th>氏名</th><td>{{ card.person.full_name }} <span class="small muted">{{ card.person.full_name_kana }}</span></td></tr>
+        <tr><th>会社</th><td>{% if card.company %}<a href="/companies/{{ card.company_id }}">{{ card.company.name }}</a>{% else %}{{ card.company_name_raw or "" }}{% endif %}</td></tr>
+        <tr><th>部署</th><td>{{ card.department_name or "" }}</td></tr>
+        <tr><th>役職</th><td>{{ card.title or "" }}</td></tr>
+        <tr><th>郵便番号</th><td>{{ card.postal_code or "" }}</td></tr>
+        <tr><th>住所</th><td>{{ card.address or "" }}</td></tr>
+        {% for key, label in CONTACT_TYPES.items() %}
+          {% set values = card.contact_values(key) %}
+          {% if values %}<tr><th>{{ label }}</th><td>{{ values|join(", ") }}</td></tr>{% endif %}
+        {% endfor %}
+        <tr><th>名刺種別</th><td>{{ CARD_TYPES.get(card.card_type, "") }}</td></tr>
+        <tr><th>名刺交換日</th><td>{{ card.exchanged_on|dt("%Y-%m-%d") }}</td></tr>
+        <tr><th>取込元</th><td>{{ SOURCES.get(card.source, card.source) }}</td></tr>
+        <tr><th>登録者</th><td>{{ registered_by.display_name if registered_by else "" }} <span class="small muted">{{ card.created_at|dt }}</span></td></tr>
+        {% if card.note %}<tr><th>備考</th><td class="small">{{ card.note }}</td></tr>{% endif %}
+      </table>
+    </div>
+
+    <div class="actions">
+      <a class="btn secondary" href="/persons/{{ card.person_id }}">人物の名刺履歴</a>
+      <a class="btn secondary" href="/cards/{{ card.card_id }}/history">変更履歴</a>
+      {% if editable and not card.deleted_at %}<a class="btn" href="/cards/{{ card.card_id }}/edit">編集</a>{% endif %}
+    </div>
+
+    {% if editable and not card.deleted_at %}
+    <div class="panel">
+      <h3>この名刺を削除する</h3>
+      <p class="small muted">論理削除です。管理者が復元できます。</p>
+      <form method="post" action="/cards/{{ card.card_id }}/delete" onsubmit="return confirm('この名刺を削除します。よろしいですか？');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field"><label>削除理由</label><input type="text" name="reason" placeholder="例：重複登録のため"></div>
+        <div class="actions"><button type="submit" class="danger">削除する</button></div>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if other_cards %}
+<h2>同じ人物の他の名刺</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>会社 / 部署 / 役職</th><th>状態</th><th>登録日</th><th></th></tr>
+    {% for other in other_cards %}
+    <tr>
+      <td>{{ other.company_display }} {{ other.department_name or "" }} {{ other.title or "" }}</td>
+      <td>{% if other.deleted_at %}<span class="badge deleted">削除済み</span>{% elif other.is_latest %}<span class="badge latest">最新</span>{% else %}<span class="badge past">過去</span>{% endif %}</td>
+      <td class="small muted nowrap">{{ other.created_at|dt("%Y-%m-%d") }}</td>
+      <td><a href="/cards/{{ other.card_id }}">開く</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if history %}
+<h2>直近の変更</h2>
+<div class="timeline">
+  {% for entry in history %}
+  <div class="entry">
+    <div class="small"><strong>{{ entry.changed_by_name or "不明" }}</strong> が {{ entry.changed_at|dt }} に {{ entry.operation }}
+      <span class="muted">/ IP {{ entry.ip_address }}</span></div>
+    {% if entry.change_reason %}<div class="small muted">理由：{{ entry.change_reason }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+<p class="small"><a href="/cards/{{ card.card_id }}/history">すべての変更履歴を見る</a></p>
+{% endif %}
+{% endblock %}

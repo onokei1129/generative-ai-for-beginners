@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>取込状況</h1>
+<p class="page-desc">取込待ち → OCR処理中 → 確認待ち → 登録完了 の順に進みます。</p>
+
+<h2>対応が必要な明細</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>ファイル</th><th>ページ/分割</th><th>状態</th><th>内容</th><th>取込日時</th><th></th></tr>
+    {% for item in items %}
+    <tr>
+      <td>{{ item.source_file_name }}</td>
+      <td class="small muted">{% if item.page_no %}P{{ item.page_no }}{% endif %} {% if item.split_index %}#{{ item.split_index }}{% endif %}</td>
+      <td><span class="badge {{ item.status }}">{{ item.status_label }}</span></td>
+      <td class="small muted">{{ item.error_message or "" }}</td>
+      <td class="small muted nowrap">{{ item.created_at|dt }}</td>
+      <td class="nowrap">
+        {% if item.status == "error" %}
+        <form method="post" action="/imports/items/{{ item.import_item_id }}/retry" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="link">再処理</button>
+        </form>
+        {% else %}
+        <a href="/imports/items/{{ item.import_item_id }}">確認する</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">対応が必要な明細はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2>取込ジョブ</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>取込日時</th><th>実行者</th><th>ファイル数</th><th>状態</th><th>明細</th><th></th></tr>
+    {% for job in jobs %}
+    <tr>
+      <td class="nowrap small">{{ job.created_at|dt }}</td>
+      <td>{{ users[job.created_by].display_name if job.created_by in users else "" }}</td>
+      <td>{{ job.file_count }}</td>
+      <td><span class="badge">{{ job.status }}</span></td>
+      <td>{{ job.items|length }}</td>
+      <td><a href="/imports/jobs/{{ job.import_job_id }}">開く</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">取込履歴はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

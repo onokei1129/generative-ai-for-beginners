@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ company.name }}</h1>
+<p class="page-desc">登録名刺 {{ cards|length }} 枚</p>
+<div class="card-list">
+  {% for card in cards %}
+  <div class="card-item">
+    {% if thumbnails.get(card.card_id) %}<img src="/images/{{ thumbnails[card.card_id] }}" alt="">{% endif %}
+    <div class="body">
+      <div class="name"><a href="/cards/{{ card.card_id }}">{{ card.person.full_name }}</a></div>
+      <div class="company">{{ card.department_name or "" }} {{ card.title or "" }}</div>
+      <div class="small muted">{{ card.created_at|dt("%Y-%m-%d") }}{% if card.is_latest %} <span class="badge latest">最新</span>{% endif %}</div>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">名刺がありません。</p>
+  {% endfor %}
+</div>
+<div class="actions"><a class="btn secondary" href="/export?company_id={{ company.company_id }}">この会社の名刺をCSV出力</a></div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="page-desc">変更内容は変更前・変更後の値とともに履歴に記録されます。</p>
+
+<form method="post" action="{% if card %}/cards/{{ card.card_id }}/edit{% else %}/cards/new{% endif %}" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <h3>氏名</h3>
+  <div class="form-grid">
+    <div><label>姓</label><input type="text" name="last_name" value="{{ fields.last_name or '' }}"></div>
+    <div><label>名</label><input type="text" name="first_name" value="{{ fields.first_name or '' }}"></div>
+    <div><label>せい</label><input type="text" name="last_name_kana" value="{{ fields.last_name_kana or '' }}"></div>
+    <div><label>めい</label><input type="text" name="first_name_kana" value="{{ fields.first_name_kana or '' }}"></div>
+  </div>
+
+  <h3>所属</h3>
+  <div class="form-grid">
+    <div><label>会社名</label><input type="text" name="company_name" value="{{ fields.company_name or '' }}"></div>
+    <div><label>部署</label><input type="text" name="department_name" value="{{ fields.department_name or '' }}"></div>
+    <div><label>役職</label><input type="text" name="title" value="{{ fields.title or '' }}"></div>
+    <div><label>名刺種別</label>
+      <select name="card_type">
+        <option value="">未設定</option>
+        {% for key, label in CARD_TYPES.items() %}<option value="{{ key }}" {% if fields.card_type == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></div>
+  </div>
+
+  <h3>連絡先</h3>
+  <div class="form-grid">
+    <div><label>郵便番号</label><input type="text" name="postal_code" value="{{ fields.postal_code or '' }}"></div>
+    <div><label>住所</label><input type="text" name="address" value="{{ fields.address or '' }}"></div>
+    <div><label>電話</label><input type="text" name="tel" value="{{ fields.tel or '' }}"></div>
+    <div><label>携帯</label><input type="text" name="mobile" value="{{ fields.mobile or '' }}"></div>
+    <div><label>FAX</label><input type="text" name="fax" value="{{ fields.fax or '' }}"></div>
+    <div><label>メール</label><input type="text" name="email" value="{{ fields.email or '' }}"></div>
+    <div><label>URL</label><input type="text" name="url" value="{{ fields.url or '' }}"></div>
+    <div><label>名刺交換日</label><input type="date" name="exchanged_on" value="{{ fields.exchanged_on or '' }}"></div>
+  </div>
+
+  <div class="field"><label>備考</label><textarea name="note">{{ fields.note or '' }}</textarea></div>
+  <div class="field"><label>変更理由{% if require_reason %}（必須）{% endif %}</label><input type="text" name="reason" {% if require_reason %}required{% endif %}></div>
+
+  <div class="actions">
+    <button type="submit">保存する</button>
+    <a class="btn secondary" href="{% if card %}/cards/{{ card.card_id }}{% else %}/cards{% endif %}">キャンセル</a>
+  </div>
+</form>
+{% endblock %}

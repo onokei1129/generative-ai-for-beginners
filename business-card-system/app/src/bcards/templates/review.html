@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>OCR結果の確認</h1>
+<p class="page-desc">{{ item.source_file_name }} / OCR: {{ ocr.provider if ocr else "-" }} — 画像と見比べて修正してから登録してください。</p>
+
+{% for message in warnings %}<div class="alert warn">{{ message }}</div>{% endfor %}
+{% if same_image %}
+<div class="alert warn">{{ same_image.message }} <a href="/cards/{{ same_image.card_id }}">登録済みの名刺を確認する</a></div>
+{% endif %}
+
+<div class="review">
+  <div>
+    {% for image in images %}
+    <div class="panel">
+      <div class="small muted">{{ "表面" if image.side == "front" else "裏面" }}</div>
+      <img src="/images/{{ image.card_image_id }}" alt="名刺画像">
+    </div>
+    {% endfor %}
+    <form method="post" action="/imports/items/{{ item.import_item_id }}/swap-side">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="actions"><button type="submit" class="secondary">表裏を入れ替える</button></div>
+    </form>
+    {% if ocr %}
+    <div class="panel">
+      <h3>OCR認識テキスト</h3>
+      <pre class="small mono" style="white-space:pre-wrap">{{ ocr.raw_response.text if ocr.raw_response else "" }}</pre>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <form method="post" action="/imports/items/{{ item.import_item_id }}/register" class="panel">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h3>名刺情報</h3>
+      <div class="form-grid">
+        <div><label>姓 {% if confidence.last_name %}<span class="small muted">信頼度 {{ confidence.last_name }}</span>{% endif %}</label><input type="text" name="last_name" value="{{ fields.last_name or '' }}"></div>
+        <div><label>名</label><input type="text" name="first_name" value="{{ fields.first_name or '' }}"></div>
+        <div><label>せい</label><input type="text" name="last_name_kana" value="{{ fields.last_name_kana or '' }}"></div>
+        <div><label>めい</label><input type="text" name="first_name_kana" value="{{ fields.first_name_kana or '' }}"></div>
+        <div><label>会社名</label><input type="text" name="company_name" value="{{ fields.company_name or '' }}"></div>
+        <div><label>部署</label><input type="text" name="department_name" value="{{ fields.department_name or '' }}"></div>
+        <div><label>役職</label><input type="text" name="title" value="{{ fields.title or '' }}"></div>
+        <div><label>名刺種別</label>
+          <select name="card_type"><option value="">未設定</option>
+            {% for key, label in CARD_TYPES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+          </select></div>
+        <div><label>郵便番号</label><input type="text" name="postal_code" value="{{ fields.postal_code or '' }}"></div>
+        <div><label>住所</label><input type="text" name="address" value="{{ fields.address or '' }}"></div>
+        <div><label>電話</label><input type="text" name="tel" value="{{ fields.tel or '' }}"></div>
+        <div><label>携帯</label><input type="text" name="mobile" value="{{ fields.mobile or '' }}"></div>
+        <div><label>FAX</label><input type="text" name="fax" value="{{ fields.fax or '' }}"></div>
+        <div><label>メール</label><input type="text" name="email" value="{{ fields.email or '' }}"></div>
+        <div><label>URL</label><input type="text" name="url" value="{{ fields.url or '' }}"></div>
+        <div><label>名刺交換日</label><input type="date" name="exchanged_on" value="{{ fields.exchanged_on or '' }}"></div>
+      </div>
+      <div class="field"><label>備考</label><textarea name="note">{{ fields.note or '' }}</textarea></div>
+
+      <h3>登録方法</h3>
+      {% if candidates %}
+      <div class="alert warn small">
+        同一人物の可能性がある人物が {{ candidates|length }} 件見つかりました。登録方法を選択してください。
+      </div>
+      <div class="field">
+        <label>対象の人物</label>
+        <select name="person_id">
+          <option value="">選択しない（新しい人物として登録）</option>
+          {% for candidate in candidates %}
+          <option value="{{ candidate.person_id }}">{{ candidate.person_name }} / {{ candidate.company_name }}（スコア {{ candidate.score }}：{{ candidate.reasons|join("・") }}）</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>上書き・置換の対象名刺ID（人物詳細から確認できます）</label>
+        <input type="text" name="target_card_id" placeholder="上書き／置換を選ぶ場合のみ">
+      </div>
+      {% for candidate in candidates %}
+      <p class="small"><a href="/persons/{{ candidate.person_id }}" target="_blank">{{ candidate.person_name }} の名刺履歴を開く</a></p>
+      {% endfor %}
+      {% else %}
+      <p class="small muted">同一人物の候補は見つかりませんでした。新しい人物として登録します。</p>
+      {% endif %}
+
+      {% for key, label in REGISTER_ACTIONS.items() %}
+      <div class="choice">
+        <label>
+          <input type="radio" name="action" value="{{ key }}" {% if key == ("keep_history" if candidates else "new_person") %}checked{% endif %}>
+          <span>{{ loop.index }}. {{ label }}{% if key == "keep_history" %} <span class="badge">推奨</span>{% endif %}</span>
+        </label>
+      </div>
+      {% endfor %}
+
+      <div class="field"><label>登録理由・メモ（任意）</label><input type="text" name="reason"></div>
+      <div class="actions"><button type="submit">この内容で登録する</button><a class="btn secondary" href="/imports">あとで対応する</a></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

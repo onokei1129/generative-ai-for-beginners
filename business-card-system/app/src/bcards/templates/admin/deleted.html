@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>削除済み名刺</h1>
+<p class="page-desc">論理削除された名刺です。復元できます。完全削除は取り消せません（監査ログと変更履歴は残ります）。</p>
+<div class="table-wrap">
+  <table>
+    <tr><th>氏名 / 会社</th><th>削除者</th><th>削除日時</th><th>削除理由</th><th>操作</th></tr>
+    {% for card in cards %}
+    <tr>
+      <td><a href="/cards/{{ card.card_id }}">{{ card.person.full_name }}</a><div class="small muted">{{ card.company_display }}</div></td>
+      <td>{{ users[card.deleted_by].display_name if card.deleted_by in users else "" }}</td>
+      <td class="small nowrap">{{ card.deleted_at|dt }}</td>
+      <td class="small">{{ card.delete_reason or "" }}</td>
+      <td class="nowrap">
+        <form method="post" action="/admin/deleted/{{ card.card_id }}/restore" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="link">復元</button>
+        </form>
+        <form method="post" action="/admin/deleted/{{ card.card_id }}/purge" class="inline"
+              onsubmit="return confirm('完全削除します。元に戻せません。よろしいですか？');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="text" name="reason" placeholder="完全削除の理由" style="width:140px" required>
+          <button type="submit" class="link" style="color:var(--danger)">完全削除</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">削除済みの名刺はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

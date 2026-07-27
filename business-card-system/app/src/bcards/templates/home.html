@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ホーム</h1>
+<p class="page-desc">登録された名刺は全利用者で共有されます。</p>
+
+{% for message in notifications %}
+<div class="alert warn">{{ message }}</div>
+{% endfor %}
+
+<div class="grid cols-4">
+  <div class="stat"><div class="num">{{ stats.cards }}</div><div class="label">登録名刺</div></div>
+  <div class="stat"><div class="num">{{ stats.persons }}</div><div class="label">人物</div></div>
+  <div class="stat"><div class="num">{{ stats.pending }}</div><div class="label">確認待ち</div></div>
+  <div class="stat"><div class="num">{{ stats.errors }}</div><div class="label">エラー</div></div>
+</div>
+
+{% if my_pending %}
+<h2>自分の取込で対応が必要なもの</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>ファイル</th><th>状態</th><th>内容</th><th></th></tr>
+    {% for item in my_pending %}
+    <tr>
+      <td>{{ item.source_file_name }}</td>
+      <td><span class="badge {{ item.status }}">{{ item.status_label }}</span></td>
+      <td class="small muted">{{ item.error_message or "OCR結果の確認をお願いします。" }}</td>
+      <td class="nowrap"><a href="/imports/items/{{ item.import_item_id }}">開く</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<h2>最近登録された名刺</h2>
+{% if recent_cards %}
+<div class="table-wrap">
+  <table>
+    <tr><th>氏名</th><th>会社</th><th>役職</th><th>登録日時</th><th></th></tr>
+    {% for card in recent_cards %}
+    <tr>
+      <td>{{ card.person.full_name }}{% if card.is_latest %} <span class="badge latest">最新</span>{% endif %}</td>
+      <td>{{ card.company_display }}</td>
+      <td>{{ card.title or "" }}</td>
+      <td class="nowrap small muted">{{ card.created_at|dt }}</td>
+      <td class="nowrap"><a href="/cards/{{ card.card_id }}">詳細</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<div class="panel">
+  <p>まだ名刺が登録されていません。</p>
+  <div class="actions"><a class="btn" href="/imports/upload">名刺をアップロードする</a></div>
+</div>
+{% endif %}
+
+<h2>保存容量</h2>
+<div class="panel">
+  <div class="progress"><div style="width: {{ [storage_percent, 100]|min }}%"></div></div>
+  <p class="small muted">使用率 {{ storage_percent }}%</p>
+</div>
+{% endblock %}

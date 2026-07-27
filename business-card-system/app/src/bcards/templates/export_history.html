@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>CSV出力履歴</h1>
+<div class="table-wrap">
+  <table>
+    <tr><th>出力日時</th><th>対象</th><th>件数</th><th>ファイル名</th><th>管理番号</th><th>IP</th></tr>
+    {% for log, audit in logs %}
+    <tr>
+      <td class="nowrap small">{{ audit.occurred_at|dt }}</td>
+      <td>{{ log.export_scope }}</td>
+      <td>{{ log.record_count }}</td>
+      <td class="small">{{ log.file_name }}</td>
+      <td class="mono small">{{ log.control_number }}</td>
+      <td class="mono small">{{ audit.ip_address }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">出力履歴はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

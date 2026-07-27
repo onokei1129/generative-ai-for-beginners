@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="login-wrap">
+  <div class="panel">
+    <h1>多要素認証</h1>
+    <p class="muted small">認証アプリに表示されている6桁のコードを入力してください。</p>
+    <form method="post" action="/mfa">
+      <div class="field">
+        <label for="code">認証コード</label>
+        <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+      </div>
+      <div class="actions"><button type="submit">認証する</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

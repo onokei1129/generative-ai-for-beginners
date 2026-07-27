@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>管理</h1>
+<div class="grid cols-4">
+  <div class="stat"><div class="num">{{ stats.active_users }}/{{ stats.users }}</div><div class="label">有効な利用者 / 全利用者</div></div>
+  <div class="stat"><div class="num">{{ stats.cards }}</div><div class="label">登録名刺</div></div>
+  <div class="stat"><div class="num">{{ stats.deleted_cards }}</div><div class="label">削除済み名刺</div></div>
+  <div class="stat"><div class="num">{{ stats.storage_percent }}%</div><div class="label">保存容量（{{ stats.storage_used_mb }}MB）</div></div>
+</div>
+
+{% if stats.allowed_ips == 0 %}
+<div class="alert warn">許可IPアドレスが未登録です。現在すべてのIPからアクセスできる状態です。<a href="/admin/access">アクセス制御を設定する</a></div>
+{% endif %}
+
+<h2>管理メニュー</h2>
+<div class="grid cols-3">
+  <div class="panel"><h3><a href="/admin/users">利用者管理</a></h3><p class="small muted">追加・権限・状態（有効／利用停止／退職）・パスワード初期化</p></div>
+  <div class="panel"><h3><a href="/admin/access">アクセス制御</a></h3><p class="small muted">許可IPアドレス、端末の登録・信頼設定</p></div>
+  <div class="panel"><h3><a href="/admin/deleted">削除済み名刺</a></h3><p class="small muted">削除者・日時・理由の確認、復元、完全削除</p></div>
+  <div class="panel"><h3><a href="/admin/merge">人物の統合</a></h3><p class="small muted">重複した人物のマージ</p></div>
+  <div class="panel"><h3><a href="/admin/audit">監査ログ</a></h3><p class="small muted">全操作の記録（追記専用）</p></div>
+  <div class="panel"><h3><a href="/admin/exports">CSV出力ログ</a></h3><p class="small muted">出力者・日時・端末・IP・件数・条件・項目</p></div>
+  <div class="panel"><h3><a href="/admin/logins">ログイン履歴</a></h3><p class="small muted">成功・失敗の履歴</p></div>
+  <div class="panel"><h3><a href="/admin/changes">変更履歴（全体）</a></h3><p class="small muted">名刺・人物・設定の変更前後</p></div>
+  <div class="panel"><h3><a href="/admin/settings">システム設定</a></h3><p class="small muted">社外アクセス、タイムアウト、閾値、編集権限</p></div>
+  <div class="panel"><h3><a href="/admin/storage">ストレージ</a></h3><p class="small muted">保存容量と画像の内訳</p></div>
+</div>
+{% endblock %}

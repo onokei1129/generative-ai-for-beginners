@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>利用者管理</h1>
+<p class="page-desc">退職に設定してもアカウントが停止されるだけで、その利用者が登録した名刺は削除されません。</p>
+
+<div class="panel">
+  <h3>利用者の追加</h3>
+  <form method="post" action="/admin/users">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <div><label>ログインID</label><input type="text" name="login_id" required></div>
+      <div><label>氏名</label><input type="text" name="display_name" required></div>
+      <div><label>メール</label><input type="text" name="email"></div>
+      <div><label>初期パスワード（10文字以上）</label><input type="text" name="password" required></div>
+      <div><label>権限</label><select name="role"><option value="member">一般利用者</option><option value="admin">管理者</option></select></div>
+    </div>
+    <div class="actions"><button type="submit">登録する</button></div>
+  </form>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <tr><th>氏名 / ID</th><th>権限</th><th>状態</th><th>MFA</th><th>社外</th><th>最終ログイン</th><th>操作</th></tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.display_name }}<div class="small muted">{{ u.login_id }}</div></td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.user_id }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="operation" value="role">
+          <select name="role" onchange="this.form.submit()">
+            <option value="member" {% if u.role == "member" %}selected{% endif %}>一般</option>
+            <option value="admin" {% if u.role == "admin" %}selected{% endif %}>管理者</option>
+          </select>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.user_id }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="operation" value="status">
+          <select name="status" onchange="this.form.submit()">
+            <option value="active" {% if u.status == "active" %}selected{% endif %}>有効</option>
+            <option value="suspended" {% if u.status == "suspended" %}selected{% endif %}>利用停止</option>
+            <option value="retired" {% if u.status == "retired" %}selected{% endif %}>退職</option>
+          </select>
+        </form>
+      </td>
+      <td class="small">{{ "有効" if u.mfa_enabled else "未設定" }}</td>
+      <td>
+        {% if u.role == "admin" %}
+        <form method="post" action="/admin/users/{{ u.user_id }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="operation" value="external">
+          <input type="hidden" name="external" value="{{ 0 if u.external_access_allowed else 1 }}">
+          <button type="submit" class="link">{{ "許可中" if u.external_access_allowed else "不許可" }}</button>
+        </form>
+        {% else %}<span class="small muted">—</span>{% endif %}
+      </td>
+      <td class="small muted nowrap">{{ u.last_login_at|dt }}</td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.user_id }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="operation" value="password">
+          <input type="text" name="password" placeholder="新パスワード" style="width:130px">
+          <button type="submit" class="link">再設定</button>
+        </form>
+        <form method="post" action="/admin/users/{{ u.user_id }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="operation" value="reset_mfa">
+          <button type="submit" class="link">MFA解除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>名刺検索</h1>
+<p class="page-desc">登録利用者はすべての名刺を検索・閲覧できます。検索操作は監査ログに記録されます。</p>
+
+<form method="get" action="/cards" class="panel">
+  <div class="form-grid">
+    <div><label>フリーワード（氏名・会社・部署・役職・住所・連絡先）</label>
+      <input type="text" name="q" value="{{ params.q or '' }}"></div>
+    <div><label>会社</label>
+      <select name="company_id">
+        <option value="">すべて</option>
+        {% for c in companies %}<option value="{{ c.company_id }}" {% if params.company_id == c.company_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select></div>
+    <div><label>登録者</label>
+      <select name="created_by">
+        <option value="">すべて</option>
+        {% for u in users %}<option value="{{ u.user_id }}" {% if params.created_by == u.user_id %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}
+      </select></div>
+    <div><label>登録日（From）</label><input type="date" name="from" value="{{ params.from or '' }}"></div>
+    <div><label>登録日（To）</label><input type="date" name="to" value="{{ params.to or '' }}"></div>
+    <div><label>並び順</label>
+      <select name="sort">
+        <option value="created_desc" {% if params.sort == 'created_desc' %}selected{% endif %}>登録日（新しい順）</option>
+        <option value="created_asc" {% if params.sort == 'created_asc' %}selected{% endif %}>登録日（古い順）</option>
+        <option value="exchanged_desc" {% if params.sort == 'exchanged_desc' %}selected{% endif %}>名刺交換日</option>
+        <option value="name" {% if params.sort == 'name' %}selected{% endif %}>氏名</option>
+      </select></div>
+  </div>
+  <div class="actions">
+    <label class="small" style="display:flex;gap:6px;align-items:center;color:var(--ink)">
+      <input type="checkbox" name="latest_only" value="1" {% if params.latest_only %}checked{% endif %}> 最新の名刺のみ
+    </label>
+    <button type="submit">検索</button>
+    <a class="btn secondary" href="/cards">条件をクリア</a>
+    <a class="btn secondary" href="/export?{{ request.url.query }}">この条件でCSV出力</a>
+  </div>
+</form>
+
+<p class="small muted">{{ total }} 件中 {{ (page - 1) * page_size + 1 if cards else 0 }}〜{{ (page - 1) * page_size + cards|length }} 件を表示</p>
+
+<form method="post" action="/export">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="scope" value="selected">
+  <div class="table-wrap">
+    <table>
+      <tr><th></th><th>画像</th><th>氏名</th><th>会社 / 部署 / 役職</th><th>連絡先</th><th>状態</th><th>登録</th><th></th></tr>
+      {% for card in cards %}
+      <tr>
+        <td><input type="checkbox" name="card_ids" value="{{ card.card_id }}"></td>
+        <td>{% if thumbnails.get(card.card_id) %}<img src="/images/{{ thumbnails[card.card_id] }}" alt="" style="width:80px;border-radius:4px">{% else %}<span class="muted small">なし</span>{% endif %}</td>
+        <td><a href="/cards/{{ card.card_id }}">{{ card.person.full_name }}</a><div class="small muted">{{ card.person.full_name_kana }}</div></td>
+        <td>{{ card.company_display }}<div class="small muted">{{ card.department_name or "" }} {{ card.title or "" }}</div></td>
+        <td class="small">
+          {% for v in card.contact_values("tel") %}<div>TEL {{ v }}</div>{% endfor %}
+          {% for v in card.contact_values("mobile") %}<div>携帯 {{ v }}</div>{% endfor %}
+          {% for v in card.contact_values("email") %}<div>{{ v }}</div>{% endfor %}
+        </td>
+        <td>{% if card.is_latest %}<span class="badge latest">最新</span>{% else %}<span class="badge past">過去</span>{% endif %}</td>
+        <td class="small muted nowrap">{{ card.created_at|dt("%Y-%m-%d") }}</td>
+        <td class="nowrap"><a href="/persons/{{ card.person_id }}">人物履歴</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="muted">該当する名刺はありません。</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% if cards %}
+  <div class="actions"><button type="submit" class="secondary">選択した名刺をCSV出力</button></div>
+  {% endif %}
+</form>
+
+{% if pages > 1 %}
+<div class="actions">
+  {% for p in range(1, pages + 1) %}
+    {% if p == page %}<span class="badge">{{ p }}</span>
+    {% else %}<a href="?{% for k, v in params.items() %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ p }}">{{ p }}</a>{% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

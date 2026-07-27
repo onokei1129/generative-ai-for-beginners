@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>大量出力の確認</h1>
+<div class="alert warn">
+  出力件数は <strong>{{ total }}</strong> 件です（確認画面の表示閾値：{{ threshold }} 件）。<br>
+  出力された名刺情報は個人情報を含みます。社外持出し・無断再配布は禁止です。この出力操作は記録されます。
+</div>
+
+<form method="post" action="/export" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="confirmed" value="1">
+  <input type="hidden" name="scope" value="{{ scope }}">
+  {% for key, value in params.items() %}{% if value and key != "card_ids" %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+  {% for cid in card_ids %}<input type="hidden" name="card_ids" value="{{ cid }}">{% endfor %}
+  {% for column in columns %}<input type="hidden" name="columns" value="{{ column }}">{% endfor %}
+
+  <p class="small">出力項目：{% for column in columns %}{{ all_columns[column] }}{% if not loop.last %} / {% endif %}{% endfor %}</p>
+  <div class="actions">
+    <button type="submit" class="danger">承知のうえダウンロードする</button>
+    <a class="btn secondary" href="/export">条件を変更する</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ストレージ・利用状況</h1>
+<div class="panel">
+  <div class="progress"><div style="width: {{ [percent, 100]|min }}%"></div></div>
+  <p class="small">使用 {{ used_mb }}MB / 契約容量 {{ quota_mb }}MB（{{ percent }}%） / ディスク空き {{ free_mb }}MB</p>
+</div>
+<div class="table-wrap">
+  <table>
+    <tr><th>バリアント</th><th>件数</th><th>容量</th></tr>
+    {% for variant, info in by_variant.items() %}
+    <tr><td>{{ variant }}</td><td>{{ info.count }}</td><td>{{ info.mb }} MB</td></tr>
+    {% endfor %}
+    <tr><th>合計画像レコード</th><td>{{ images }}</td><td>{{ used_mb }} MB</td></tr>
+  </table>
+</div>
+<p class="small muted">名刺データに保存期限は設けていません。管理者が明示的に削除しない限り保存されます。</p>
+{% endblock %}

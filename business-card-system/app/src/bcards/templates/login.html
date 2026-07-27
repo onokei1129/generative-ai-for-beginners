@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="login-wrap">
+  <div class="panel">
+    <h1>{{ APP_NAME }}</h1>
+    <p class="muted small">社内ネットワークからご利用ください。管理者は多要素認証により社外からも利用できます。</p>
+    <form method="post" action="/login">
+      <div class="field">
+        <label for="login_id">ログインID</label>
+        <input type="text" id="login_id" name="login_id" autocomplete="username" required autofocus>
+      </div>
+      <div class="field">
+        <label for="password">パスワード</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <div class="actions"><button type="submit">ログイン</button></div>
+    </form>
+  </div>
+  <p class="muted small">ログインの成否は日時・IPアドレス・端末情報とともに記録されます。</p>
+</div>
+{% endblock %}

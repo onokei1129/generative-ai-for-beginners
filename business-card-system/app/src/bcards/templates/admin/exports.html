@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>CSV出力ログ</h1>
+<p class="page-desc">要件§9で必須とされた項目をすべて記録しています。</p>
+<div class="table-wrap">
+  <table>
+    <tr><th>出力日時</th><th>利用者</th><th>対象</th><th>件数</th><th>検索条件</th><th>出力項目</th><th>ファイル / 管理番号</th><th>IP / 端末 / OS</th><th>結果</th></tr>
+    {% for log, audit in logs %}
+    <tr>
+      <td class="nowrap small">{{ audit.occurred_at|dt("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ audit.user_display_name }}<div class="small muted mono">{{ (audit.user_id or "")[:8] }}</div></td>
+      <td class="small">{{ log.export_scope }}{% if log.confirmed_large_export %}<div class="badge">大量出力承諾</div>{% endif %}</td>
+      <td>{{ log.record_count }}</td>
+      <td class="small muted">{{ log.search_condition }}</td>
+      <td class="small muted">{{ log.exported_columns|length }} 項目</td>
+      <td class="small">{{ log.file_name }}<div class="mono muted">{{ log.control_number }}</div></td>
+      <td class="small mono">{{ audit.ip_address }}<div class="muted">{{ audit.os_info or "" }} / {{ (audit.device_id or "")[:8] }}</div></td>
+      <td>{% if audit.result == "success" %}<span class="badge latest">成功</span>{% else %}<span class="badge deleted">失敗</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="muted">出力履歴はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

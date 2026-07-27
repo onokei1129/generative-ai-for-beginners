@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>名刺のアップロード</h1>
+<p class="page-desc">複合機・スマートフォン・PC内の画像をまとめて取り込めます。JPEG / PNG / PDF / HEIC / TIFF に対応。</p>
+
+<form method="post" action="/imports/upload" enctype="multipart/form-data" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="field">
+    <label>取込元</label>
+    <select name="source">
+      {% for key, label in SOURCES.items() %}{% if key != "manual" %}<option value="{{ key }}">{{ label }}</option>{% endif %}{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>ファイル（複数選択可・1ファイル30MBまで）</label>
+    <input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.pdf,.heic,.heif,.tif,.tiff" required>
+  </div>
+  <div class="alert info small">
+    アップロード後、画像の補正（外周検出・台形補正・回転・明るさ調整）とOCRを自動で行います。
+    OCR結果は自動確定されません。確認画面で内容を確認・修正してから登録してください。
+  </div>
+  <div class="actions">
+    <button type="submit">アップロードして取込を開始</button>
+    <a class="btn secondary" href="/cards/new">画像なしで手入力する</a>
+  </div>
+</form>
+{% endblock %}
