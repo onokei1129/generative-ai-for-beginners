@@ -44,6 +44,8 @@ erDiagram
     BUSINESS_CARD ||--o| BUSINESS_CARD : "後継名刺"
     BUSINESS_CARD ||--o{ CARD_CONTACT : "連絡先"
 
+    IMPORT_JOB ||--o{ IMPORT_FILE : "アップロードファイル(キュー)"
+    IMPORT_FILE ||--o{ IMPORT_ITEM : "分割・展開"
     IMPORT_JOB ||--o{ IMPORT_ITEM : "明細"
     IMPORT_ITEM ||--o| BUSINESS_CARD : "登録結果"
     IMPORT_ITEM ||--o{ OCR_RESULT : "OCR結果"
@@ -226,6 +228,30 @@ erDiagram
 
 ### 3.3 取込・OCR
 
+#### `import_file`（取込キュー）
+
+アップロードされたファイル1件が、取込キューの1単位になる。
+アップロード時はここに積むだけで応答を返し、ワーカーが順に処理する（要件§3 大量取込）。
+
+| 列名 | 型 | NULL | 説明 |
+| --- | --- | --- | --- |
+| import_file_id | UUID | ✕ | PK |
+| import_job_id | UUID | ✕ | 親ジョブ |
+| source_file_name | VARCHAR(256) | ✕ | 元ファイル名 |
+| storage_key | VARCHAR(512) | ✕ | アップロード原本の保存先 |
+| byte_size | INT | ✕ | ファイルサイズ |
+| source | ENUM | ✕ | 取込元（複合機／スマホ／ファイル） |
+| status | ENUM | ✕ | `queued` / `processing` / `done` / `error` |
+| attempts | INT | ✕ | 試行回数（既定3回で打ち切り） |
+| locked_by | VARCHAR(64) | ○ | 処理中のワーカーID |
+| locked_at | TIMESTAMP | ○ | 処理開始時刻（滞留の検出に使う） |
+| error_message | TEXT | ○ | 失敗理由 |
+| created_at / finished_at | TIMESTAMP | — | 受付・完了 |
+
+**排他制御**：`UPDATE import_file SET status='processing' WHERE import_file_id=? AND status='queued'`
+の更新件数で取得可否を判定する。複数ワーカーが同じファイルを処理しない。
+ワーカーが落ちた場合は `locked_at` が一定時間を過ぎた行をキューへ戻す。
+
 #### `import_job`（取込ジョブ）
 
 | 列名 | 型 | NULL | 説明 |
@@ -233,7 +259,7 @@ erDiagram
 | import_job_id | UUID | ✕ | PK |
 | created_by | UUID | ✕ | 実行者 |
 | file_count | INT | ✕ | アップロードファイル数（§3 一括アップロード） |
-| status | ENUM | ✕ | `queued` / `processing` / `partially_done` / `done` / `failed` |
+| status | ENUM | ✕ | `queued` / `processing` / `partially_done` / `done` / `failed`（配下の import_file と import_item の状態から導出） |
 | started_at / finished_at | TIMESTAMP | ○ | 処理時刻 |
 
 #### `import_item`（取込明細＝名刺1枚に対応）
@@ -253,9 +279,11 @@ erDiagram
 
 **取込ステータス遷移**
 
+アップロード → キュー登録（即応答）→ ワーカーが取り出して処理、の順に進む。
+
 ```mermaid
 stateDiagram-v2
-    [*] --> queued: アップロード
+    [*] --> queued: アップロード（キュー登録・即応答）
     queued --> ocr_processing: OCR送信
     ocr_processing --> pending_review: OCR完了
     ocr_processing --> error: OCR失敗

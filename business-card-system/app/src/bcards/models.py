@@ -338,7 +338,54 @@ class ImportJob(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     items: Mapped[list["ImportItem"]] = relationship(back_populates="job", order_by="ImportItem.created_at")
+    files: Mapped[list["ImportFile"]] = relationship(back_populates="job", order_by="ImportFile.created_at")
     user: Mapped[User] = relationship()
+
+    @property
+    def is_finished(self) -> bool:
+        return self.status in ("done", "partially_done", "failed")
+
+
+FILE_QUEUED = "queued"
+FILE_PROCESSING = "processing"
+FILE_DONE = "done"
+FILE_ERROR = "error"
+
+FILE_STATUS_LABELS = {
+    FILE_QUEUED: "取込待ち",
+    FILE_PROCESSING: "処理中",
+    FILE_DONE: "処理済み",
+    FILE_ERROR: "エラー",
+}
+
+
+class ImportFile(Base):
+    """アップロードされたファイル1件＝取込キューの1単位。
+
+    アップロード時はここに積むだけで応答を返し、ワーカーが順次処理する。
+    """
+
+    __tablename__ = "import_file"
+
+    import_file_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    import_job_id: Mapped[str] = mapped_column(ForeignKey("import_job.import_job_id"), index=True)
+    source_file_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(32), default="file_upload")
+    status: Mapped[str] = mapped_column(String(16), default=FILE_QUEUED, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_by: Mapped[str | None] = mapped_column(String(64))
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    job: Mapped["ImportJob"] = relationship(back_populates="files")
+
+    @property
+    def status_label(self) -> str:
+        return FILE_STATUS_LABELS.get(self.status, self.status)
 
 
 class ImportItem(Base):

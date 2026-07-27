@@ -1,8 +1,8 @@
 """名刺画像の取込処理（要件§3, §4, §8）。
 
-取込待ち → OCR処理中 → 確認待ち → 登録完了／エラー の状態を ImportItem に持たせる。
-10名規模・年間500枚程度の想定のため同期処理としているが、
-process_job() をワーカーから呼ぶだけでキュー方式へ移行できる構成にしている。
+アップロードされたファイルはキュー（services/queue.py）に積まれ、
+ワーカー（services/worker.py）が process_import_file() を呼び出して処理する。
+取込待ち → OCR処理中 → 確認待ち → 登録完了／エラー の状態は ImportItem が持つ。
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from ..models import (
     ITEM_QUEUED,
     ITEM_REVIEW,
     CardImage,
+    ImportFile,
     ImportItem,
     ImportJob,
     OcrResult,
@@ -39,7 +40,47 @@ def create_job(db: Session, user: User, files: list[tuple[str, bytes]]) -> Impor
     return job
 
 
+def process_import_file(db: Session, import_file: ImportFile) -> str | None:
+    """キューから取り出したファイル1件を処理する。
+
+    戻り値はエラーメッセージ（正常時は None）。ファイル単位で失敗しても
+    他のファイルの処理は続行できるよう、例外はここで受け止める。
+    """
+    from . import storage
+
+    job = db.get(ImportJob, import_file.import_job_id)
+    if job is None:
+        return "取込ジョブが見つかりません。"
+
+    try:
+        data = storage.get_bytes(import_file.storage_key)
+    except FileNotFoundError:
+        _error_item(db, job, import_file.source_file_name, "file_missing", "保存されたファイルが見つかりません。")
+        return "保存されたファイルが見つかりません。"
+
+    correct = bool(get_setting(db, "image_correction_enabled"))
+    try:
+        cards = process_file(data, import_file.source_file_name, correct=correct)
+    except UnsupportedFileError as exc:
+        _error_item(db, job, import_file.source_file_name, "unsupported_format", str(exc))
+        return str(exc)
+    except Exception as exc:  # 破損ファイルなど
+        message = f"ファイルを読み込めませんでした: {exc}"
+        _error_item(db, job, import_file.source_file_name, "read_error", message)
+        return message
+
+    created_items: list[ImportItem] = []
+    for card in cards:
+        created_items.append(
+            _create_item(db, job, import_file.source_file_name, card, source=import_file.source)
+        )
+    _detect_front_back(db, created_items)
+    db.flush()
+    return None
+
+
 def process_job(db: Session, job: ImportJob, files: list[tuple[str, bytes]], *, source: str) -> None:
+    """キューを介さず同期で処理する（seed スクリプトとテスト用）。"""
     job.status = "processing"
     job.started_at = utcnow()
     db.flush()
@@ -102,7 +143,7 @@ def _create_item(db: Session, job: ImportJob, filename: str, card: ProcessedCard
         item.status = ITEM_OCR
         db.flush()
 
-        output, parsed = run_ocr(card.image)
+        output, parsed = run_ocr(card.ocr_image)
         result = OcrResult(
             import_item_id=item.import_item_id,
             provider=output.provider,
@@ -129,7 +170,7 @@ def _create_item(db: Session, job: ImportJob, filename: str, card: ProcessedCard
 def _store_variants(db: Session, item: ImportItem, card: ProcessedCard, *, side: str) -> list[CardImage]:
     """原本・表示用・サムネイルを保存する（要件§2）。"""
     stored: list[CardImage] = []
-    for variant, (payload, image) in make_variants(card.image).items():
+    for variant, (payload, image) in make_variants(card.image, card.ocr_image).items():
         key = storage.put_bytes(payload, suffix=".jpg", prefix=f"cards/{variant}")
         record = CardImage(
             import_item_id=item.import_item_id,

@@ -36,11 +36,22 @@ class Settings:
 
     # OCR プロバイダ: mock / tesseract / azure
     ocr_provider: str = _env("BCARDS_OCR_PROVIDER", "tesseract")
-    ocr_languages: str = _env("BCARDS_OCR_LANGUAGES", "jpn+eng")
+    ocr_languages: str = _env("BCARDS_OCR_LANGUAGES", "jpn+jpn_vert+eng")
 
-    # Azure AI Document Intelligence を使う場合のみ設定（services/ocr/azure_provider.py）
+    # Azure AI Document Intelligence を使う場合のみ設定（services/ocr/providers.py）
     azure_di_endpoint: str = _env("BCARDS_AZURE_DI_ENDPOINT", "")
     azure_di_key: str = _env("BCARDS_AZURE_DI_KEY", "")
+
+    # 項目分離の方式: rule（ルールベース）/ llm（Claude API）/ auto（LLMが使えれば使う）
+    field_extractor: str = _env("BCARDS_FIELD_EXTRACTOR", "auto")
+    llm_model: str = _env("BCARDS_LLM_MODEL", "claude-opus-5")
+    llm_effort: str = _env("BCARDS_LLM_EFFORT", "low")
+
+    # 取込ワーカー（キュー方式）
+    worker_enabled: bool = _env_bool("BCARDS_WORKER_ENABLED", True)
+    worker_concurrency: int = int(_env("BCARDS_WORKER_CONCURRENCY", "2"))
+    worker_poll_seconds: float = float(_env("BCARDS_WORKER_POLL_SECONDS", "1.0"))
+    worker_lease_seconds: int = int(_env("BCARDS_WORKER_LEASE_SECONDS", "600"))
 
     # 画像
     display_max_edge: int = int(_env("BCARDS_DISPLAY_MAX_EDGE", "1600"))

@@ -60,9 +60,15 @@ class LoadedPage:
 
 @dataclass
 class ProcessedCard:
-    """1枚の名刺として切り出された画像と、その処理結果。"""
+    """1枚の名刺として切り出された画像と、その処理結果。
+
+    image     : 表示用（明るさ・影の補正まで行ったもの。人が見やすい）
+    ocr_image : OCR用（切り出しと傾き補正のみ。強い補正はOCR精度を下げるため行わない）
+                原本として保存するのもこちら。
+    """
 
     image: Image.Image
+    ocr_image: Image.Image
     page_no: int | None
     split_index: int | None
     original_mime: str
@@ -222,8 +228,13 @@ def warp_quad(image: Image.Image, quad: np.ndarray) -> Image.Image:
     return _cv_to_pil(warped)
 
 
-def deskew(image: Image.Image, max_angle: float = 10.0) -> tuple[Image.Image, float]:
-    """わずかな傾きを回転補正する（要件§4）。"""
+def deskew(image: Image.Image, max_angle: float = 10.0, min_angle: float = 1.5) -> tuple[Image.Image, float]:
+    """傾きを回転補正する（要件§4）。
+
+    min_angle 未満の傾きは補正しない。わずかな回転でも再サンプリングで
+    文字がぼやけ、OCR精度が下がることをPoCで確認したため
+    （docs: ocr-poc-report.md）。
+    """
     src = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
     edges = cv2.Canny(src, 60, 160)
     lines = cv2.HoughLinesP(edges, 1, np.pi / 360, threshold=100, minLineLength=src.shape[1] // 3, maxLineGap=20)
@@ -238,7 +249,7 @@ def deskew(image: Image.Image, max_angle: float = 10.0) -> tuple[Image.Image, fl
     if not angles:
         return image, 0.0
     angle = float(np.median(angles))
-    if abs(angle) < 0.3:
+    if abs(angle) < min_angle:
         return image, 0.0
     return image.rotate(angle, resample=Image.BICUBIC, expand=True, fillcolor=(255, 255, 255)), angle
 
@@ -318,22 +329,31 @@ def _finish_card(
     *,
     detected: bool,
 ) -> ProcessedCard:
-    corrections: dict[str, Any] = {"outline_detected": detected}
+    """表示用とOCR用の画像を作り分ける。
+
+    PoC（ocr-poc-report.md）で、表示向けの強い補正（明るさ・影の除去、
+    縦長から横長への回転）がOCRの項目正答率を10ポイント下げることが分かったため、
+    OCRには切り出しと傾き補正のみを適用した画像を渡す。
+    """
+    corrections: dict[str, Any] = {"outline_detected": detected, "perspective_corrected": detected}
+    ocr_image = image
     if correct:
-        image, rotated = orient_landscape(image)
-        corrections["rotated_to_landscape"] = rotated
-        image, angle = deskew(image)
+        ocr_image, angle = deskew(image)
         corrections["deskew_angle"] = round(angle, 2)
-        image, brightness = enhance(image)
+
+        display, rotated = orient_landscape(ocr_image)
+        corrections["rotated_to_landscape"] = rotated
+        display, brightness = enhance(display)
         corrections.update(brightness)
-        corrections["perspective_corrected"] = detected
+        image = display
     return ProcessedCard(
         image=image,
+        ocr_image=ocr_image,
         page_no=page.page_no,
         split_index=split_index,
         original_mime=page.original_mime,
         corrections=corrections,
-        warnings=quality_report(image),
+        warnings=quality_report(ocr_image),
     )
 
 
@@ -356,11 +376,19 @@ def resized(image: Image.Image, max_edge: int) -> Image.Image:
     return image.resize(size, Image.LANCZOS)
 
 
-def make_variants(image: Image.Image) -> dict[str, tuple[bytes, Image.Image]]:
+def make_variants(
+    image: Image.Image, original_image: Image.Image | None = None
+) -> dict[str, tuple[bytes, Image.Image]]:
+    """原本・表示用・サムネイルを作る（要件§2）。
+
+    original_image を渡した場合はそれを原本として保存する。
+    強い補正をかける前の画像を原本にしておくことで、再処理時のOCR精度が落ちない。
+    """
+    source = original_image if original_image is not None else image
     display = resized(image, settings.display_max_edge)
     thumbnail = resized(image, settings.thumbnail_max_edge)
     return {
-        "original": (to_jpeg_bytes(image, quality=95), image),
+        "original": (to_jpeg_bytes(source, quality=95), source),
         "display": (to_jpeg_bytes(display, quality=85), display),
         "thumbnail": (to_jpeg_bytes(thumbnail, quality=80), thumbnail),
     }

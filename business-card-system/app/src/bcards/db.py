@@ -18,6 +18,11 @@ if settings.database_url.startswith("sqlite"):
     def _set_sqlite_pragma(dbapi_connection, connection_record):  # noqa: ANN001
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        # 取込ワーカーとWebリクエストが同時にアクセスするため、
+        # WALモードとロック待ちを設定する（本番でPostgreSQLにする場合は不要）
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=10000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 
 

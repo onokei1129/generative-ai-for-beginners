@@ -24,7 +24,19 @@ MAX_SESSION_AGE = 12 * 60 * 60  # 署名の絶対上限。無操作タイムア�
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    yield
+    pool = None
+    if settings.worker_enabled:
+        # 取込はキュー方式。既定ではアプリと同じプロセスでワーカーを動かす。
+        # 別プロセスで動かす場合は BCARDS_WORKER_ENABLED=0 にして python worker.py を実行する。
+        from .services.worker import WorkerPool
+
+        pool = WorkerPool()
+        pool.start()
+    try:
+        yield
+    finally:
+        if pool is not None:
+            pool.stop()
 
 
 app = FastAPI(title="名刺一元管理システム", docs_url=None, redoc_url=None, lifespan=lifespan)

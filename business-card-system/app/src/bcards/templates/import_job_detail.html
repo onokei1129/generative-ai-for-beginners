@@ -2,6 +2,30 @@
 {% block content %}
 <h1>取込ジョブ</h1>
 <p class="page-desc">{{ job.created_at|dt }} / ファイル {{ job.file_count }} 件 / 状態 {{ job.status }}</p>
+
+{% if auto_refresh %}
+<div class="alert info">キューで処理中です。この画面は自動で更新されます。</div>
+{% endif %}
+
+{% if job.files %}
+<h2>ファイル</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>ファイル</th><th>サイズ</th><th>状態</th><th>試行</th><th>内容</th></tr>
+    {% for f in job.files %}
+    <tr>
+      <td>{{ f.source_file_name }}</td>
+      <td class="small muted nowrap">{{ (f.byte_size / 1024)|round(0, 'floor')|int }} KB</td>
+      <td><span class="badge {{ 'error' if f.status == 'error' else ('registered' if f.status == 'done' else 'ocr_processing') }}">{{ f.status_label }}</span></td>
+      <td class="small muted">{{ f.attempts }}</td>
+      <td class="small muted">{{ f.error_message or "" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<h2>名刺の明細</h2>
 <div class="table-wrap">
   <table>
     <tr><th>ファイル</th><th>ページ/分割</th><th>状態</th><th>内容</th><th></th></tr>

@@ -23,7 +23,8 @@ from ..models import (
 )
 from ..services.cards import register_card
 from ..services.dedupe import find_candidates
-from ..services.importer import create_job, latest_ocr, process_job, retry_item
+from ..services.importer import latest_ocr, retry_item
+from ..services.queue import enqueue_files, queue_stats
 from ..settings_store import get_setting
 from ..web import render
 
@@ -36,6 +37,7 @@ MAX_FILE_BYTES = 30 * 1024 * 1024
 @router.get("/imports")
 def import_jobs(request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
     jobs = db.query(ImportJob).order_by(ImportJob.created_at.desc()).limit(30).all()
+    stats = queue_stats(db)
     items = (
         db.query(ImportItem)
         .filter(ImportItem.status.in_([ITEM_REVIEW, ITEM_ERROR]))
@@ -46,7 +48,13 @@ def import_jobs(request: Request, db: Session = Depends(get_db), user: User = De
     return render(
         request,
         "import_jobs.html",
-        {"title": "取込状況", "jobs": jobs, "items": items, "users": {u.user_id: u for u in db.query(User).all()}},
+        {
+            "title": "取込状況",
+            "jobs": jobs,
+            "items": items,
+            "stats": stats,
+            "users": {u.user_id: u for u in db.query(User).all()},
+        },
     )
 
 
@@ -78,14 +86,15 @@ async def upload(
     if not payloads:
         return RedirectResponse("/imports/upload?err=ファイルが選択されていません。", status_code=303)
 
-    job = create_job(db, user, payloads)
+    # ファイルを保存してキューに積むだけで応答を返す（実処理はワーカー）
+    job = enqueue_files(db, user, payloads, source=source)
     log_audit(db, request, user, "import_upload", target_type="import_job", target_id=job.import_job_id,
               detail={"files": len(payloads), "source": source})
     db.commit()
-
-    process_job(db, job, payloads, source=source)
-    db.commit()
-    return RedirectResponse(f"/imports/jobs/{job.import_job_id}?msg=取込を開始しました。", status_code=303)
+    return RedirectResponse(
+        f"/imports/jobs/{job.import_job_id}?msg={len(payloads)}件をキューに登録しました。処理が終わると確認待ちになります。",
+        status_code=303,
+    )
 
 
 @router.get("/imports/jobs/{job_id}")
@@ -93,7 +102,11 @@ def job_detail(job_id: str, request: Request, db: Session = Depends(get_db), use
     job = db.get(ImportJob, job_id)
     if job is None:
         raise HTTPException(status_code=404)
-    return render(request, "import_job_detail.html", {"title": "取込ジョブ", "job": job})
+    return render(
+        request,
+        "import_job_detail.html",
+        {"title": "取込ジョブ", "job": job, "auto_refresh": not job.is_finished},
+    )
 
 
 @router.get("/imports/items/{item_id}")

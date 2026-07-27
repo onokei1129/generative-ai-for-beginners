@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} | {{ APP_NAME }}</title>
 <link rel="stylesheet" href="/static/app.css">
+{% if auto_refresh %}<meta http-equiv="refresh" content="3">{% endif %}
 </head>
 <body>
 {% if user %}

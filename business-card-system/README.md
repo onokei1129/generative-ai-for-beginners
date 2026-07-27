@@ -10,6 +10,7 @@
 | [data-model-v0.3.md](./data-model-v0.3.md) | データモデル（人物／会社／名刺／変更履歴／監査ログのER設計） | Ver.0.3 | ドラフト |
 | [open-issues-v0.3.md](./open-issues-v0.3.md) | 未確定事項の論点整理（編集権限・クラウド事業者・OCRサービス等） | Ver.0.3 | ドラフト（決裁待ち） |
 | [screens-and-functions-v0.3.md](./screens-and-functions-v0.3.md) | 画面一覧・機能一覧 | Ver.0.3 | ドラフト |
+| [ocr-poc-report.md](./ocr-poc-report.md) | OCR精度PoCの計測報告（論点C） | 第1回 | 実測済み |
 | [app/](./app/) | 実装（動作するWebアプリケーション） | — | 動作確認済み |
 
 ## 読む順序
@@ -18,7 +19,8 @@
 2. **open-issues-v0.3.md** — 決めないと先に進めない事項。まずここを決裁する
 3. **data-model-v0.3.md** — データ構造。論点A・C・D の決定を反映して確定する
 4. **screens-and-functions-v0.3.md** — 画面・機能への展開。見積の入力とする
-5. **app/README.md** — 実装の起動方法・構成・要件との対応
+5. **ocr-poc-report.md** — OCR精度の実測結果。論点Cの判断材料
+6. **app/README.md** — 実装の起動方法・構成・要件との対応
 
 ## アプリケーション
 

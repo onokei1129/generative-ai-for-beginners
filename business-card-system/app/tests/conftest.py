@@ -17,6 +17,8 @@ os.environ["BCARDS_STORAGE_DIR"] = str(TMP / "objects")
 os.environ["BCARDS_SECRET_KEY"] = "test-secret"
 os.environ["BCARDS_ENFORCE_IP_RESTRICTION"] = "0"
 os.environ["BCARDS_OCR_PROVIDER"] = "mock"  # テストは外部・ローカルOCRに依存させない
+os.environ["BCARDS_FIELD_EXTRACTOR"] = "rule"  # LLM抽出はテストでは使わない
+os.environ["BCARDS_WORKER_ENABLED"] = "0"  # ワーカーはテスト内で明示的に回す
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -93,3 +95,13 @@ def sample_card_image() -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=90)
     return buffer.getvalue()
+
+
+def drain_queue(max_files: int = 50) -> int:
+    """テスト内でワーカーを回し、キューを空にする。"""
+    from bcards.services.worker import process_one
+
+    processed = 0
+    while processed < max_files and process_one("test-worker"):
+        processed += 1
+    return processed

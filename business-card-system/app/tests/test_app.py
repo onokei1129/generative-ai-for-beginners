@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import csrf_of, login, sample_card_image
+from conftest import csrf_of, drain_queue, login, sample_card_image
 
 from bcards.db import SessionLocal
 from bcards.models import (
@@ -11,7 +11,9 @@ from bcards.models import (
     CardImage,
     ChangeHistory,
     CsvExportLog,
+    ImportFile,
     ImportItem,
+    ImportJob,
     LoginAttempt,
     Person,
 )
@@ -80,6 +82,7 @@ def test_upload_creates_item_pending_review(client):
         follow_redirects=False,
     )
     assert response.status_code == 303
+    assert drain_queue() == 1
 
     with SessionLocal() as db:
         item = db.query(ImportItem).first()
@@ -103,6 +106,7 @@ def test_unsupported_format_becomes_error_item(client):
         data={"csrf_token": token},
         files={"files": ("memo.txt", b"hello", "text/plain")},
     )
+    drain_queue()
     with SessionLocal() as db:
         item = db.query(ImportItem).first()
         assert item.status == "error"
@@ -117,6 +121,7 @@ def test_review_and_register_flow(client):
         data={"csrf_token": token},
         files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
     )
+    drain_queue()
     with SessionLocal() as db:
         item_id = db.query(ImportItem).first().import_item_id
 
@@ -181,6 +186,7 @@ def test_duplicate_candidate_is_offered(client):
         data={"csrf_token": token},
         files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
     )
+    drain_queue()
     with SessionLocal() as db:
         item_id = db.query(ImportItem).first().import_item_id
 
@@ -415,3 +421,116 @@ def test_edit_policy_owner_and_admin(client):
         set_setting(db, "card_edit_policy", "all_users", None)
         db.commit()
     assert client.get(f"/cards/{card_id}/edit").status_code == 200
+
+
+# --------------------------------------------------------------------------
+# 取込キュー（要件§3 一時的な大量取込）
+# --------------------------------------------------------------------------
+
+
+def test_upload_returns_immediately_and_queues_files(client):
+    """アップロードはキューに積むだけで、その場ではOCRしない。"""
+    login(client)
+    token = csrf_of(client)
+    files = [("files", (f"card{i}.jpg", sample_card_image(), "image/jpeg")) for i in range(3)]
+    response = client.post(
+        "/imports/upload", data={"csrf_token": token}, files=files, follow_redirects=False
+    )
+    assert response.status_code == 303
+
+    with SessionLocal() as db:
+        queued = db.query(ImportFile).filter(ImportFile.status == "queued").all()
+        assert len(queued) == 3
+        assert db.query(ImportItem).count() == 0  # まだ処理されていない
+        assert db.get(ImportJob, queued[0].import_job_id).status == "queued"
+
+    assert drain_queue() == 3
+    with SessionLocal() as db:
+        assert db.query(ImportItem).filter(ImportItem.status == "pending_review").count() == 3
+        assert db.query(ImportFile).filter(ImportFile.status == "done").count() == 3
+        job = db.query(ImportJob).first()
+        assert job.status == "done"
+        assert job.finished_at is not None
+
+
+def test_queue_claim_is_exclusive(client):
+    """2つのワーカーが同じファイルを取得しない。"""
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+
+    from bcards.services.queue import claim_next
+
+    with SessionLocal() as db_a, SessionLocal() as db_b:
+        first = claim_next(db_a, "worker-a")
+        second = claim_next(db_b, "worker-b")
+    assert first is not None
+    assert second is None
+    assert first.status == "processing"
+    assert first.attempts == 1
+
+
+def test_stale_processing_file_is_requeued(client):
+    """ワーカーが落ちて処理中のまま残ったファイルはキューへ戻る。"""
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+
+    from datetime import timedelta
+
+    from bcards.models import utcnow
+    from bcards.services.queue import claim_next, requeue_stale
+
+    with SessionLocal() as db:
+        claimed = claim_next(db, "dead-worker")
+        assert claimed is not None
+        claimed.locked_at = utcnow() - timedelta(hours=1)
+        db.commit()
+
+        assert requeue_stale(db, lease_seconds=60) == 1
+        db.refresh(claimed)
+        assert claimed.status == "queued"
+
+    assert drain_queue() == 1
+    with SessionLocal() as db:
+        assert db.query(ImportItem).filter(ImportItem.status == "pending_review").count() == 1
+
+
+def test_broken_file_marks_queue_entry_as_error(client):
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("broken.jpg", b"not really a jpeg", "image/jpeg")},
+    )
+    assert drain_queue() == 1
+
+    with SessionLocal() as db:
+        import_file = db.query(ImportFile).one()
+        assert import_file.status == "error"
+        assert import_file.error_message
+        assert db.query(ImportJob).one().status == "failed"
+        # 明細側にもエラーが残り、取込状況の画面から確認できる
+        assert db.query(ImportItem).filter(ImportItem.status == "error").count() == 1
+
+
+def test_import_status_page_shows_queue(client):
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+    page = client.get("/imports")
+    assert page.status_code == 200
+    assert "キュー待ち" in page.text

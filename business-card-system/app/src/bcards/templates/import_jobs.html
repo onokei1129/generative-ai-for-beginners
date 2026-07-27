@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>取込状況</h1>
-<p class="page-desc">取込待ち → OCR処理中 → 確認待ち → 登録完了 の順に進みます。</p>
+<p class="page-desc">アップロードされたファイルはキューに積まれ、ワーカーが順に処理します。取込待ち → OCR処理中 → 確認待ち → 登録完了 の順に進みます。</p>
+
+<div class="grid cols-4">
+  <div class="stat"><div class="num">{{ stats.queued }}</div><div class="label">キュー待ち</div></div>
+  <div class="stat"><div class="num">{{ stats.processing }}</div><div class="label">処理中</div></div>
+  <div class="stat"><div class="num">{{ stats.done }}</div><div class="label">処理済みファイル</div></div>
+  <div class="stat"><div class="num">{{ stats.error }}</div><div class="label">失敗ファイル</div></div>
+</div>
 
 <h2>対応が必要な明細</h2>
 <div class="table-wrap">
