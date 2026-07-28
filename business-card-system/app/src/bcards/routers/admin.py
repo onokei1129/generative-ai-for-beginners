@@ -430,6 +430,9 @@ def storage_status(request: Request, db: Session = Depends(get_db), admin: User 
             "percent": round(used / max(1, app_settings.storage_quota_bytes) * 100, 2),
             "images": images,
             "by_variant": by_variant,
-            "free_mb": round(storage.free_space_bytes() / 1024 / 1024, 2),
+            "free_mb": (
+                round(free / 1024 / 1024, 2) if (free := storage.free_space_bytes()) is not None else None
+            ),
+            "backend": app_settings.storage_backend,
         },
     )

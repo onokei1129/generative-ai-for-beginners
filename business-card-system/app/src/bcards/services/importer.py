@@ -52,31 +52,78 @@ def process_import_file(db: Session, import_file: ImportFile) -> str | None:
     if job is None:
         return "取込ジョブが見つかりません。"
 
+    file_id = import_file.import_file_id
+    if import_file.attempts > 1:
+        # 前回の試行が途中で落ちている可能性があるため、作りかけの明細を片付けてから始める
+        discard_items_of_file(db, file_id)
+
     try:
         data = storage.get_bytes(import_file.storage_key)
     except FileNotFoundError:
-        _error_item(db, job, import_file.source_file_name, "file_missing", "保存されたファイルが見つかりません。")
+        _error_item(db, job, import_file.source_file_name, "file_missing", "保存されたファイルが見つかりません。", file_id)
         return "保存されたファイルが見つかりません。"
 
     correct = bool(get_setting(db, "image_correction_enabled"))
     try:
         cards = process_file(data, import_file.source_file_name, correct=correct)
     except UnsupportedFileError as exc:
-        _error_item(db, job, import_file.source_file_name, "unsupported_format", str(exc))
+        _error_item(db, job, import_file.source_file_name, "unsupported_format", str(exc), file_id)
         return str(exc)
     except Exception as exc:  # 破損ファイルなど
         message = f"ファイルを読み込めませんでした: {exc}"
-        _error_item(db, job, import_file.source_file_name, "read_error", message)
+        _error_item(db, job, import_file.source_file_name, "read_error", message, file_id)
         return message
 
     created_items: list[ImportItem] = []
     for card in cards:
         created_items.append(
-            _create_item(db, job, import_file.source_file_name, card, source=import_file.source)
+            _create_item(
+                db,
+                job,
+                import_file.source_file_name,
+                card,
+                source=import_file.source,
+                import_file_id=file_id,
+                release_transaction=True,
+            )
         )
     _detect_front_back(db, created_items)
     db.flush()
     return None
+
+
+def discard_items_of_file(db: Session, import_file_id: str) -> int:
+    """未登録の明細と、その付随データを削除する（再処理の前処理）。
+
+    登録済み（card_id を持つ）明細は名刺本体から参照されているため残す。
+    """
+    items = (
+        db.query(ImportItem)
+        .filter(ImportItem.import_file_id == import_file_id, ImportItem.card_id.is_(None))
+        .all()
+    )
+    for item in items:
+        db.query(OcrResult).filter(OcrResult.import_item_id == item.import_item_id).delete()
+        for image in db.query(CardImage).filter(CardImage.import_item_id == item.import_item_id).all():
+            # 同じ内容の画像を別明細が参照している場合は実体を消さない（内容ハッシュがキー）
+            others = (
+                db.query(CardImage)
+                .filter(
+                    CardImage.storage_key == image.storage_key,
+                    CardImage.card_image_id != image.card_image_id,
+                )
+                .count()
+            )
+            if others == 0:
+                try:
+                    storage.delete(image.storage_key)
+                except Exception:  # 実体が既にない場合も処理は続ける
+                    pass
+            db.delete(image)
+        db.delete(item)
+    if items:
+        db.commit()
+    return len(items)
 
 
 def process_job(db: Session, job: ImportJob, files: list[tuple[str, bytes]], *, source: str) -> None:
@@ -114,9 +161,17 @@ def process_job(db: Session, job: ImportJob, files: list[tuple[str, bytes]], *, 
     db.flush()
 
 
-def _error_item(db: Session, job: ImportJob, filename: str, code: str, message: str) -> ImportItem:
+def _error_item(
+    db: Session,
+    job: ImportJob,
+    filename: str,
+    code: str,
+    message: str,
+    import_file_id: str | None = None,
+) -> ImportItem:
     item = ImportItem(
         import_job_id=job.import_job_id,
+        import_file_id=import_file_id,
         source_file_name=filename,
         status=ITEM_ERROR,
         error_code=code,
@@ -127,9 +182,19 @@ def _error_item(db: Session, job: ImportJob, filename: str, code: str, message: 
     return item
 
 
-def _create_item(db: Session, job: ImportJob, filename: str, card: ProcessedCard, *, source: str) -> ImportItem:
+def _create_item(
+    db: Session,
+    job: ImportJob,
+    filename: str,
+    card: ProcessedCard,
+    *,
+    source: str,
+    import_file_id: str | None = None,
+    release_transaction: bool = False,
+) -> ImportItem:
     item = ImportItem(
         import_job_id=job.import_job_id,
+        import_file_id=import_file_id,
         source_file_name=filename,
         page_no=card.page_no,
         split_index=card.split_index,
@@ -142,6 +207,12 @@ def _create_item(db: Session, job: ImportJob, filename: str, card: ProcessedCard
         images = _store_variants(db, item, card, side="front")
         item.status = ITEM_OCR
         db.flush()
+
+        if release_transaction:
+            # OCRは1枚あたり数秒かかる。その間DBトランザクションを開いたままにすると
+            # PostgreSQL 側で "idle in transaction" の接続が滞留するため、ここで確定させる。
+            # 途中で落ちた場合の作りかけ明細は、再処理時に discard_items_of_file() が片付ける。
+            db.commit()
 
         output, parsed = run_ocr(card.ocr_image)
         result = OcrResult(

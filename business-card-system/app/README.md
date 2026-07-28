@@ -4,10 +4,13 @@
 （[データモデル](../data-model-v0.3.md) / [画面・機能一覧](../screens-and-functions-v0.3.md)）を実装した Web アプリケーション。
 
 - サーバーサイドレンダリングの Web アプリ（FastAPI + Jinja2）
-- データベースは SQLite（本番は PostgreSQL 等へ切り替え可能）
-- 画像はローカルのオブジェクトストレージ層に保存（S3 / Blob / GCS へ差し替え可能）
+- データベースは SQLite（開発）／ PostgreSQL（本番）。スキーマは Alembic で管理する
+- 画像はオブジェクトストレージ層に保存。ローカル／S3（MinIO 等の S3 互換を含む）を設定で切替
 - OCR はプロバイダを差し替え可能。既定はローカルの tesseract（画像を外部へ送信しない）
 - 取込はキュー方式。アップロードは即応答し、ワーカーが順次処理する
+
+> 本番環境の構築・運用手順（HTTPS、鍵、バックアップ、復元訓練、監視）は
+> [`../operations-guide.md`](../operations-guide.md) にまとめている。
 
 ---
 
@@ -73,6 +76,24 @@ PYTHONPATH=src ./.venv/bin/python worker.py      # ワーカー（Ctrl-Cで安�
 - ワーカーが落ちて処理中のまま残ったファイルは、`BCARDS_WORKER_LEASE_SECONDS`（既定600秒）経過後にキューへ戻る（最大3回まで再試行）
 - 取込状況画面（`/imports`）でキューの滞留を確認できる
 
+#### OCRの並列度に注意（`BCARDS_OCR_THREAD_LIMIT`）
+
+tesseract は既定でCPU数ぶんのOpenMPスレッドを使う。ワーカーを複数動かすと
+「ワーカー数 × CPU数」のスレッドが同時に走り、CPUの奪い合いで取込が進まなくなる。
+アプリは既定で `OMP_THREAD_LIMIT=1` を子プロセスへ渡してこれを防いでいる。
+4CPUのサーバーで同じ画像6件を同時にOCRさせた実測値は次のとおり。
+
+| 条件 | 6件の処理時間 |
+| --- | --- |
+| スレッド数無制限 | 10分経っても完了せず（打ち切り） |
+| `OMP_THREAD_LIMIT=1`（既定） | 2.1秒 |
+
+OCRの精度には影響しない（PoCの正答率 44.8% は設定前後で同一）。
+
+また、OCR実行中はDBトランザクションを閉じている。閉じないとPostgreSQL側に
+`idle in transaction` の接続が滞留するため。処理の途中でワーカーが落ちた場合、
+作りかけの取込明細は次の再処理時に自動で片付けられる（`ImportItem.import_file_id` で追跡）。
+
 ### OCR精度のPoC
 
 `poc/` に、正解ラベル付きサンプルで精度を実測する仕組みがある。
@@ -94,9 +115,20 @@ cd business-card-system/app
 ./.venv/bin/python -m pytest tests -q
 ```
 
-要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・CSV出力の監査記録・編集権限の切替）を
-37 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
-LLM抽出は HTTP トランスポートを差し替えた契約テスト）。
+要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・
+CSV出力の監査記録・編集権限の切替・ストレージ実装の切替・起動時の設定チェック・取込の再処理）を
+54 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
+LLM抽出は HTTP トランスポートを差し替えた契約テスト、S3 は moto で模擬）。
+
+同じテストを PostgreSQL に対しても実行できる（本番と同じDBで検証するため）。
+
+```bash
+createdb bcards_test
+BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcards_test" \
+  ./.venv/bin/python -m pytest tests -q
+```
+
+SQLite・PostgreSQL のいずれでも 54 件すべて通ることを確認している。
 
 ---
 
@@ -104,12 +136,21 @@ LLM抽出は HTTP トランスポートを差し替えた契約テスト）。
 
 | 変数 | 既定値 | 内容 |
 | --- | --- | --- |
+| `BCARDS_ENV` | `development` | `production` で起動時チェックを厳格にする |
 | `BCARDS_DATABASE_URL` | `sqlite:///storage/bcards.db` | データベース接続文字列 |
-| `BCARDS_STORAGE_DIR` | `storage/objects` | 画像の保存先 |
+| `BCARDS_AUTO_CREATE_TABLES` | `1` | 起動時の自動テーブル作成。**本番は `0`**（Alembic で管理） |
+| `BCARDS_DB_POOL_SIZE` / `BCARDS_DB_MAX_OVERFLOW` | `5` / `10` | PostgreSQL の接続プール |
+| `BCARDS_STORAGE_BACKEND` | `local` | `local` / `s3` |
+| `BCARDS_STORAGE_DIR` | `storage/objects` | `local` のときの保存先 |
+| `BCARDS_S3_BUCKET` / `BCARDS_S3_KEY_PREFIX` | 空 / `business-cards` | `s3` のとき必須／バケット内の接頭辞 |
+| `BCARDS_S3_REGION` / `BCARDS_S3_ENDPOINT_URL` | 空 | リージョン／MinIO 等の S3 互換ストレージ |
+| `BCARDS_S3_SSE` | `AES256` | 保存時暗号化。空文字で無効 |
 | `BCARDS_SECRET_KEY` | `dev-secret-key-change-me` | セッション署名鍵（**本番では必ず変更**） |
 | `BCARDS_SECURE_COOKIE` | `0` | HTTPS 環境では `1` |
 | `BCARDS_OCR_PROVIDER` | `tesseract` | `mock` / `tesseract` / `azure` |
 | `BCARDS_OCR_LANGUAGES` | `jpn+jpn_vert+eng` | tesseract の言語 |
+| `BCARDS_OCR_THREAD_LIMIT` | `1` | tesseract の OpenMP スレッド数。**変更非推奨**（上記参照） |
+| `BCARDS_OCR_TIMEOUT_SECONDS` | `120` | 1回のOCRの上限秒数。超えたらそのファイルはエラー |
 | `BCARDS_FIELD_EXTRACTOR` | `auto` | `rule` / `llm` / `auto` |
 | `BCARDS_LLM_MODEL` | `claude-opus-5` | LLM抽出で使うモデル |
 | `BCARDS_LLM_EFFORT` | `low` | LLM抽出のエフォート |
@@ -125,6 +166,22 @@ LLM抽出は HTTP トランスポートを差し替えた契約テスト）。
 運用中に変える値（無操作ログアウト時間、CSV大量出力の閾値、編集権限ポリシー等）は
 **管理画面のシステム設定**から変更する（DBの `app_setting` に保存され、変更履歴に残る）。
 
+`BCARDS_ENV=production` で起動すると設定を点検し、危険な設定（既定の秘密鍵、
+HTTP のままの Cookie、IP制限の無効化など）があれば**起動を中止**する。
+点検項目は [`../operations-guide.md` §4](../operations-guide.md#4-起動時の設定チェック) を参照。
+
+### スキーマ管理（Alembic）
+
+```bash
+export BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcards"
+./.venv/bin/alembic upgrade head            # 適用
+./.venv/bin/alembic current                 # 現在の版
+./.venv/bin/alembic revision --autogenerate -m "変更内容"   # モデル変更後
+```
+
+自動生成された内容は必ず目視で確認し、`alembic downgrade -1 && alembic upgrade head` で
+往復できることを確かめてから取り込む。
+
 ---
 
 ## 4. 構成
@@ -132,12 +189,18 @@ LLM抽出は HTTP トランスポートを差し替えた契約テスト）。
 ```
 app/
 ├── run.sh / seed.py / worker.py / requirements.txt
+├── alembic.ini / migrations/  スキーマのマイグレーション
+├── ops/                   運用スクリプト
+│   ├── backup.sh          DB（pg_dump）と画像の取得・世代管理
+│   ├── restore.sh         復元（チェックサム検証・件数確認つき）
+│   └── verify.py          DBの画像レコードに対する実体の有無を確認
 ├── poc/                   OCR精度の計測（サンプル生成・実行・レポート出力）
 ├── src/bcards/
 │   ├── main.py            アプリ本体・セッション/端末IDのミドルウェア・例外ハンドラ
 │   ├── config.py          環境変数による設定
 │   ├── db.py / models.py  DB接続とデータモデル（ER設計に対応）
 │   ├── security.py        パスワード(PBKDF2)・TOTP・セッション署名・IP判定
+│   ├── startup.py         起動時の設定チェック（本番で危険な設定なら起動中止）
 │   ├── deps.py            認証・権限・IP制限・CSRF
 │   ├── audit.py           監査ログ / 変更履歴の記録
 │   ├── settings_store.py  管理画面から変更できるシステム設定
@@ -152,7 +215,7 @@ app/
 │   │   ├── cards.py       登録6択・編集・論理削除・復元・完全削除・人物統合
 │   │   ├── search.py      検索条件の組み立て
 │   │   ├── csv_export.py  CSV生成と出力ログ
-│   │   └── storage.py     オブジェクトストレージ層
+│   │   └── storage.py     オブジェクトストレージ層（local / s3 を設定で切替）
 │   ├── templates/         画面（Jinja2）
 │   └── static/app.css
 └── tests/
@@ -188,15 +251,25 @@ app/
 - 名寄せ（論点D）：自動統合はせず、スコアと一致理由を提示して利用者が選択
 - 画像補正（論点G）：外周検出・台形補正・回転・明るさ・影軽減・品質警告を実装
 
-### 本番導入前に必要な作業
+### 本番導入準備の状況
 
-1. `BCARDS_SECRET_KEY` の変更と HTTPS 化（`BCARDS_SECURE_COOKIE=1`）
-2. データベースを PostgreSQL 等へ変更し、マイグレーション管理（Alembic）を導入する
-3. `services/storage.py` をクラウドのオブジェクトストレージ実装に差し替える
-4. ワーカーを別プロセス／別サーバーへ分離する（現在はアプリと同一プロセスで動作。`worker.py` で分離可能）
-5. 認証基盤（Entra ID 等）に委譲する場合は `security.py` / `routers/auth.py` を置き換える
-6. バックアップ（DB・オブジェクトストレージ）と復旧手順の整備
-7. 監査ログのアーカイブ方針（保存期間は論点H）
+| 項目 | 状況 | 内容 |
+| --- | --- | --- |
+| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全54テストを PostgreSQL 16 で確認 |
+| マイグレーション管理 | 実施済み | Alembic を導入。`upgrade` / `downgrade` の往復を確認済み |
+| オブジェクトストレージ | 実施済み | `local` / `s3`（S3互換含む）を設定で切替。S3 は moto でテスト |
+| HTTPS・鍵・プロキシ | 手順を整備 | [運用手引き §2.4–2.5](../operations-guide.md#24-秘密鍵の生成) に nginx 設定例と `BCARDS_TRUSTED_PROXIES` の指定を記載 |
+| 起動時の設定チェック | 実施済み | `BCARDS_ENV=production` で危険な設定を検出し起動を中止 |
+| 取込の並列度・性能 | 実施済み | OCRのCPU競合を解消（10分超→2.1秒）。DBトランザクションもOCR中は閉じる |
+| バックアップ・復元 | 実施済み | `ops/backup.sh` / `ops/restore.sh` / `ops/verify.py`。実機で取得→復元→検証まで確認 |
+| ワーカーの分離 | 選択可能 | `worker.py` で別プロセス化できる。既定はアプリ内スレッド |
+
+### 本番導入前に残っている作業
+
+1. 認証基盤（Entra ID 等）に委譲する場合は `security.py` / `routers/auth.py` を置き換える
+2. 監査ログのアーカイブ方針の確定（保存期間は論点H）
+3. クラウド事業者・OCRサービスの確定（論点C）と、実名刺での精度実測
+4. 復元訓練の初回実施（[運用手引き §7](../operations-guide.md#7-復元と復元訓練)）
 
 ### 現時点で未実装の項目
 

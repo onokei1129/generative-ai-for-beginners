@@ -393,6 +393,10 @@ class ImportItem(Base):
 
     import_item_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     import_job_id: Mapped[str] = mapped_column(ForeignKey("import_job.import_job_id"), index=True)
+    # どのキューファイルから作られた明細か。再処理時に前回の明細を片付けるために使う
+    import_file_id: Mapped[str | None] = mapped_column(
+        ForeignKey("import_file.import_file_id"), index=True
+    )
     source_file_name: Mapped[str] = mapped_column(String(256), nullable=False)
     page_no: Mapped[int | None] = mapped_column(Integer)
     split_index: Mapped[int | None] = mapped_column(Integer)

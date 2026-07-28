@@ -12,7 +12,8 @@ import tempfile
 from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp(prefix="bcards-test-"))
-os.environ["BCARDS_DATABASE_URL"] = f"sqlite:///{TMP / 'test.db'}"
+# 既に指定があればそれを使う（PostgreSQL に対して同じテストを流せるようにするため）
+os.environ.setdefault("BCARDS_DATABASE_URL", f"sqlite:///{TMP / 'test.db'}")
 os.environ["BCARDS_STORAGE_DIR"] = str(TMP / "objects")
 os.environ["BCARDS_SECRET_KEY"] = "test-secret"
 os.environ["BCARDS_ENFORCE_IP_RESTRICTION"] = "0"

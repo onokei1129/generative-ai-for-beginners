@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Query, Session, joinedload
 
 from ..models import BusinessCard, CardContact, Company, Person
@@ -35,23 +35,21 @@ def build_query(db: Session, params: dict[str, Any], *, include_deleted: bool = 
     keyword = (params.get("q") or "").strip()
     if keyword:
         like = f"%{keyword}%"
-        contact_subquery = (
-            db.query(CardContact.card_id)
-            .filter(CardContact.value_raw.like(like))
-            .subquery()
-        )
+        # ilike を使う。SQLite の LIKE は既定で大文字小文字を区別しないが、
+        # PostgreSQL は区別するため、DBによって検索結果が変わらないようにする。
+        contact_subquery = select(CardContact.card_id).where(CardContact.value_raw.ilike(like))
         query = query.filter(
             or_(
-                Person.last_name.like(like),
-                Person.first_name.like(like),
-                Person.last_name_kana.like(like),
-                Person.first_name_kana.like(like),
-                Company.name.like(like),
-                BusinessCard.company_name_raw.like(like),
-                BusinessCard.department_name.like(like),
-                BusinessCard.title.like(like),
-                BusinessCard.address.like(like),
-                BusinessCard.note.like(like),
+                Person.last_name.ilike(like),
+                Person.first_name.ilike(like),
+                Person.last_name_kana.ilike(like),
+                Person.first_name_kana.ilike(like),
+                Company.name.ilike(like),
+                BusinessCard.company_name_raw.ilike(like),
+                BusinessCard.department_name.ilike(like),
+                BusinessCard.title.ilike(like),
+                BusinessCard.address.ilike(like),
+                BusinessCard.note.ilike(like),
                 BusinessCard.card_id.in_(contact_subquery),
             )
         )

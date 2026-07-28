@@ -250,7 +250,18 @@ erDiagram
 
 **排他制御**：`UPDATE import_file SET status='processing' WHERE import_file_id=? AND status='queued'`
 の更新件数で取得可否を判定する。複数ワーカーが同じファイルを処理しない。
-ワーカーが落ちた場合は `locked_at` が一定時間を過ぎた行をキューへ戻す。
+PostgreSQL では取得候補の選択に `SELECT ... FOR UPDATE SKIP LOCKED` を併用し、
+他ワーカーが掴んでいる行を待たずに飛ばす。
+
+**ワーカー障害時**：`locked_at` が `worker_lease_seconds`（既定600秒）を過ぎた行はキューへ戻る。
+`attempts` が3回に達した行はエラーとして確定する。
+
+**トランザクションの境界**：OCRは1枚あたり数秒かかるため、その間はDBトランザクションを開いたままにしない
+（PostgreSQL に `idle in transaction` の接続が滞留し、VACUUM が進まなくなるため）。
+このため OCR 前に確定した「作りかけの `import_item`」がDBに残りうる。
+再処理時は `import_item.import_file_id` を手がかりに、未登録（`card_id IS NULL`）の明細と
+その `ocr_result` / `card_image` を削除してからやり直す。登録済みの明細は名刺本体から
+参照されているため削除しない。
 
 #### `import_job`（取込ジョブ）
 
@@ -268,6 +279,7 @@ erDiagram
 | --- | --- | --- | --- |
 | import_item_id | UUID | ✕ | PK |
 | import_job_id | UUID | ✕ | 親ジョブ |
+| import_file_id | UUID | ○ | 由来するキューファイル。再処理時に前回の作りかけ明細を特定するために持つ |
 | source_file_name | VARCHAR(256) | ✕ | 元ファイル名 |
 | page_no | INT | ○ | PDF内ページ（§4 PDF分割） |
 | split_index | INT | ○ | 1画像内の複数名刺の分割番号（§4） |

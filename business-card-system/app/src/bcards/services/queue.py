@@ -69,12 +69,15 @@ def claim_next(db: Session, worker_id: str) -> ImportFile | None:
     UPDATE の WHERE 句に status を含めることで、複数ワーカーが
     同じ行を取得しないようにしている（取得できた行数で判定）。
     """
-    candidate = (
+    query = (
         db.query(ImportFile)
         .filter(ImportFile.status == FILE_QUEUED)
         .order_by(ImportFile.created_at)
-        .first()
     )
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        # 他ワーカーが掴んでいる行を待たずに飛ばす（SQLiteは行ロックを持たないため使わない）
+        query = query.with_for_update(skip_locked=True)
+    candidate = query.first()
     if candidate is None:
         return None
 

@@ -3,7 +3,9 @@
 <h1>ストレージ・利用状況</h1>
 <div class="panel">
   <div class="progress"><div style="width: {{ [percent, 100]|min }}%"></div></div>
-  <p class="small">使用 {{ used_mb }}MB / 契約容量 {{ quota_mb }}MB（{{ percent }}%） / ディスク空き {{ free_mb }}MB</p>
+  <p class="small">使用 {{ used_mb }}MB / 契約容量 {{ quota_mb }}MB（{{ percent }}%）
+    {% if free_mb is not none %}/ ディスク空き {{ free_mb }}MB{% endif %}
+    <span class="muted">/ 保存先: {{ backend }}</span></p>
 </div>
 <div class="table-wrap">
   <table>

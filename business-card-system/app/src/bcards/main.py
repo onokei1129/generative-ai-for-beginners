@@ -16,6 +16,7 @@ from .models import Device, User, utcnow
 from .routers import admin, auth, cards, exports, home, imports
 from .security import dump_session, load_session
 from .settings_store import get_setting
+from .startup import verify_startup_configuration
 from .web import render
 
 MAX_SESSION_AGE = 12 * 60 * 60  # 署名の絶対上限。無操作タイムアウトは別途判定する
@@ -23,6 +24,7 @@ MAX_SESSION_AGE = 12 * 60 * 60  # 署名の絶対上限。無操作タイムア�
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    verify_startup_configuration()
     init_db()
     pool = None
     if settings.worker_enabled:

@@ -1,7 +1,12 @@
 """オブジェクトストレージ層。
 
-ローカルファイルシステムに保存する実装。本番では S3 / Blob Storage / Cloud Storage に
-置き換える（このモジュールの関数シグネチャを保てばアプリ側の変更は不要）。
+BCARDS_STORAGE_BACKEND で実装を切り替える。
+
+    local : ローカルファイルシステム（開発・単一サーバー用。既定）
+    s3    : Amazon S3 および S3 互換ストレージ（MinIO 等）
+
+Azure Blob / Google Cloud Storage を使う場合も、StorageBackend を実装して
+_BACKENDS に登録すれば、アプリ側の呼び出しは変更しなくてよい。
 """
 
 from __future__ import annotations
@@ -10,45 +15,188 @@ import hashlib
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 from ..config import settings
 
 
-def _path_for(key: str) -> Path:
-    path = (settings.storage_dir / key).resolve()
-    root = settings.storage_dir.resolve()
-    if not str(path).startswith(str(root)):
-        raise ValueError("不正なストレージキーです。")
-    return path
+class StorageBackend(Protocol):
+    def put_bytes(self, data: bytes, *, suffix: str, prefix: str) -> str: ...
+
+    def get_bytes(self, key: str) -> bytes: ...
+
+    def exists(self, key: str) -> bool: ...
+
+    def delete(self, key: str) -> None: ...
+
+    def total_bytes(self) -> int: ...
+
+    def free_space_bytes(self) -> int | None: ...
+
+
+def build_key(data: bytes, *, suffix: str, prefix: str) -> str:
+    """内容ハッシュに基づくキー。同じ画像を二重に保存しない。"""
+    digest = hashlib.sha256(data).hexdigest()
+    today = datetime.now().strftime("%Y/%m/%d")
+    return f"{prefix}/{today}/{digest[:32]}{suffix}"
+
+
+class LocalStorageBackend:
+    """ローカルファイルシステム。"""
+
+    name = "local"
+
+    def __init__(self, root: Path | None = None) -> None:
+        self.root = (root or settings.storage_dir).resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _path_for(self, key: str) -> Path:
+        path = (self.root / key).resolve()
+        if not str(path).startswith(str(self.root)):
+            raise ValueError("不正なストレージキーです。")
+        return path
+
+    def put_bytes(self, data: bytes, *, suffix: str, prefix: str) -> str:
+        key = build_key(data, suffix=suffix, prefix=prefix)
+        path = self._path_for(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_bytes(data)
+        return key
+
+    def get_bytes(self, key: str) -> bytes:
+        return self._path_for(key).read_bytes()
+
+    def get_path(self, key: str) -> Path:
+        return self._path_for(key)
+
+    def exists(self, key: str) -> bool:
+        return self._path_for(key).exists()
+
+    def delete(self, key: str) -> None:
+        path = self._path_for(key)
+        if path.exists():
+            path.unlink()
+
+    def total_bytes(self) -> int:
+        return sum(path.stat().st_size for path in self.root.rglob("*") if path.is_file())
+
+    def free_space_bytes(self) -> int | None:
+        return shutil.disk_usage(self.root).free
+
+
+class S3StorageBackend:
+    """Amazon S3 / S3互換ストレージ。
+
+    認証情報は boto3 の標準的な解決順（環境変数・インスタンスロール等）に従う。
+    アプリにアクセスキーを直接持たせず、IAMロールを使う運用を推奨する。
+    """
+
+    name = "s3"
+
+    def __init__(self, bucket: str | None = None, key_prefix: str | None = None) -> None:
+        import boto3
+
+        self.bucket = bucket or settings.s3_bucket
+        if not self.bucket:
+            raise RuntimeError("BCARDS_S3_BUCKET が設定されていません。")
+        self.key_prefix = (key_prefix if key_prefix is not None else settings.s3_key_prefix).strip("/")
+        client_args: dict = {}
+        if settings.s3_endpoint_url:  # MinIO 等のS3互換ストレージ
+            client_args["endpoint_url"] = settings.s3_endpoint_url
+        if settings.s3_region:
+            client_args["region_name"] = settings.s3_region
+        self.client = boto3.client("s3", **client_args)
+
+    def _full_key(self, key: str) -> str:
+        return f"{self.key_prefix}/{key}" if self.key_prefix else key
+
+    def put_bytes(self, data: bytes, *, suffix: str, prefix: str) -> str:
+        key = build_key(data, suffix=suffix, prefix=prefix)
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self._full_key(key),
+            Body=data,
+            **({"ServerSideEncryption": settings.s3_sse} if settings.s3_sse else {}),
+        )
+        return key
+
+    def get_bytes(self, key: str) -> bytes:
+        response = self.client.get_object(Bucket=self.bucket, Key=self._full_key(key))
+        return response["Body"].read()
+
+    def exists(self, key: str) -> bool:
+        from botocore.exceptions import ClientError
+
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=self._full_key(key))
+            return True
+        except ClientError:
+            return False
+
+    def delete(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=self._full_key(key))
+
+    def total_bytes(self) -> int:
+        paginator = self.client.get_paginator("list_objects_v2")
+        total = 0
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=self.key_prefix or ""):
+            for obj in page.get("Contents", []):
+                total += obj["Size"]
+        return total
+
+    def free_space_bytes(self) -> int | None:
+        return None  # オブジェクトストレージに空き容量の概念はない
+
+
+_BACKENDS = {"local": LocalStorageBackend, "s3": S3StorageBackend}
+
+_backend: StorageBackend | None = None
+
+
+def get_backend() -> StorageBackend:
+    global _backend
+    if _backend is None:
+        factory = _BACKENDS.get((settings.storage_backend or "local").lower())
+        if factory is None:
+            raise ValueError(f"未知のストレージ実装です: {settings.storage_backend}")
+        _backend = factory()
+    return _backend
+
+
+def set_backend(backend: StorageBackend | None) -> None:
+    """テストや切り替え用。None を渡すと設定から作り直す。"""
+    global _backend
+    _backend = backend
+
+
+# --------------------------------------------------------------------------
+# アプリから使う関数（実装の違いを吸収する）
+# --------------------------------------------------------------------------
 
 
 def put_bytes(data: bytes, *, suffix: str, prefix: str = "cards") -> str:
-    digest = hashlib.sha256(data).hexdigest()
-    today = datetime.now().strftime("%Y/%m/%d")
-    key = f"{prefix}/{today}/{digest[:32]}{suffix}"
-    path = _path_for(key)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.write_bytes(data)
-    return key
+    return get_backend().put_bytes(data, suffix=suffix, prefix=prefix)
 
 
 def get_bytes(key: str) -> bytes:
-    return _path_for(key).read_bytes()
+    return get_backend().get_bytes(key)
 
 
 def get_path(key: str) -> Path:
-    return _path_for(key)
+    """ローカル保存時のみ利用できる。オブジェクトストレージでは使わない。"""
+    backend = get_backend()
+    if not isinstance(backend, LocalStorageBackend):
+        raise NotImplementedError("このストレージ実装にはローカルパスがありません。")
+    return backend.get_path(key)
 
 
 def exists(key: str) -> bool:
-    return _path_for(key).exists()
+    return get_backend().exists(key)
 
 
 def delete(key: str) -> None:
-    path = _path_for(key)
-    if path.exists():
-        path.unlink()
+    get_backend().delete(key)
 
 
 def checksum(data: bytes) -> str:
@@ -56,13 +204,8 @@ def checksum(data: bytes) -> str:
 
 
 def total_bytes() -> int:
-    total = 0
-    for path in settings.storage_dir.rglob("*"):
-        if path.is_file():
-            total += path.stat().st_size
-    return total
+    return get_backend().total_bytes()
 
 
-def free_space_bytes() -> int:
-    usage = shutil.disk_usage(settings.storage_dir)
-    return usage.free
+def free_space_bytes() -> int | None:
+    return get_backend().free_space_bytes()

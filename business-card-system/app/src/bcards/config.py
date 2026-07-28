@@ -22,11 +22,24 @@ def _env_bool(key: str, default: bool) -> bool:
 
 
 class Settings:
+    # 実行環境（development / production）。production では起動時チェックを厳格にする
+    env: str = _env("BCARDS_ENV", "development")
+
     # データベース
     database_url: str = _env("BCARDS_DATABASE_URL", f"sqlite:///{APP_DIR / 'storage' / 'bcards.db'}")
+    # 本番では Alembic で管理するため 0 にする（起動時の自動テーブル作成を止める）
+    auto_create_tables: bool = _env_bool("BCARDS_AUTO_CREATE_TABLES", True)
+    db_pool_size: int = int(_env("BCARDS_DB_POOL_SIZE", "5"))
+    db_max_overflow: int = int(_env("BCARDS_DB_MAX_OVERFLOW", "10"))
 
-    # オブジェクトストレージ相当（本番ではS3/Blob/GCSに置き換える。services/storage.py 参照）
+    # オブジェクトストレージ（local / s3。services/storage.py 参照）
+    storage_backend: str = _env("BCARDS_STORAGE_BACKEND", "local")
     storage_dir: Path = Path(_env("BCARDS_STORAGE_DIR", str(APP_DIR / "storage" / "objects")))
+    s3_bucket: str = _env("BCARDS_S3_BUCKET", "")
+    s3_key_prefix: str = _env("BCARDS_S3_KEY_PREFIX", "business-cards")
+    s3_region: str = _env("BCARDS_S3_REGION", "")
+    s3_endpoint_url: str = _env("BCARDS_S3_ENDPOINT_URL", "")  # MinIO等のS3互換ストレージ用
+    s3_sse: str = _env("BCARDS_S3_SSE", "AES256")  # 保存時暗号化。空文字で無効
 
     # セッション
     secret_key: str = _env("BCARDS_SECRET_KEY", "dev-secret-key-change-me")
@@ -37,6 +50,11 @@ class Settings:
     # OCR プロバイダ: mock / tesseract / azure
     ocr_provider: str = _env("BCARDS_OCR_PROVIDER", "tesseract")
     ocr_languages: str = _env("BCARDS_OCR_LANGUAGES", "jpn+jpn_vert+eng")
+    # tesseract が使うOpenMPスレッド数。ワーカーを複数動かす場合、既定のまま
+    # （＝CPU数）にすると各プロセスがCPUを奪い合って極端に遅くなる（app/README.md 参照）。
+    ocr_thread_limit: int = int(_env("BCARDS_OCR_THREAD_LIMIT", "1"))
+    # 1回のOCR呼び出しの上限秒数。超えるとそのファイルはエラーにして次へ進む
+    ocr_timeout_seconds: int = int(_env("BCARDS_OCR_TIMEOUT_SECONDS", "120"))
 
     # Azure AI Document Intelligence を使う場合のみ設定（services/ocr/providers.py）
     azure_di_endpoint: str = _env("BCARDS_AZURE_DI_ENDPOINT", "")

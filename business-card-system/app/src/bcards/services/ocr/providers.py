@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import time
 from typing import Any
 
@@ -77,6 +78,19 @@ class MockOcrProvider:
         )
 
 
+def _limit_tesseract_threads() -> None:
+    """tesseract 子プロセスのOpenMPスレッド数を制限する。
+
+    tesseract は既定でCPU数ぶんのスレッドを使う。ワーカーを2並列で動かすと
+    4コアのサーバーでも 2×CPU数 のスレッドが同時に走り、コンテキストスイッチで
+    かえって遅くなる（実測: 1枚あたり 2.9秒 → 100秒超で滞留）。
+    pytesseract は子プロセスに os.environ をそのまま渡すため、ここで設定する。
+    """
+    limit = settings.ocr_thread_limit
+    if limit > 0:
+        os.environ["OMP_THREAD_LIMIT"] = str(limit)
+
+
 class TesseractOcrProvider:
     """ローカルの tesseract を使う。画像を外部サービスへ送信しない構成。"""
 
@@ -84,6 +98,7 @@ class TesseractOcrProvider:
 
     def __init__(self, languages: str | None = None) -> None:
         self.languages = languages or settings.ocr_languages
+        _limit_tesseract_threads()
 
     def recognize(self, image: Image.Image) -> OcrOutput:
         import pytesseract
@@ -96,6 +111,7 @@ class TesseractOcrProvider:
                 lang=self.languages,
                 config=f"--psm {psm}",
                 output_type=pytesseract.Output.DICT,
+                timeout=settings.ocr_timeout_seconds,
             )
             lines = self._to_lines(data)
             text = "\n".join(lines)
