@@ -24,7 +24,7 @@
 2. **open-issues-v0.3.md** — 決めないと先に進めない事項。まずここを決裁する
 3. **data-model-v0.3.md** — データ構造。論点A・C・D の決定を反映して確定する
 4. **screens-and-functions-v0.3.md** — 画面・機能への展開。見積の入力とする
-5. **personal-data-handling-v0.3.md** — 個人情報の取扱い。**5章の確認事項#3・#4は論点Cより先に決める**
+5. **personal-data-handling-v0.3.md** — 個人情報の取扱い。5章が法務／総務への確認事項の一覧
 6. **ocr-poc-report.md** — OCR精度の実測結果。論点Cの判断材料
 7. **app/README.md** — 実装の起動方法・構成・要件との対応
 8. **operations-guide.md** — 本番環境の構築と運用（システム管理者向け）
