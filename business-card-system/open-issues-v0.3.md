@@ -387,9 +387,9 @@ ANTHROPIC_API_KEY=... .venv/bin/python poc/runner.py \
 
 ### 出典（調査に用いた情報）
 
-- [Migrate to v4.0 — Azure AI Document Intelligence](https://docs.azure.cn/en-us/ai-services/document-intelligence/versioning/v3-1-migration-guide?view=doc-intel-4.0.0)
-- [Document Processing Models — Azure AI Document Intelligence](https://docs.azure.cn/en-us/ai-services/document-intelligence/model-overview?view=doc-intel-4.0.0)
-- [Azure Form Recognizer — Deprecating Business Card (Microsoft Q&A)](https://learn.microsoft.com/en-us/answers/questions/1520709/azure-form-recognizer-document-intelligence-studio)
-- [What's new in Azure Document Intelligence](https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/whats-new?view=doc-intel-4.0.0)
+- [Migrate to v4.0 — Azure AI Document Intelligence](https://learn.microsoft.com/azure/ai-services/document-intelligence/versioning/v3-1-migration-guide?view=doc-intel-4.0.0)
+- [Document Processing Models — Azure AI Document Intelligence](https://learn.microsoft.com/azure/ai-services/document-intelligence/model-overview?view=doc-intel-4.0.0)
+- [Azure Form Recognizer — Deprecating Business Card (Microsoft Q&A)](https://learn.microsoft.com/answers/questions/1520709/azure-form-recognizer-document-intelligence-studio)
+- [What's new in Azure Document Intelligence](https://learn.microsoft.com/azure/ai-services/document-intelligence/whats-new?view=doc-intel-4.0.0)
 - [OCR（文字認識）API比較と活用ガイド【Google・AWS・Azure・Tesseract】](https://api-zukan.com/blog/ocr-api-comparison)
 - [Google Document AIとは？導入から日本語請求書の精度、活用方法まで](https://www.samox.co.jp/media/2025/10/29/google-document-ai%E3%81%A8%E3%81%AF%EF%BC%9F%E5%B0%8E%E5%85%A5%E3%81%8B%E3%82%89%E6%97%A5%E6%9C%AC%E8%AA%9E%E8%AB%8B%E6%B1%82%E6%9B%B8%E3%81%AE%E7%B2%BE%E5%BA%A6%E3%80%81%E6%B4%BB%E7%94%A8%E6%96%B9/)
