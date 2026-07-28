@@ -207,6 +207,27 @@ ScanSnap の保存先のように名刺と領収書が混在したフォルダ�
 実データで測る場合は、対象フォルダに `_truth.csv`（`file,truth` の2列。
 `truth` は `business_card` / `receipt`）を用意すれば同じコマンドが使える。
 
+#### まず試す（実名刺も tesseract も不要）
+
+練習用の名刺・領収書サンプルを生成して、仕分けとラベル入力を試せる。
+正解ラベル（`.json`）は作られないので、入力画面の使い勝手をそのまま確認できる。
+
+```bash
+# 練習用サンプルを28枚（名刺16・領収書12）生成する
+./.venv/bin/python -m poc.receipts --out ./poc/practice
+
+# ラベル入力を試す → http://127.0.0.1:8100/
+./.venv/bin/python poc/label.py ./poc/practice
+```
+
+生成だけなら tesseract は不要。仕分け（`classify.py`）を試す場合のみ tesseract が要る。
+`poc/practice/_truth.csv` に名刺／領収書の正解が入っているので、
+仕分けの正答率もその場で確認できる。
+
+```bash
+./.venv/bin/python -m poc.classify_eval ./poc/practice
+```
+
 #### 実名刺に正解ラベルを付ける
 
 OCR精度を実データで測るには、名刺ごとの**正解**が要る。入力用の画面を用意している。
