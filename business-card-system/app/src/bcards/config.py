@@ -65,6 +65,13 @@ class Settings:
     # IP制限を強制するか（開発時は 0 にして無効化できる）
     enforce_ip_restriction: bool = _env_bool("BCARDS_ENFORCE_IP_RESTRICTION", True)
 
+    # X-Forwarded-For を信用してよいプロキシのCIDR（カンマ区切り）。
+    # 未設定の場合はヘッダを一切信用せず、TCP接続元のアドレスを使う。
+    # ロードバランサやリバースプロキシの背後で動かす場合のみ設定する。
+    trusted_proxy_cidrs: list[str] = [
+        cidr.strip() for cidr in _env("BCARDS_TRUSTED_PROXIES", "").split(",") if cidr.strip()
+    ]
+
 
 settings = Settings()
 settings.storage_dir.mkdir(parents=True, exist_ok=True)

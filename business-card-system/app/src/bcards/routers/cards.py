@@ -18,7 +18,7 @@ from ..models import (
     User,
 )
 from ..services import storage
-from ..services.cards import register_card, soft_delete_card, update_card
+from ..services.cards import can_edit, register_card, soft_delete_card, update_card
 from ..services.search import build_query, describe_conditions
 from ..settings_store import get_setting
 from ..web import render
@@ -26,16 +26,6 @@ from ..web import render
 router = APIRouter()
 
 PAGE_SIZE = 20
-
-
-def can_edit(db: Session, card: BusinessCard, user: User) -> bool:
-    """編集権限（要件§7 / open-issues 論点A）。設定で方式を切り替える。"""
-    policy = get_setting(db, "card_edit_policy")
-    if user.is_admin:
-        return True
-    if policy == "all_users":
-        return True
-    return card.created_by == user.user_id
 
 
 def _form_fields(form: dict[str, str]) -> dict[str, str]:

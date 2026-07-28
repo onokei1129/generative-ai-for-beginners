@@ -94,7 +94,7 @@ cd business-card-system/app
 ```
 
 要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・CSV出力の監査記録・編集権限の切替）を
-23 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、LLM抽出は無効）。
+30 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、LLM抽出は無効）。
 
 ---
 
@@ -116,6 +116,7 @@ cd business-card-system/app
 | `BCARDS_WORKER_LEASE_SECONDS` | `600` | 処理中とみなす上限（超過でキューへ戻す） |
 | `BCARDS_AZURE_DI_ENDPOINT` / `BCARDS_AZURE_DI_KEY` | 空 | Azure OCR 利用時のみ |
 | `BCARDS_ENFORCE_IP_RESTRICTION` | `1` | `0` でIP制限を無効化（開発用） |
+| `BCARDS_TRUSTED_PROXIES` | 空 | `X-Forwarded-For` を信用するプロキシのCIDR（カンマ区切り）。**未設定ならヘッダを信用せずTCP接続元を使う**（IP制限の詐称防止） |
 | `BCARDS_STORAGE_QUOTA_BYTES` | 50GB | 容量アラートの分母 |
 | `BCARDS_DISPLAY_MAX_EDGE` | `1600` | 表示用画像の長辺 |
 

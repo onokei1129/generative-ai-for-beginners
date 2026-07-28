@@ -21,7 +21,7 @@ from ..models import (
     User,
     utcnow,
 )
-from ..services.cards import register_card
+from ..services.cards import can_edit, register_card
 from ..services.dedupe import find_candidates
 from ..services.importer import latest_ocr, retry_item
 from ..services.queue import enqueue_files, queue_stats
@@ -161,6 +161,16 @@ async def register_item(item_id: str, request: Request, db: Session = Depends(ge
     verify_csrf(request, form.get("csrf_token"))
     action = form.get("action") or "new_person"
 
+    # 二重送信・再読み込みで同じ明細が二重に登録されないようにする
+    if item.status == ITEM_REGISTERED:
+        return RedirectResponse(
+            f"/cards/{item.card_id}?msg=この取込は既に登録済みです。", status_code=303
+        )
+    if item.status != ITEM_REVIEW:
+        return RedirectResponse(
+            f"/imports/items/{item_id}?err=この明細は確認待ちではないため登録できません。", status_code=303
+        )
+
     if action == "cancel":
         item.chosen_action = "cancel"
         item.status = ITEM_ERROR
@@ -184,8 +194,21 @@ async def register_item(item_id: str, request: Request, db: Session = Depends(ge
 
     if action in ("add_to_person", "overwrite", "replace", "keep_history") and not person_id:
         return RedirectResponse(f"/imports/items/{item_id}?err=対象の人物を選択してください。", status_code=303)
-    if action in ("overwrite", "replace") and not target_card_id:
-        return RedirectResponse(f"/imports/items/{item_id}?err=対象の名刺を選択してください。", status_code=303)
+    if action in ("overwrite", "replace"):
+        if not target_card_id:
+            return RedirectResponse(f"/imports/items/{item_id}?err=対象の名刺を選択してください。", status_code=303)
+        # 上書き・置換は既存の名刺を書き換える操作なので、通常の編集と同じ権限を要求する
+        target = db.get(BusinessCard, target_card_id)
+        if target is None or target.deleted_at is not None:
+            return RedirectResponse(
+                f"/imports/items/{item_id}?err=対象の名刺が見つかりません。", status_code=303
+            )
+        if target.person_id != person_id:
+            return RedirectResponse(
+                f"/imports/items/{item_id}?err=選択した人物の名刺ではありません。", status_code=303
+            )
+        if not can_edit(db, target, user):
+            raise HTTPException(status_code=403, detail="この名刺を上書き・置換する権限がありません。")
 
     image_ids = [
         image.card_image_id

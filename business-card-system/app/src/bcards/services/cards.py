@@ -22,6 +22,18 @@ from .ocr.parser import normalize_company, normalize_name, normalize_phone
 
 CONTACT_FIELDS = (("tel", "tel"), ("mobile", "mobile"), ("fax", "fax"), ("email", "email"), ("url", "url"))
 
+
+def can_edit(db: Session, card: BusinessCard, user: User) -> bool:
+    """編集権限（要件§7 / open-issues 論点A）。設定で方式を切り替える。"""
+    from ..settings_store import get_setting
+
+    if user.is_admin:
+        return True
+    if get_setting(db, "card_edit_policy") == "all_users":
+        return True
+    return card.created_by == user.user_id
+
+
 CARD_TEXT_FIELDS = (
     "company_name_raw",
     "department_name",
@@ -369,17 +381,45 @@ def restore_card(db: Session, request: Request, user: User, card: BusinessCard, 
 
 
 def purge_card(db: Session, request: Request, user: User, card: BusinessCard, reason: str | None) -> None:
-    """完全削除（管理者のみ）。監査ログと変更履歴は残す（要件§10）。"""
+    """完全削除（管理者のみ）。監査ログと変更履歴は残す（要件§10）。
+
+    画像はレコードと実体の両方を削除する。完全削除は「もう取り出せない状態にする」
+    ことが目的のため、画像を残すと目的を満たさない。
+    """
+    from . import storage
+
     snapshot = card_snapshot(card)
     card_id = card.card_id
     person = card.person
 
-    for image in db.query(CardImage).filter(CardImage.card_id == card_id).all():
-        image.card_id = None
+    from ..models import ImportItem
+
+    # 取込明細がこの名刺を参照していると外部キー制約に触れるため、先に外す
+    for item in db.query(ImportItem).filter(ImportItem.card_id == card_id).all():
+        item.card_id = None
+
+    images = db.query(CardImage).filter(CardImage.card_id == card_id).all()
+    image_ids = [image.card_image_id for image in images]
+    storage_keys = {image.storage_key for image in images}
+    for image in images:
+        db.delete(image)
     for contact in list(card.contacts):
         db.delete(contact)
     db.delete(card)
     db.flush()
+
+    # 同じ内容の画像は同一キーで保存されるため、他の名刺が参照していない場合だけ実体を消す
+    for key in storage_keys:
+        still_used = (
+            db.query(CardImage)
+            .filter(CardImage.storage_key == key, CardImage.card_image_id.notin_(image_ids))
+            .count()
+        )
+        if not still_used:
+            try:
+                storage.delete(key)
+            except Exception:  # 実体が既に無い場合も削除は続行する
+                pass
 
     if person and person.latest_card_id == card_id:
         replacement = (

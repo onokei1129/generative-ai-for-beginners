@@ -14,10 +14,26 @@ from .models import AuditLog, ChangeHistory, User
 
 
 def client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """接続元IPを求める（要件§6のアクセス制限とログの根拠になる値）。
+
+    X-Forwarded-For は利用者が自由に付けられるため、そのまま信用するとIP制限を
+    回避されてしまう。信頼できるプロキシ（BCARDS_TRUSTED_PROXIES）経由の接続に
+    限り、ヘッダの中で最も外側にある「信頼できないアドレス」を採用する。
+    """
+    from .config import settings
+    from .security import ip_in_cidrs
+
+    peer = request.client.host if request.client else "unknown"
+    trusted = settings.trusted_proxy_cidrs
+    if not trusted or not ip_in_cidrs(peer, trusted):
+        return peer
+
+    forwarded = request.headers.get("x-forwarded-for") or ""
+    chain = [part.strip() for part in forwarded.split(",") if part.strip()]
+    for candidate in reversed(chain):
+        if not ip_in_cidrs(candidate, trusted):
+            return candidate
+    return peer
 
 
 def os_from_user_agent(user_agent: str | None) -> str | None:

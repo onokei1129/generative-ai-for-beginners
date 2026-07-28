@@ -117,6 +117,7 @@ def requeue_stale(db: Session, lease_seconds: int | None = None) -> int:
         .filter(ImportFile.status == FILE_PROCESSING, ImportFile.locked_at < cutoff)
         .all()
     )
+    affected_jobs: set[str] = set()
     for import_file in stale:
         if import_file.attempts >= MAX_ATTEMPTS:
             import_file.status = FILE_ERROR
@@ -128,7 +129,14 @@ def requeue_stale(db: Session, lease_seconds: int | None = None) -> int:
             import_file.status = FILE_QUEUED
             import_file.locked_by = None
             import_file.locked_at = None
+        affected_jobs.add(import_file.import_job_id)
+
     if stale:
+        db.flush()
+        # 打ち切りになったファイルがある場合、ジョブが processing のまま残ると
+        # 取込ジョブ画面が自動更新を続けてしまうため、ここで状態を確定させる
+        for job_id in affected_jobs:
+            refresh_job_status(db, job_id)
         db.commit()
     return len(stale)
 

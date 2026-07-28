@@ -59,6 +59,12 @@ async def export_csv(request: Request, db: Session = Depends(get_db), user: User
         "sort": data.get("sort"),
     }
     if scope == "selected":
+        # 未選択のまま送信された場合に全件出力になってしまわないよう、ここで止める
+        if not card_ids:
+            return RedirectResponse(
+                "/cards?err=出力する名刺が選択されていません。チェックを付けてから実行してください。",
+                status_code=303,
+            )
         params["card_ids"] = card_ids
     elif scope == "all":
         params = {"sort": data.get("sort")}

@@ -534,3 +534,191 @@ def test_import_status_page_shows_queue(client):
     page = client.get("/imports")
     assert page.status_code == 200
     assert "キュー待ち" in page.text
+
+
+# --------------------------------------------------------------------------
+# レビュー指摘への対応（PR #1）
+# --------------------------------------------------------------------------
+
+
+def test_purge_deletes_stored_images(client):
+    """完全削除では画像レコードと実体も消す（残っていると取り出せてしまう）。"""
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+    drain_queue()
+    with SessionLocal() as db:
+        item_id = db.query(ImportItem).first().import_item_id
+    client.post(
+        f"/imports/items/{item_id}/register",
+        data={"csrf_token": token, "action": "new_person", "last_name": "山田", "first_name": "太郎"},
+    )
+
+    from bcards.services import storage
+
+    with SessionLocal() as db:
+        card_id = db.query(ImportItem).first().card_id
+        keys = [i.storage_key for i in db.query(CardImage).filter(CardImage.card_id == card_id).all()]
+    assert keys and all(storage.exists(key) for key in keys)
+
+    client.post(f"/cards/{card_id}/delete", data={"csrf_token": token, "reason": "テスト"})
+    client.post("/logout", data={"csrf_token": token})
+    login(client, "admin", "AdminPass123!")
+    admin_token = csrf_of(client)
+    client.post(f"/admin/deleted/{card_id}/purge", data={"csrf_token": admin_token, "reason": "完全削除テスト"})
+
+    with SessionLocal() as db:
+        assert db.query(CardImage).filter(CardImage.card_id == card_id).count() == 0
+    assert not any(storage.exists(key) for key in keys)  # 実体も消えている
+
+
+def test_forwarded_header_is_not_trusted_by_default(client):
+    """信頼できるプロキシを設定していない環境では X-Forwarded-For を採用しない。
+
+    採用してしまうと、社外から社内IPを詐称して要件§6のIP制限を回避できてしまう。
+    """
+    client.post(
+        "/login",
+        data={"login_id": "member", "password": "MemberPass123!"},
+        headers={"X-Forwarded-For": "203.0.113.9"},
+    )
+    with SessionLocal() as db:
+        attempt = db.query(LoginAttempt).order_by(LoginAttempt.attempted_at.desc()).first()
+        assert attempt.ip_address != "203.0.113.9"
+
+
+def test_forwarded_header_is_used_behind_trusted_proxy(monkeypatch):
+    """信頼できるプロキシ経由であればヘッダの値を使う。"""
+    from fastapi.testclient import TestClient
+
+    from bcards.config import settings
+    from bcards.main import app
+
+    monkeypatch.setattr(settings, "trusted_proxy_cidrs", ["10.0.0.0/8"])
+    with TestClient(app, client=("10.0.0.5", 12345)) as proxied:
+        proxied.post(
+            "/login",
+            data={"login_id": "member", "password": "MemberPass123!"},
+            headers={"X-Forwarded-For": "198.51.100.7, 10.0.0.1"},
+        )
+    with SessionLocal() as db:
+        attempt = db.query(LoginAttempt).order_by(LoginAttempt.attempted_at.desc()).first()
+        assert attempt.ip_address == "198.51.100.7"
+
+
+def test_import_overwrite_requires_edit_permission(client):
+    """取込からの上書きにも、通常の編集と同じ権限判定を適用する。"""
+    login(client, "admin", "AdminPass123!")
+    admin_token = csrf_of(client)
+    card_id = _register_card(client, admin_token)
+    with SessionLocal() as db:
+        person_id = db.get(BusinessCard, card_id).person_id
+    client.post("/logout", data={"csrf_token": admin_token})
+
+    from bcards.settings_store import set_setting
+
+    with SessionLocal() as db:
+        set_setting(db, "card_edit_policy", "owner_and_admin", None)
+        db.commit()
+
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+    drain_queue()
+    with SessionLocal() as db:
+        item_id = db.query(ImportItem).first().import_item_id
+
+    response = client.post(
+        f"/imports/items/{item_id}/register",
+        data={
+            "csrf_token": token,
+            "action": "overwrite",
+            "person_id": person_id,
+            "target_card_id": card_id,
+            "last_name": "乗っ取り",
+        },
+    )
+    assert response.status_code == 403
+    with SessionLocal() as db:
+        assert db.get(BusinessCard, card_id).person.last_name == "山田"  # 書き換えられていない
+
+
+def test_import_registration_is_not_repeatable(client):
+    """二重送信で同じ取込明細が2枚の名刺になることを防ぐ。"""
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+    drain_queue()
+    with SessionLocal() as db:
+        item_id = db.query(ImportItem).first().import_item_id
+
+    payload = {"csrf_token": token, "action": "new_person", "last_name": "山田", "first_name": "太郎"}
+    client.post(f"/imports/items/{item_id}/register", data=payload)
+    with SessionLocal() as db:
+        first_card_id = db.query(ImportItem).first().card_id
+        assert db.query(BusinessCard).count() == 1
+
+    client.post(f"/imports/items/{item_id}/register", data=payload)  # 再送信
+    with SessionLocal() as db:
+        assert db.query(BusinessCard).count() == 1
+        assert db.query(ImportItem).first().card_id == first_card_id
+
+
+def test_empty_selection_does_not_export_everything(client):
+    """未選択のままCSV出力すると全件出てしまう事故を防ぐ。"""
+    login(client)
+    token = csrf_of(client)
+    _register_card(client, token)
+
+    response = client.post(
+        "/export",
+        data={"csrf_token": token, "scope": "selected", "columns": "person_name"},
+        follow_redirects=False,
+    )
+    from urllib.parse import unquote
+
+    assert response.status_code == 303
+    assert "選択されていません" in unquote(response.headers["location"])
+    with SessionLocal() as db:
+        assert db.query(CsvExportLog).count() == 0  # 出力されていない
+
+
+def test_exhausted_retries_finish_the_job(client):
+    """再試行を使い切ったファイルがあってもジョブが処理中のまま残らない。"""
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+
+    from datetime import timedelta
+
+    from bcards.models import utcnow
+    from bcards.services.queue import MAX_ATTEMPTS, claim_next, requeue_stale
+
+    with SessionLocal() as db:
+        import_file = claim_next(db, "dead-worker")
+        import_file.attempts = MAX_ATTEMPTS
+        import_file.locked_at = utcnow() - timedelta(hours=1)
+        db.commit()
+
+        assert requeue_stale(db, lease_seconds=60) == 1
+        db.refresh(import_file)
+        assert import_file.status == "error"
+        job = db.get(ImportJob, import_file.import_job_id)
+        assert job.status == "failed"
+        assert job.is_finished is True  # 画面の自動更新が止まる
