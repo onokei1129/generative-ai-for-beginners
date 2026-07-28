@@ -22,6 +22,10 @@ from ..models import (
     FILE_ERROR,
     FILE_PROCESSING,
     FILE_QUEUED,
+    ITEM_ERROR,
+    ITEM_OCR,
+    ITEM_QUEUED,
+    ITEM_REVIEW,
     ImportFile,
     ImportItem,
     ImportJob,
@@ -189,3 +193,19 @@ def queue_stats(db: Session) -> dict[str, Any]:
     )
     counts["oldest_queued_at"] = oldest.created_at if oldest else None
     return counts
+
+
+def unresolved_import_items(db: Session, user_id: str) -> int:
+    """その利用者が取込んで、まだ登録も破棄もされていない明細の件数（論点N）。
+
+    退職処理のときに管理者へ知らせるために使う。名刺は全利用者で共有するため
+    （要件§7）、明細そのものは誰でも引き継いで確認できる。問題は「残っていることに
+    誰も気づかない」ことなので、件数を出す。
+    """
+    return (
+        db.query(ImportItem)
+        .join(ImportJob, ImportItem.import_job_id == ImportJob.import_job_id)
+        .filter(ImportJob.created_by == user_id)
+        .filter(ImportItem.status.in_([ITEM_QUEUED, ITEM_OCR, ITEM_REVIEW, ITEM_ERROR]))
+        .count()
+    )

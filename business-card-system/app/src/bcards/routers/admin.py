@@ -32,6 +32,7 @@ from ..models import (
 from ..security import hash_password
 from ..services import storage
 from ..services.cards import merge_persons, purge_card, restore_card
+from ..services.queue import unresolved_import_items
 from ..settings_store import DEFAULTS, DESCRIPTIONS, all_settings, set_setting
 from ..web import render
 
@@ -104,6 +105,7 @@ async def update_user(user_id: str, request: Request, db: Session = Depends(get_
 
     before = {"role": user.role, "status": user.status, "external": user.external_access_allowed}
     operation = form.get("operation")
+    pending = 0
 
     if operation == "status":
         status = form.get("status")
@@ -113,6 +115,10 @@ async def update_user(user_id: str, request: Request, db: Session = Depends(get_
             user.status = status
             # 要件§10：退職者はアカウントのみ停止し、登録した名刺は保持する
             user.retired_at = utcnow() if status == STATUS_RETIRED else None
+            if status == STATUS_RETIRED:
+                # 本人が確認しきれずに残した取込データは、誰も気づかないまま
+                # 放置されやすい。件数を管理者に知らせる（論点N）。
+                pending = unresolved_import_items(db, user.user_id)
     elif operation == "role":
         if user.user_id == admin.user_id and form.get("role") != ROLE_ADMIN:
             return RedirectResponse("/admin/users?err=自分自身の管理者権限は外せません。", status_code=303)
@@ -139,7 +145,13 @@ async def update_user(user_id: str, request: Request, db: Session = Depends(get_
     log_audit(db, request, admin, "user_admin", target_type="user", target_id=user.user_id,
               detail={"operation": operation})
     db.commit()
-    return RedirectResponse("/admin/users?msg=利用者情報を更新しました。", status_code=303)
+    message = "利用者情報を更新しました。"
+    if pending:
+        message += (
+            f"この利用者が確認しきれていない取込データが {pending} 件あります。"
+            "取込状況の画面から、ほかの利用者が引き継いで確認できます。"
+        )
+    return RedirectResponse(f"/admin/users?msg={message}", status_code=303)
 
 
 # --------------------------------------------------------------------------

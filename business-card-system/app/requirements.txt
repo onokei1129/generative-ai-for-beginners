@@ -1,6 +1,7 @@
 fastapi>=0.110
 uvicorn[standard]>=0.27
 sqlalchemy>=2.0
+alembic>=1.13   # スキーマのマイグレーション（migrations/）
 jinja2>=3.1
 python-multipart>=0.0.9
 itsdangerous>=2.1
@@ -13,5 +14,6 @@ numpy>=1.26
 pytesseract>=0.3.10
 anthropic>=0.60  # LLMによる項目分離（services/ocr/llm_extractor.py）を使う場合
 boto3>=1.34      # 画像をS3に保存する場合（BCARDS_STORAGE_BACKEND=s3）
+psycopg[binary]>=3.1  # 本番のPostgreSQLに接続する場合（SQLite だけなら不要）
 pytest>=8.0
 moto[s3]>=5.0   # テスト用。S3を模擬する（無いとS3のテストが黙って飛ばされる）

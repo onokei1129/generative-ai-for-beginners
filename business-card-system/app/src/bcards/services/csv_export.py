@@ -118,16 +118,23 @@ def build_csv(
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
 
+    # 見出しは必ず1行目に置く。
+    # 管理情報を先頭に付けるとExcelの「テーブルとして書式設定」「オートフィルタ」
+    # ピボットテーブルがいずれも1行目を見出しとみなすため、列がずれて使えなくなる。
+    writer.writerow([COLUMNS[c] for c in columns])
+    for card in cards:
+        writer.writerow([_value(card, column, user_names) for column in columns])
+
     if add_control_row:
         # 要件§9「CSVファイル自体に付与することも検討する」
+        # 空行を1行はさむ。Excelは連続した範囲（現在の領域）を表とみなすため、
+        # 空行があれば管理情報が表に取り込まれず、並べ替えでも混ざらない。
+        writer.writerow([])
         writer.writerow([f"# 出力者: {user.display_name}({user.login_id})"])
         writer.writerow([f"# 出力日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
         writer.writerow([f"# システム管理番号: {control_number}"])
         writer.writerow(["# 本ファイルは社内利用限定です。無断での再配布・社外持出しを禁止します。"])
 
-    writer.writerow([COLUMNS[c] for c in columns])
-    for card in cards:
-        writer.writerow([_value(card, column, user_names) for column in columns])
     return buffer.getvalue()
 
 
@@ -145,7 +152,9 @@ def export(
     """CSVを生成し、監査ログとCSV出力ログを記録する（要件§9）。"""
     columns = [c for c in columns if c in COLUMNS] or DEFAULT_COLUMNS
     control_number = build_control_number(user)
-    file_name = f"business_cards_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # 管理番号をファイル名にも入れる。出回ったファイルから出力ログを引けるようにするため
+    # （論点J）。管理番号自体に出力日時が入っている。
+    file_name = f"business_cards_{control_number}.csv"
     add_control_row = bool(get_setting(db, "csv_add_control_row"))
 
     content = build_csv(

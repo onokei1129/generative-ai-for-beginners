@@ -1,0 +1,109 @@
+name: Business Card System Tests
+
+# 名刺一元管理システム（business-card-system/）のテスト。
+# 既存のコース教材には影響しないよう、このディレクトリの変更時だけ動かす。
+
+on:
+  push:
+    paths:
+      - 'business-card-system/**'
+      - '.github/workflows/business-card-system-tests.yml'
+  pull_request:
+    paths:
+      - 'business-card-system/**'
+      - '.github/workflows/business-card-system-tests.yml'
+
+permissions:
+  contents: read
+
+# 同じブランチへ続けて push したときは、古い実行を打ち切る
+concurrency:
+  group: bcards-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: business-card-system/app
+
+jobs:
+  sqlite:
+    name: テスト（SQLite）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: business-card-system/app/requirements.txt
+
+      - name: 依存関係をインストール
+        run: pip install -r requirements.txt
+
+      - name: テスト
+        run: python -m pytest tests -q
+
+  postgres:
+    name: テスト（PostgreSQL 16）
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bcards
+          POSTGRES_PASSWORD: bcards
+          POSTGRES_DB: bcards
+        ports:
+          - 5432:5432
+        # 起動しきる前に接続してテストが落ちるのを防ぐ
+        options: >-
+          --health-cmd "pg_isready -U bcards"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      BCARDS_DATABASE_URL: postgresql+psycopg://bcards:bcards@localhost:5432/bcards
+      BCARDS_SECRET_KEY: ci-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: business-card-system/app/requirements.txt
+
+      - name: 依存関係をインストール
+        run: pip install -r requirements.txt
+
+      - name: マイグレーションを適用
+        run: python -m alembic upgrade head
+
+      - name: モデルとマイグレーションの一致を確認
+        # モデルを変えてマイグレーションを書き忘れると、ここで落ちる
+        run: python -m alembic check
+
+      - name: マイグレーションの往復を確認
+        run: |
+          python -m alembic downgrade base
+          python -m alembic upgrade head
+
+      - name: テスト
+        run: python -m pytest tests -q
+
+  scripts:
+    name: シェルスクリプトの構文確認
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n
+        run: |
+          for f in ops/*.sh run.sh; do
+            [ -f "$f" ] || continue
+            echo "確認中: $f"
+            bash -n "$f"
+          done

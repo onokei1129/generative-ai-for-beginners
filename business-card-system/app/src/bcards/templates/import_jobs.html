@@ -13,13 +13,19 @@
 <h2>対応が必要な明細</h2>
 <div class="table-wrap">
   <table>
-    <tr><th>ファイル</th><th>ページ/分割</th><th>状態</th><th>内容</th><th>取込日時</th><th></th></tr>
+    <tr><th>ファイル</th><th>ページ/分割</th><th>状態</th><th>内容</th><th>取込者</th><th>取込日時</th><th></th></tr>
     {% for item in items %}
     <tr>
       <td>{{ item.source_file_name }}</td>
       <td class="small muted">{% if item.page_no %}P{{ item.page_no }}{% endif %} {% if item.split_index %}#{{ item.split_index }}{% endif %}</td>
       <td><span class="badge {{ item.status }}">{{ item.status_label }}</span></td>
       <td class="small muted">{{ item.error_message or "" }}</td>
+      {# 取込んだ本人が退職している場合、放置されやすいので明示する（論点N） #}
+      {% set owner = users.get(item.job.created_by) %}
+      <td class="small nowrap">
+        {{ owner.display_name if owner else "" }}
+        {% if owner and owner.status == "retired" %}<span class="badge warn">退職済み</span>{% endif %}
+      </td>
       <td class="small muted nowrap">{{ item.created_at|dt }}</td>
       <td class="nowrap">
         {% if item.status == "error" %}
@@ -33,7 +39,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="muted">対応が必要な明細はありません。</td></tr>
+    <tr><td colspan="7" class="muted">対応が必要な明細はありません。</td></tr>
     {% endfor %}
   </table>
 </div>

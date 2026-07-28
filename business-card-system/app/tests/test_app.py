@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import unquote
+
 from conftest import csrf_of, drain_queue, login, sample_card_image
 
 from bcards.db import SessionLocal
@@ -371,6 +373,45 @@ def test_csv_export_records_audit_log(client):
         assert audit.ip_address
 
 
+def test_csv_header_is_on_the_first_row(client):
+    """見出しは必ず1行目。管理情報は空行をはさんで末尾に置く（論点J）。
+
+    管理情報を先頭に付けるとExcelが1行目を見出しとみなして列がずれ、
+    「テーブルとして書式設定」「オートフィルタ」「ピボットテーブル」が使えなくなる。
+    """
+    import csv as csv_module
+    import io
+
+    login(client)
+    token = csrf_of(client)
+    _register_card(client, token)
+
+    response = client.post(
+        "/export",
+        data={"csrf_token": token, "scope": "all", "columns": ["person_name", "company_name", "title"]},
+    )
+    assert response.status_code == 200
+
+    rows = list(csv_module.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+
+    assert rows[0] == ["氏名", "会社名", "役職"], "見出しが1行目にない"
+    assert len(rows[1]) == 3, "データ行の列数が見出しと合わない"
+
+    blank = rows.index([])
+    # 空行より前（表の本体）に管理情報が混ざっていないこと
+    assert not any(cell.startswith("#") for row in rows[:blank] for cell in row)
+    # 管理情報は空行より後にあること
+    trailer = "".join(cell for row in rows[blank + 1 :] for cell in row)
+    assert "システム管理番号: BC-" in trailer
+    assert "無断" in trailer
+
+    # 出回ったファイルから出力ログを引けるよう、ファイル名にも管理番号を入れる
+    with SessionLocal() as db:
+        log = db.query(CsvExportLog).one()
+    assert log.control_number in log.file_name
+    assert log.control_number in response.headers["content-disposition"]
+
+
 def test_large_export_shows_confirmation(client):
     login(client)
     token = csrf_of(client)
@@ -722,3 +763,67 @@ def test_exhausted_retries_finish_the_job(client):
         job = db.get(ImportJob, import_file.import_job_id)
         assert job.status == "failed"
         assert job.is_finished is True  # 画面の自動更新が止まる
+
+
+# --------------------------------------------------------------------------
+# 退職者が残した取込データ（論点N）
+# --------------------------------------------------------------------------
+
+
+def test_retiring_a_user_reports_their_unconfirmed_imports(client):
+    """退職処理のとき、その人が確認しきれていない取込データの件数を管理者に知らせる。
+
+    名刺は全利用者で共有するため（要件§7）明細自体は誰でも引き継げるが、
+    残っていること自体に誰も気づかないのが問題なので、件数を出す。
+    """
+    from bcards.models import User
+
+    # 一般利用者が1枚アップロードし、確認待ちのまま放置する
+    login(client)
+    token = csrf_of(client)
+    client.post(
+        "/imports/upload",
+        data={"csrf_token": token},
+        files={"files": ("card.jpg", sample_card_image(), "image/jpeg")},
+    )
+    drain_queue()
+    client.get("/logout")
+
+    with SessionLocal() as db:
+        member = db.query(User).filter(User.login_id == "member").one()
+        member_id = member.user_id
+        assert db.query(ImportItem).filter(ImportItem.status == "pending_review").count() == 1
+
+    # 管理者がその利用者を退職にする
+    login(client, "admin", "AdminPass123!")
+    admin_token = csrf_of(client)
+    response = client.post(
+        f"/admin/users/{member_id}",
+        data={"csrf_token": admin_token, "operation": "status", "status": "retired"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "取込データが 1 件" in unquote(response.headers["location"])
+
+    # 明細は消えず、ほかの利用者が引き継いで確認できる
+    listing = client.get("/imports")
+    assert listing.status_code == 200
+    assert "退職済み" in listing.text
+    assert "一般 次郎" in listing.text
+
+
+def test_retiring_a_user_without_pending_imports_says_nothing_extra(client):
+    from bcards.models import User
+
+    with SessionLocal() as db:
+        member_id = db.query(User).filter(User.login_id == "member").one().user_id
+
+    login(client, "admin", "AdminPass123!")
+    token = csrf_of(client)
+    response = client.post(
+        f"/admin/users/{member_id}",
+        data={"csrf_token": token, "operation": "status", "status": "retired"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "取込データ" not in unquote(response.headers["location"])

@@ -281,7 +281,7 @@ cd business-card-system/app
 
 要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・
 CSV出力の監査記録・編集権限の切替・ストレージ実装の切替・起動時の設定チェック・取込の再処理）を
-73 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
+76 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
 LLM抽出は HTTP トランスポートを差し替えた契約テスト、S3 は moto で模擬）。
 
 同じテストを PostgreSQL に対しても実行できる（本番と同じDBで検証するため）。
@@ -292,7 +292,24 @@ BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcards_test"
   ./.venv/bin/python -m pytest tests -q
 ```
 
-SQLite・PostgreSQL のいずれでも 73 件すべて通ることを確認している。
+SQLite・PostgreSQL のいずれでも 76 件すべて通ることを確認している。
+
+### CI（GitHub Actions）
+
+`business-card-system/` 配下を変更すると
+[`.github/workflows/business-card-system-tests.yml`](../../.github/workflows/business-card-system-tests.yml)
+が動き、次を自動で確認する。
+
+| ジョブ | 内容 |
+| --- | --- |
+| テスト（SQLite） | `pytest tests` |
+| テスト（PostgreSQL 16） | マイグレーションの適用・`alembic check`・往復（`downgrade base` → `upgrade head`）・`pytest tests` |
+| シェルスクリプトの構文確認 | `ops/*.sh` と `run.sh` の `bash -n` |
+
+`alembic check` を入れてあるので、**モデルを変えてマイグレーションを書き忘れると CI が落ちる**。
+
+> **フォークしたリポジトリでは GitHub Actions が既定で無効**になっている。
+> PRにチェックが出ない場合は、リポジトリの Settings → Actions で有効にすること。
 
 ---
 
@@ -464,7 +481,7 @@ app/
 | §6 IP制限・管理者の社外アクセス・MFA・自動ログアウト・ログイン履歴 | `deps.check_network_access`、`security.verify_totp`、`main.session_middleware`、`/admin/logins` |
 | §7 全利用者による共有・編集権限・変更履歴 | 検索/閲覧に所有者制限なし、`card_edit_policy` 設定、`ChangeHistory`（変更者/日時/端末/IP/前後/理由） |
 | §8 外部OCRの選択・自動確定しない | `services/ocr/`（mock/tesseract/azure ＋ ルール/LLM の項目分離）、確認画面 `/imports/items/{id}` を経ないと登録できない |
-| §9 CSV出力と監査ログ | `services/csv_export.py`、`CsvExportLog`、大量出力の確認画面、CSVへの管理番号・注意表示 |
+| §9 CSV出力と監査ログ | `services/csv_export.py`、`CsvExportLog`、大量出力の確認画面、CSVへの管理番号・注意表示（**見出しは1行目。管理情報は空行をはさんで末尾**に置き、Excelの表機能を壊さない） |
 | §10 保存期限なし・退職者データ保持・1人物複数名刺・6択登録・論理削除と完全削除 | `services/cards.py`、`/persons/{id}` の時系列表示、`/admin/deleted` |
 
 ---
@@ -484,7 +501,7 @@ app/
 
 | 項目 | 状況 | 内容 |
 | --- | --- | --- |
-| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全73テストを PostgreSQL 16 で確認 |
+| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全76テストを PostgreSQL 16 で確認 |
 | マイグレーション管理 | 実施済み | Alembic を導入。`upgrade` / `downgrade` の往復を確認済み |
 | オブジェクトストレージ | 実施済み | `local` / `s3`（S3互換含む）を設定で切替。S3 は moto でテスト |
 | HTTPS・鍵・プロキシ | 手順を整備 | [運用手引き §2.4–2.5](../operations-guide.md#24-秘密鍵の生成) に nginx 設定例と `BCARDS_TRUSTED_PROXIES` の指定を記載 |
@@ -495,6 +512,8 @@ app/
 | 性能・容量の実測 | 実施済み | 名刺1万件で[実測](../capacity-report-2026-07.md)。性能問題を2件検出し修正（ホーム画面 551→41ms、CSV出力 12.0→2.9秒） |
 | 監査ログのアーカイブ | 実施済み | 論点Hを実装。1年でアーカイブ・3年で破棄（設定で変更可）。`ops/archive_logs.py` |
 | ワーカーの分離 | 選択可能 | `worker.py` で別プロセス化できる。既定はアプリ内スレッド |
+| CI（自動テスト） | 実施済み | SQLite・PostgreSQL 16 の両方でテストとマイグレーションを毎回確認する。**フォークでは Actions の有効化が必要** |
+| 個人情報の取扱い | 草案あり | [草案](../personal-data-handling-v0.3.md)。技術的安全管理措置のうち**保存時暗号化のみ未対応**（クラウド事業者の機能で満たす想定） |
 
 ### 本番導入前に残っている作業
 
@@ -511,6 +530,7 @@ app/
 | 修正申請＋管理者承認の編集方式（論点Aの案3） | 採用が未決定のため。設定値のみ用意 |
 | 会社の統合（人物統合は実装済み） | 優先度が低く、論点として未起票 |
 | 部署・グループ画面 | 要件§1で初期リリース対象外 |
-| CSVの非同期出力 | 閾値（論点I）の確定待ち |
+| CSVの非同期出力 | 実測2.85秒で同期出力が十分と判明。**不要と判断**（論点I） |
+| 保存時の暗号化 | クラウド事業者の機能で満たす想定。**論点B（事業者の選定）の決定待ち**（論点M 3.4） |
 | クラウドOCR・LLM抽出の精度実測 | 認証情報が未手配。計測基盤（`poc/`）とアダプタは実装済み |
 | スキャナーの直接制御 | 要件§4で明示的に対象外 |

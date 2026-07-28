@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..audit import log_audit
 from ..db import get_db
@@ -40,6 +40,8 @@ def import_jobs(request: Request, db: Session = Depends(get_db), user: User = De
     stats = queue_stats(db)
     items = (
         db.query(ImportItem)
+        # 取込者を出すためにジョブを先に読む（明細ごとに引くとN+1になる）
+        .options(selectinload(ImportItem.job))
         .filter(ImportItem.status.in_([ITEM_REVIEW, ITEM_ERROR]))
         .order_by(ImportItem.created_at.desc())
         .limit(100)
