@@ -218,6 +218,23 @@ export BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcard
 自動生成された内容は必ず目視で確認し、`alembic downgrade -1 && alembic upgrade head` で
 往復できることを確かめてから取り込む。
 
+#### 検索用の索引（PostgreSQL のみ）
+
+マイグレーション `d72f96ac9ae1` が `card_contact.value_raw` に
+`pg_trgm` の GIN 索引を作る。名刺10万件で該当なし検索が 2.2秒→0.4秒 になる
+（[実測](../capacity-report-2026-07.md#7-10万件規模での測定と対策今後の課題1の検証)）。
+
+`pg_trgm` は PostgreSQL 13 以降 trusted 拡張のため、データベースへの CREATE 権限が
+あれば作成できる（スーパーユーザーは不要）。マネージドサービス等で拡張の作成が
+制限されている場合は、索引を見送ってマイグレーション自体は成功させる。
+必要なら次を実行してから `alembic upgrade head` をやり直す。
+
+```sql
+CREATE EXTENSION pg_trgm;
+```
+
+索引が無くても動作するが、名刺が数万件を超えると検索が遅くなる。
+
 ### 性能の測定
 
 本番相当のデータ量を投入して、応答時間とバックアップ・復元の所要時間を測れる。
@@ -228,19 +245,26 @@ export BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcard
 PYTHONPATH=src ./.venv/bin/python ops/loadgen.py --cards 10000
 PYTHONPATH=src ./.venv/bin/python ops/loadgen.py --cards 10000 --no-images   # DBだけ・高速
 
-# 応答時間を測る
+# 応答時間を測る（単独）
 PYTHONPATH=src ./.venv/bin/python ops/bench.py --out capacity.md
+
+# 同時アクセス時を測る（検索5人＋取込2人。要件§5の想定）
+PYTHONPATH=src ./.venv/bin/python ops/bench_concurrent.py --readers 5 --importers 2 --seconds 30
 ```
 
 名刺1万件・画像3万件（1.1GB）での実測値：
 
 | 項目 | 実測 | 目標 |
 | --- | --- | --- |
-| 検索応答時間 | 337 ms（最悪） | 1秒以内 |
+| 検索応答時間（単独） | 337 ms（最悪） | 1秒以内 |
+| 検索応答時間（5人同時＋取込2人） | 322 ms（最悪） | 1秒以内 |
 | ホーム画面 | 41 ms | — |
 | CSV全件出力（1万件） | 2.85 秒 | 10秒以内 |
 | バックアップ取得 | 56 秒 | — |
 | 復元＋整合性チェック | 41 秒 | RTO 2営業時間 |
+
+取込が走っていても検索は約7%しか遅くならない。`OMP_THREAD_LIMIT=1`（上記）で
+OCRがCPUを占有しないようにしている効果である。
 
 > 使用量の集計（`storage.total_bytes()`）はローカルなら全走査、S3ならバケット全体の
 > リストになるため、既定で300秒キャッシュしている（`BCARDS_STORAGE_USAGE_CACHE_SECONDS`）。
@@ -260,7 +284,8 @@ app/
 │   ├── verify.py          DBの画像レコードに対する実体の有無を確認
 │   ├── archive_logs.py    監査ログのアーカイブと期限切れの破棄（日次バッチ）
 │   ├── loadgen.py         本番相当の架空データ投入（性能測定用。本番では実行不可）
-│   └── bench.py           検索・一覧・容量集計の応答時間を測る
+│   ├── bench.py           検索・一覧・容量集計の応答時間を測る
+│   └── bench_concurrent.py 取込が走っている最中の検索応答を測る
 ├── poc/                   OCR精度の計測
 │   ├── samples.py         正解ラベル付きの名刺サンプル生成
 │   ├── runner.py          パイプライン比較と精度レポート
