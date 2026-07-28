@@ -141,6 +141,34 @@ PYTHONPATH=src ./.venv/bin/python -m poc.classify_eval /tmp/mixed       # 混同
 実データで測る場合は、対象フォルダに `_truth.csv`（`file,truth` の2列。
 `truth` は `business_card` / `receipt`）を用意すれば同じコマンドが使える。
 
+#### 実名刺に正解ラベルを付ける
+
+OCR精度を実データで測るには、名刺ごとの**正解**が要る。入力用の画面を用意している。
+
+```bash
+PYTHONPATH=src ./.venv/bin/python poc/label.py ./poc/real-cards
+# → http://127.0.0.1:8100/ をブラウザで開く
+```
+
+左に名刺画像、右に14項目の入力欄が並ぶ。`Ctrl`+`Enter` で保存して次へ進む。
+画像と同じ名前の `.json` が同じフォルダに保存され、そのまま `runner.py --real` で使える。
+中断しても次回は未入力の名刺から再開する。
+
+Excel で入力したい・入力を他の人に頼みたい場合は CSV で受け渡せる。
+
+```bash
+PYTHONPATH=src ./.venv/bin/python -m poc.labels_csv export ./poc/real-cards --out labels.csv
+# labels.csv を Excel で入力（file 列は変更しない）
+PYTHONPATH=src ./.venv/bin/python -m poc.labels_csv import ./poc/real-cards --csv labels.csv
+```
+
+**`--prefill` は測定目的では使わないこと。** OCRの結果を初期値に入れるため入力は速くなるが、
+OCRの誤りを見落としてそのまま正解にしてしまうと、**実際より良い数値が出る**。
+精度を比較するための正解を作るのだから、画像を見て入力する。
+
+目安は1枚1〜2分、40枚で1時間強。名刺に記載の無い項目は空欄のままでよい
+（空欄も「その項目は無い」という正解として扱われる）。
+
 ---
 
 ## 2. テスト
@@ -291,7 +319,9 @@ app/
 │   ├── runner.py          パイプライン比較と精度レポート
 │   ├── classify.py        名刺／領収書の仕分け（混在フォルダ対策）
 │   ├── receipts.py        検証用の領収書サンプル生成
-│   └── classify_eval.py   仕分けの正答率（混同行列）
+│   ├── classify_eval.py   仕分けの正答率（混同行列）
+│   ├── label.py           実名刺に正解ラベルを付ける入力画面
+│   └── labels_csv.py      正解ラベルのCSV書き出し・取り込み（Excel用）
 ├── src/bcards/
 │   ├── main.py            アプリ本体・セッション/端末IDのミドルウェア・例外ハンドラ
 │   ├── config.py          環境変数による設定

@@ -182,11 +182,41 @@ AWS Textract・Google Document AI にも名刺専用モデルはなく、いず�
 - ただしこれは合成サンプルでの値であり、**実データでの精度は別途確認が必要**。
   `_truth.csv` を手で用意すれば `app/poc/classify_eval.py` で同じ数値が出せる
 
+### 実データでPoCを行う手順
+
+手を動かしていただく必要があるのは **3.** の正解ラベル入力だけで、他は自動である。
+
+```bash
+cd business-card-system/app
+
+# 1. スキャンフォルダから名刺だけを取り出す（領収書等を除く）
+PYTHONPATH=src .venv/bin/python poc/classify.py "C:/Users/xxx/Dropbox/ScanSnap" \
+    --copy-to ./poc/real-cards --copy-unknown --report sort.md
+
+# 2. 「不明」に落ちたものを目視で振り分ける（poc/real-cards/unknown/ を確認）
+
+# 3. 正解ラベルを入力する（画面が開く。1枚1〜2分、40枚で1時間強）
+PYTHONPATH=src .venv/bin/python poc/label.py ./poc/real-cards
+#    Excel で入力したい場合は poc/labels_csv.py で CSV に書き出して受け渡す
+
+# 4. ルールベースの精度を測る
+PYTHONPATH=src .venv/bin/python poc/runner.py --real ./poc/real-cards --out real-rule.md
+
+# 5. LLM抽出の精度を測る（ANTHROPIC_API_KEY が必要）
+ANTHROPIC_API_KEY=... PYTHONPATH=src .venv/bin/python poc/runner.py \
+    --real ./poc/real-cards --only E --out real-llm.md
+```
+
+**正解ラベルは画像を見て入力する。** `poc/label.py --prefill` はOCRの結果を
+初期値に入れて入力を速くするが、誤りを見落とすと**実際より良い精度が出てしまう**。
+測定用の正解を作る場面では使わない。
+
 ### 決定に必要な確認事項
 
 1. 名刺画像を外部サービスへ送信することについて、社内規程・取引先との契約上の制約はないか
 2. 学習利用オプトアウトが契約上明示できるか
 3. PoC用サンプル名刺を提供できるか（実データの利用可否を含む）
+4. `ANTHROPIC_API_KEY` を手配できるか（LLM抽出の測定に必要）
 
 ---
 
