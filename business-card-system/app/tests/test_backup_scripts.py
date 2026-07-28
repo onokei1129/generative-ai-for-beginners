@@ -7,6 +7,7 @@ tar の固め方・展開の仕方だけを切り出して検証する（DB部�
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
@@ -81,9 +82,40 @@ def test_restore_handles_the_old_archive_format(tmp_path):
 
 
 @pytest.mark.parametrize("script", ["backup.sh", "restore.sh"])
-def test_scripts_are_executable_and_valid_bash(script):
+def test_scripts_are_executable(script):
+    """実行権限が付いた状態でリポジトリに入っているか。
+
+    ファイルシステムの権限ではなく **git が記録しているモード** を見る。
+    NTFS には実行権限の概念が無いため、Windows で開発している場合に
+    ローカルのモードを見ると必ず失敗してしまう。
+    実際に問題になるのは「Linuxサーバーへ配置したときに実行できるか」であり、
+    それを決めるのは git 側のモード（100755）である。
+    """
     path = OPS / script
     assert path.exists(), f"{script} がありません"
-    assert path.stat().st_mode & 0o111, f"{script} に実行権限がありません"
-    # 構文エラーがあると、障害対応の最中に初めて気づくことになる
-    subprocess.run(["bash", "-n", str(path)], check=True)
+
+    try:
+        # ファイル名だけを渡す（Windows の区切り文字に左右されないように）
+        result = subprocess.run(
+            ["git", "ls-files", "-s", "--", script],
+            capture_output=True, text=True, check=True, cwd=OPS,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        pytest.skip(f"git で確認できないため省略します: {exc}")
+
+    if not result.stdout.strip():
+        pytest.skip(f"{script} は git の管理下にありません")
+
+    mode = result.stdout.split()[0]
+    assert mode == "100755", (
+        f"{script} に実行権限がありません（git のモード: {mode}）。"
+        f" `git update-index --chmod=+x app/ops/{script}` で付けてください。"
+    )
+
+
+@pytest.mark.parametrize("script", ["backup.sh", "restore.sh"])
+def test_scripts_have_no_syntax_error(script):
+    """構文エラーがあると、障害対応の最中に初めて気づくことになる。"""
+    if shutil.which("bash") is None:
+        pytest.skip("bash が見つからないため省略します（Windows など）")
+    subprocess.run(["bash", "-n", str(OPS / script)], check=True)

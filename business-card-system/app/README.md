@@ -246,7 +246,7 @@ cd business-card-system/app
 
 要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・
 CSV出力の監査記録・編集権限の切替・ストレージ実装の切替・起動時の設定チェック・取込の再処理）を
-71 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
+73 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
 LLM抽出は HTTP トランスポートを差し替えた契約テスト、S3 は moto で模擬）。
 
 同じテストを PostgreSQL に対しても実行できる（本番と同じDBで検証するため）。
@@ -257,7 +257,7 @@ BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcards_test"
   ./.venv/bin/python -m pytest tests -q
 ```
 
-SQLite・PostgreSQL のいずれでも 71 件すべて通ることを確認している。
+SQLite・PostgreSQL のいずれでも 73 件すべて通ることを確認している。
 
 ---
 
@@ -449,7 +449,7 @@ app/
 
 | 項目 | 状況 | 内容 |
 | --- | --- | --- |
-| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全71テストを PostgreSQL 16 で確認 |
+| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全73テストを PostgreSQL 16 で確認 |
 | マイグレーション管理 | 実施済み | Alembic を導入。`upgrade` / `downgrade` の往復を確認済み |
 | オブジェクトストレージ | 実施済み | `local` / `s3`（S3互換含む）を設定で切替。S3 は moto でテスト |
 | HTTPS・鍵・プロキシ | 手順を整備 | [運用手引き §2.4–2.5](../operations-guide.md#24-秘密鍵の生成) に nginx 設定例と `BCARDS_TRUSTED_PROXIES` の指定を記載 |
