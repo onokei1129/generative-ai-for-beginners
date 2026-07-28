@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
+from bcards import fonts  # noqa: E402
 from bcards.db import SessionLocal, init_db  # noqa: E402
 from bcards.models import (  # noqa: E402
     ROLE_ADMIN,
@@ -25,7 +26,6 @@ from bcards.models import (  # noqa: E402
 )
 from bcards.security import hash_password  # noqa: E402
 
-FONT_PATH = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
 
 DEMO_PEOPLE = [
     ("株式会社サンプル商事", "営業本部 第一営業部", "部長", "山田", "太郎", "やまだ", "たろう",
@@ -92,7 +92,7 @@ def render_card_image(entry: tuple, *, tilt: float = 0.0) -> bytes:
     draw = ImageDraw.Draw(image)
 
     def font(size: int) -> ImageFont.FreeTypeFont:
-        return ImageFont.truetype(FONT_PATH, size)
+        return fonts.load(size)
 
     draw.rectangle([0, 0, width - 1, height - 1], outline="#dddddd", width=2)
     draw.rectangle([0, 0, 12, height], fill="#1f5fa9")

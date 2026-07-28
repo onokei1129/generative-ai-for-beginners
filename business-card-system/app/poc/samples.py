@@ -20,8 +20,13 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
-FONT_GOTHIC = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
-FONT_LATIN = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+from bcards import fonts
+
+# フォントの実体は環境ごとに違うため、ここでは種類だけを表す印を置き、
+# _font() が呼ばれた時点で解決する。import しただけでフォントを要求しないのは、
+# 正解ラベル入力（poc/label.py）が FIELD_KEYS だけを使うため。
+FONT_GOTHIC = "gothic"
+FONT_LATIN = "latin"
 
 FIELD_KEYS = (
     "last_name",
@@ -95,8 +100,9 @@ PEOPLE: list[dict[str, str]] = [
 ]
 
 
-def _font(path: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(path, size)
+def _font(kind: str, size: int) -> ImageFont.FreeTypeFont:
+    """FONT_GOTHIC / FONT_LATIN を実際のフォントに解決する。"""
+    return fonts.load(size, latin=(kind == FONT_LATIN))
 
 
 def _base_card(width: int = 1050, height: int = 630, bg: str = "white") -> tuple[Image.Image, ImageDraw.ImageDraw]:

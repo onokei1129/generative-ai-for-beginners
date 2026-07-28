@@ -26,8 +26,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from PIL import Image, ImageDraw, ImageFont  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 
+from bcards import fonts  # noqa: E402
 from bcards.config import settings  # noqa: E402
 from bcards.db import SessionLocal  # noqa: E402
 from bcards.models import (  # noqa: E402
@@ -42,8 +43,6 @@ from bcards.models import (  # noqa: E402
 from bcards.services import storage  # noqa: E402
 from bcards.services.images import make_variants  # noqa: E402
 from bcards.services.ocr.parser import normalize_company, normalize_name, normalize_phone  # noqa: E402
-
-FONT_GOTHIC = "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf"
 
 SURNAMES = [
     ("佐藤", "さとう"), ("鈴木", "すずき"), ("高橋", "たかはし"), ("田中", "たなか"),
@@ -103,7 +102,7 @@ def _render(fields: dict, index: int) -> Image.Image:
     """名刺画像を1枚描く。内容が毎回違うので、内容ハッシュも重複しない。"""
     image = Image.new("RGB", (1050, 630), "white")
     draw = ImageDraw.Draw(image)
-    font = lambda size: ImageFont.truetype(FONT_GOTHIC, size)  # noqa: E731
+    font = fonts.load  # 環境ごとに実在するフォントを使う
 
     draw.rectangle([0, 0, 12, image.height], fill="#1f5fa9")
     draw.text((70, 60), fields["company_name"], font=font(40), fill="#111111")
