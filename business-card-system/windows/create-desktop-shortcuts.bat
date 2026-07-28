@@ -25,6 +25,7 @@ rem このフォルダのショートカット（.lnk）だけ作り直す。
 rem 消すのはショートカットのみで、名刺の画像やラベルには一切触れない。
 if exist "%FOLDER%\*.lnk" del /q "%FOLDER%\*.lnk"
 
+call :make "0 最新版に更新する"             "update.bat"
 call :make "1 セットアップ"                 "setup.bat"
 call :make "2 練習サンプルを作る"           "make-practice-samples.bat"
 call :make "3 ラベル入力（練習）"           "label-practice.bat"
@@ -42,6 +43,9 @@ echo.
 echo  はじめて使う場合   : 1 から順に実行してください。
 echo  実名刺のテスト     : 4 → 5 → 6 → 7 → 8 の順です。
 echo                       6 と 7 は何度往復しても構いません。
+echo.
+echo  次からは「0 最新版に更新する」を押すだけで、
+echo  最新版の取得とショートカットの作り直しが終わります。
 echo ============================================
 echo.
 explorer "%FOLDER%"

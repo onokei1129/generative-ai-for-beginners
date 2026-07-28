@@ -1,0 +1,80 @@
+@echo off
+rem 最新版に更新して、ショートカットを作り直す。
+rem
+rem 注意: git pull はこのファイル自身も書き換えうる。cmd.exe はバッチを
+rem 実行しながら少しずつ読むため、実行中に書き換わると途中から壊れる。
+rem そのため一時フォルダへコピーし、そちらから実行し直している。
+
+if "%~1"=="" (
+    copy /y "%~f0" "%TEMP%\bcards-update.bat" >nul
+    if errorlevel 1 (
+        echo [エラー] 一時ファイルを作れませんでした。
+        pause
+        exit /b 1
+    )
+    "%TEMP%\bcards-update.bat" "%~dp0."
+    exit /b
+)
+
+setlocal
+set "BCWIN=%~1"
+
+echo ============================================
+echo  最新版に更新します
+echo ============================================
+echo.
+
+where git >nul 2>&1
+if errorlevel 1 (
+    echo [エラー] git が見つかりません。
+    echo   https://git-scm.com/download/win からインストールし、
+    echo   この画面を閉じて開き直してください。
+    echo.
+    pause
+    exit /b 1
+)
+
+cd /d "%BCWIN%\..\.."
+if errorlevel 1 (
+    echo [エラー] フォルダへ移動できませんでした: %BCWIN%\..\..
+    pause
+    exit /b 1
+)
+
+git rev-parse --show-toplevel >nul 2>&1
+if errorlevel 1 (
+    echo [エラー] ここは git の作業フォルダではありません: %CD%
+    echo   windows フォルダを移動していませんか。
+    echo.
+    pause
+    exit /b 1
+)
+
+echo 対象: %CD%
+echo.
+git pull
+if errorlevel 1 (
+    echo.
+    echo ============================================
+    echo  更新できませんでした。
+    echo.
+    echo  よくある原因:
+    echo   ・手元のファイルを書き換えている
+    echo       → 名刺の画像やラベルは対象外なので、
+    echo         心当たりが無ければ次を実行してください。
+    echo           git stash
+    echo         そのあともう一度このボタンを押します。
+    echo   ・ネットワークにつながっていない
+    echo.
+    echo  上の英語のメッセージをそのまま共有していただければ調べられます。
+    echo ============================================
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ショートカットを作り直します。
+echo.
+call "%BCWIN%\create-desktop-shortcuts.bat"
+exit /b 0
