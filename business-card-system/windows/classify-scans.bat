@@ -1,16 +1,15 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
 cd /d "%~dp0..\app"
 
 echo ============================================
-echo  スキャンフォルダから名刺だけを取り出す
+echo  �X�L�����t�H���_���疼�h���������o��
 echo ============================================
 echo.
 
 if not exist ".venv\Scripts\python.exe" (
-    echo [エラー] セットアップがまだです。
-    echo   先に「セットアップ」を実行してください。
+    echo [�G���[] �Z�b�g�A�b�v���܂��ł��B
+    echo   ��Ɂu�Z�b�g�A�b�v�v�����s���Ă��������B
     echo.
     pause
     exit /b 1
@@ -18,56 +17,56 @@ if not exist ".venv\Scripts\python.exe" (
 
 where tesseract >nul 2>&1
 if errorlevel 1 (
-    echo [エラー] tesseract が見つかりません。仕分けには必要です。
+    echo [�G���[] tesseract ��������܂���B�d�����ɂ͕K�v�ł��B
     echo.
-    echo   https://github.com/UB-Mannheim/tesseract/wiki からインストールし、
-    echo   Japanese と Japanese ^(vertical^) を選んでください。
-    echo   入れたあとに反応しない場合は、この画面を閉じて開き直してください。
+    echo   https://github.com/UB-Mannheim/tesseract/wiki ����C���X�g�[�����A
+    echo   Japanese �� Japanese ^(vertical^) ��I��ł��������B
+    echo   ���ꂽ���Ƃɔ������Ȃ��ꍇ�́A���̉�ʂ���ĊJ�������Ă��������B
     echo.
     pause
     exit /b 1
 )
 
 set "SCANDIR=%USERPROFILE%\Dropbox\ScanSnap"
-echo 既定の読み込み元: %SCANDIR%
+echo ����̓ǂݍ��݌�: %SCANDIR%
 echo.
-set /p "INPUT=別のフォルダを使う場合はパスを入力（そのままEnterで既定）: "
+set /p "INPUT=�ʂ̃t�H���_���g���ꍇ�̓p�X����́i���̂܂�Enter�Ŋ���j: "
 if not "!INPUT!"=="" set "SCANDIR=!INPUT!"
 
 if not exist "!SCANDIR!" (
     echo.
-    echo [エラー] フォルダが見つかりません: !SCANDIR!
+    echo [�G���[] �t�H���_��������܂���: !SCANDIR!
     echo.
     pause
     exit /b 1
 )
 
 echo.
-echo 読み込み元: !SCANDIR!
-echo 書き出し先: %CD%\poc\real-cards
+echo �ǂݍ��݌�: !SCANDIR!
+echo �����o����: %CD%\poc\real-cards
 echo.
-echo 判定には1枚あたり数秒かかります。枚数が多い場合はしばらくお待ちください。
+echo ����ɂ�1�������萔�b������܂��B�����������ꍇ�͂��΂炭���҂����������B
 echo.
 
 .venv\Scripts\python poc\classify.py "!SCANDIR!" --copy-to .\poc\real-cards --copy-unknown --csv sort.csv --report sort.md
 if errorlevel 1 (
     echo.
-    echo [エラー] 仕分けに失敗しました。
+    echo [�G���[] �d�����Ɏ��s���܂����B
     pause
     exit /b 1
 )
 
 echo.
 echo ============================================
-echo  結果は次のファイルにあります。
-echo    %CD%\sort.md    （一覧）
-echo    %CD%\sort.csv   （Excelで開けます）
+echo  ���ʂ͎��̃t�@�C���ɂ���܂��B
+echo    %CD%\sort.md    �i�ꗗ�j
+echo    %CD%\sort.csv   �iExcel�ŊJ���܂��j
 echo.
-echo  「不明」と判定された画像は
+echo  �u�s���v�Ɣ��肳�ꂽ�摜��
 echo    %CD%\poc\real-cards\unknown
-echo  に入っています。名刺なら1つ上のフォルダへ移してください。
+echo  �ɓ����Ă��܂��B���h�Ȃ�1��̃t�H���_�ֈڂ��Ă��������B
 echo.
-echo  次は「ラベル入力（実際の名刺）」を実行してください。
+echo  ���́u���x�����́i���ۂ̖��h�j�v�����s���Ă��������B
 echo ============================================
 echo.
 pause

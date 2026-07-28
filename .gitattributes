@@ -1,7 +1,12 @@
-# バッチファイルは CRLF でないと cmd.exe が正しく解釈しないことがある。
-# Linux/macOS でチェックアウトしても CRLF のまま保つ。
-*.bat text eol=crlf
-*.cmd text eol=crlf
+# Windows のバッチファイルは、日本語Windowsの既定コードページ（CP932）＋CRLF で
+# 保存している。UTF-8 で保存すると cmd.exe が日本語の途中で行を切ってしまい、
+# 残りをコマンドとして解釈してエラーになる（chcp 65001 を付けても起きる）。
+#
+# git に一切変換させず、コミットしたバイト列をそのままチェックアウトさせる。
+# そのため diff は文字化けして見えるが、Windows 側では正しく動く。
+# 編集するときは CP932 で保存できるエディタを使うこと。
+*.bat -text
+*.cmd -text
 
 # シェルスクリプトは常に LF（Windows でチェックアウトしても CRLF にしない）
 *.sh text eol=lf

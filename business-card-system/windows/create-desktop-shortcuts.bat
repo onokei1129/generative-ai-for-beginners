@@ -1,39 +1,38 @@
 @echo off
-chcp 65001 >nul
 setlocal
 set "HERE=%~dp0"
 if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
 
 echo ============================================
-echo  ãƒ‡ã‚¹ã‚¯ãƒˆãƒƒãƒ—ã«ã‚·ãƒ§ãƒ¼ãƒˆã‚«ãƒƒãƒˆã‚’ä½œã‚Šã¾ã™
+echo  ƒfƒXƒNƒgƒbƒv‚ÉƒVƒ‡[ƒgƒJƒbƒg‚ğì‚è‚Ü‚·
 echo ============================================
 echo.
 
-rem OneDrive ã§ãƒ‡ã‚¹ã‚¯ãƒˆãƒƒãƒ—ãŒåŒæœŸã•ã‚Œã¦ã„ã‚‹å ´åˆã¯ãã¡ã‚‰ã‚’ä½¿ã†
+rem OneDrive ‚ÅƒfƒXƒNƒgƒbƒv‚ª“¯Šú‚³‚ê‚Ä‚¢‚éê‡‚Í‚»‚¿‚ç‚ğg‚¤
 set "DESKTOP=%USERPROFILE%\Desktop"
 if exist "%OneDrive%\Desktop" set "DESKTOP=%OneDrive%\Desktop"
 if not exist "%DESKTOP%" (
-    echo [ã‚¨ãƒ©ãƒ¼] ãƒ‡ã‚¹ã‚¯ãƒˆãƒƒãƒ—ã®ãƒ•ã‚©ãƒ«ãƒ€ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“: %DESKTOP%
+    echo [ƒGƒ‰[] ƒfƒXƒNƒgƒbƒv‚ÌƒtƒHƒ‹ƒ_‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñ: %DESKTOP%
     pause
     exit /b 1
 )
 
-set "FOLDER=%DESKTOP%\ååˆºã‚·ã‚¹ãƒ†ãƒ "
+set "FOLDER=%DESKTOP%\–¼hƒVƒXƒeƒ€"
 if not exist "%FOLDER%" mkdir "%FOLDER%"
 
-call :make "1 ã‚»ãƒƒãƒˆã‚¢ãƒƒãƒ—"                 "setup.bat"
-call :make "2 ç·´ç¿’ã‚µãƒ³ãƒ—ãƒ«ã‚’ä½œã‚‹"           "make-practice-samples.bat"
-call :make "3 ãƒ©ãƒ™ãƒ«å…¥åŠ›ï¼ˆç·´ç¿’ï¼‰"           "label-practice.bat"
-call :make "4 ååˆºã‚’ä»•åˆ†ã‘ã‚‹"               "classify-scans.bat"
-call :make "5 ãƒ©ãƒ™ãƒ«å…¥åŠ›ï¼ˆå®Ÿéš›ã®ååˆºï¼‰"     "label-real-cards.bat"
-call :make "6 ã‚¢ãƒ—ãƒªã‚’èµ·å‹•"                 "run-app.bat"
+call :make "1 ƒZƒbƒgƒAƒbƒv"                 "setup.bat"
+call :make "2 —ûKƒTƒ“ƒvƒ‹‚ğì‚é"           "make-practice-samples.bat"
+call :make "3 ƒ‰ƒxƒ‹“ü—Íi—ûKj"           "label-practice.bat"
+call :make "4 –¼h‚ğd•ª‚¯‚é"               "classify-scans.bat"
+call :make "5 ƒ‰ƒxƒ‹“ü—ÍiÀÛ‚Ì–¼hj"     "label-real-cards.bat"
+call :make "6 ƒAƒvƒŠ‚ğ‹N“®"                 "run-app.bat"
 
 echo.
 echo ============================================
-echo  ä½œæˆã—ã¾ã—ãŸ: %FOLDER%
+echo  ì¬‚µ‚Ü‚µ‚½: %FOLDER%
 echo.
-echo  ãƒ‡ã‚¹ã‚¯ãƒˆãƒƒãƒ—ã®ã€Œååˆºã‚·ã‚¹ãƒ†ãƒ ã€ãƒ•ã‚©ãƒ«ãƒ€ã‚’é–‹ãã€
-echo  ç•ªå·ã®é †ã«å®Ÿè¡Œã—ã¦ãã ã•ã„ã€‚
+echo  ƒfƒXƒNƒgƒbƒv‚Ìu–¼hƒVƒXƒeƒ€vƒtƒHƒ‹ƒ_‚ğŠJ‚«A
+echo  ”Ô†‚Ì‡‚ÉÀs‚µ‚Ä‚­‚¾‚³‚¢B
 echo ============================================
 echo.
 explorer "%FOLDER%"
@@ -43,8 +42,8 @@ exit /b 0
 :make
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%FOLDER%\%~1.lnk'); $s.TargetPath='%HERE%\%~2'; $s.WorkingDirectory='%HERE%'; $s.IconLocation='%SystemRoot%\System32\imageres.dll,76'; $s.Save()"
 if errorlevel 1 (
-    echo   [å¤±æ•—] %~1
+    echo   [¸”s] %~1
 ) else (
-    echo   ä½œæˆ: %~1
+    echo   ì¬: %~1
 )
 exit /b 0
