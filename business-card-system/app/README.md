@@ -14,9 +14,16 @@
 
 ---
 
-## 0. Windows で動かす場合（PowerShell）
+## 0. Windows で動かす場合
 
 Linux/macOS の方は「1. 起動方法」へ。
+
+> **コマンドを打ちたくない場合**は [`../windows/`](../windows/) のバッチファイルを使ってください。
+> `create-desktop-shortcuts.bat` をダブルクリックすると、デスクトップに
+> 「名刺システム」フォルダとショートカットが作られ、番号順に実行するだけで使えます。
+> 以下は同じことをコマンドで行う手順です。
+
+### PowerShell から実行する場合
 
 **PowerShell では `PYTHONPATH=src python ...` のような書き方は使えません**
 （`VAR=値 コマンド` は bash の書き方）。以下のとおり実行してください。

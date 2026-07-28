@@ -1,0 +1,7 @@
+# バッチファイルは CRLF でないと cmd.exe が正しく解釈しないことがある。
+# Linux/macOS でチェックアウトしても CRLF のまま保つ。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# シェルスクリプトは常に LF（Windows でチェックアウトしても CRLF にしない）
+*.sh text eol=lf

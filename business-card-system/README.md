@@ -15,6 +15,7 @@
 | [restore-drill-2026-07.md](./restore-drill-2026-07.md) | 復元訓練 第1回の実施記録 | 第1回 | 実施済み |
 | [capacity-report-2026-07.md](./capacity-report-2026-07.md) | 本番相当データでの性能実測（検索応答時間・RTO） | 第1回 | 実測済み |
 | [app/](./app/) | 実装（動作するWebアプリケーション） | — | 動作確認済み |
+| [windows/](./windows/) | Windows用の起動ファイル（ダブルクリックで操作） | — | — |
 
 ## 読む順序
 

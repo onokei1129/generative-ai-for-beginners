@@ -388,6 +388,7 @@ def main() -> int:
         action="store_true",
         help="OCRの結果を初期値にする（速いが、誤りをそのまま正解にしてしまう危険がある）",
     )
+    parser.add_argument("--no-browser", action="store_true", help="ブラウザを自動で開かない")
     args = parser.parse_args()
 
     directory = Path(args.directory).expanduser().resolve()
@@ -407,11 +408,42 @@ def main() -> int:
         print("\n--prefill 指定：OCRの結果を初期値にします。")
         print("  誤りをそのまま正解として保存すると、精度が実際より良く出ます。")
         print("  必ず画像と見比べてください。\n")
-    print(f"ブラウザで http://127.0.0.1:{args.port}/ を開いてください。（Ctrl-C で終了）")
+    url = f"http://127.0.0.1:{args.port}/"
+    print(f"\n入力画面: {url}")
+    print("終了するには、この画面で Ctrl-C を押すか、ウィンドウを閉じてください。")
+
+    if not args.no_browser:
+        # サーバーが起動してから開く。起動前に開くと「接続できません」になる
+        import threading
+        import webbrowser
+
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
+    # 先に自分で束縛して、使えないポートならここで分かりやすく知らせる。
+    # uvicorn に任せると内部で捕捉されてしまい、原因が伝わりにくい。
+    import socket
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        probe.bind(("127.0.0.1", args.port))
+    except OSError as exc:
+        print(
+            f"\nポート {args.port} は使用中です（{exc}）。\n"
+            f"  すでに入力画面が起動していませんか。その場合はブラウザで {url} を開いてください。\n"
+            f"  別のポートを使うなら --port 8101 のように指定します。",
+            file=sys.stderr,
+        )
+        return 1
+    finally:
+        probe.close()
 
     import uvicorn
 
-    uvicorn.run(build_app(directory, args.prefill), host="127.0.0.1", port=args.port, log_level="warning")
+    uvicorn.run(
+        build_app(directory, args.prefill),
+        host="127.0.0.1", port=args.port, log_level="warning",
+    )
     return 0
 
 
