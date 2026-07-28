@@ -493,15 +493,23 @@ async def update_settings(request: Request, db: Session = Depends(get_db), admin
 
 @router.get("/storage")
 def storage_status(request: Request, db: Session = Depends(get_db), admin: User = Depends(current_admin)):
-    used = storage.total_bytes()
-    images = db.query(CardImage).count()
-    by_variant = {}
+    from sqlalchemy import func
+
+    # ?fresh=1 で集計し直す。通常はキャッシュを使う（services/storage.py 参照）
+    used = storage.total_bytes(fresh=request.query_params.get("fresh") == "1")
+    # 件数と合計サイズはDB側で集計する。行を全部読むと画像3万件で数秒かかる
+    rows = (
+        db.query(CardImage.variant, func.count(CardImage.card_image_id), func.sum(CardImage.byte_size))
+        .group_by(CardImage.variant)
+        .all()
+    )
+    by_variant = {
+        variant: {"count": count, "mb": round((total or 0) / 1024 / 1024, 2)}
+        for variant, count, total in rows
+    }
     for variant in ("original", "display", "thumbnail"):
-        rows = db.query(CardImage).filter(CardImage.variant == variant).all()
-        by_variant[variant] = {
-            "count": len(rows),
-            "mb": round(sum(r.byte_size for r in rows) / 1024 / 1024, 2),
-        }
+        by_variant.setdefault(variant, {"count": 0, "mb": 0.0})
+
     return render(
         request,
         "admin/storage.html",
@@ -510,11 +518,12 @@ def storage_status(request: Request, db: Session = Depends(get_db), admin: User 
             "used_mb": round(used / 1024 / 1024, 2),
             "quota_mb": round(app_settings.storage_quota_bytes / 1024 / 1024, 2),
             "percent": round(used / max(1, app_settings.storage_quota_bytes) * 100, 2),
-            "images": images,
+            "images": sum(info["count"] for info in by_variant.values()),
             "by_variant": by_variant,
             "free_mb": (
                 round(free / 1024 / 1024, 2) if (free := storage.free_space_bytes()) is not None else None
             ),
             "backend": app_settings.storage_backend,
+            "cache_seconds": app_settings.storage_usage_cache_seconds,
         },
     )

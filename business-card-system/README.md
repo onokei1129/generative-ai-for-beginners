@@ -13,6 +13,7 @@
 | [ocr-poc-report.md](./ocr-poc-report.md) | OCR精度PoCの計測報告（論点C） | 第1回 | 実測済み |
 | [operations-guide.md](./operations-guide.md) | 本番導入・運用手引き（構築／HTTPS／バックアップ／監査ログのアーカイブ／監視） | Ver.0.3 | ドラフト |
 | [restore-drill-2026-07.md](./restore-drill-2026-07.md) | 復元訓練 第1回の実施記録 | 第1回 | 実施済み |
+| [capacity-report-2026-07.md](./capacity-report-2026-07.md) | 本番相当データでの性能実測（検索応答時間・RTO） | 第1回 | 実測済み |
 | [app/](./app/) | 実装（動作するWebアプリケーション） | — | 動作確認済み |
 
 ## 読む順序

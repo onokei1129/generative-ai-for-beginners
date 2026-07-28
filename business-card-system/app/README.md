@@ -152,7 +152,7 @@ cd business-card-system/app
 
 要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・
 CSV出力の監査記録・編集権限の切替・ストレージ実装の切替・起動時の設定チェック・取込の再処理）を
-66 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
+71 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
 LLM抽出は HTTP トランスポートを差し替えた契約テスト、S3 は moto で模擬）。
 
 同じテストを PostgreSQL に対しても実行できる（本番と同じDBで検証するため）。
@@ -163,7 +163,7 @@ BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcards_test"
   ./.venv/bin/python -m pytest tests -q
 ```
 
-SQLite・PostgreSQL のいずれでも 66 件すべて通ることを確認している。
+SQLite・PostgreSQL のいずれでも 71 件すべて通ることを確認している。
 
 ---
 
@@ -180,6 +180,7 @@ SQLite・PostgreSQL のいずれでも 66 件すべて通ることを確認し�
 | `BCARDS_S3_BUCKET` / `BCARDS_S3_KEY_PREFIX` | 空 / `business-cards` | `s3` のとき必須／バケット内の接頭辞 |
 | `BCARDS_S3_REGION` / `BCARDS_S3_ENDPOINT_URL` | 空 | リージョン／MinIO 等の S3 互換ストレージ |
 | `BCARDS_S3_SSE` | `AES256` | 保存時暗号化。空文字で無効 |
+| `BCARDS_STORAGE_USAGE_CACHE_SECONDS` | `300` | 使用量の集計をキャッシュする秒数。`0` で毎回集計（後述） |
 | `BCARDS_SECRET_KEY` | `dev-secret-key-change-me` | セッション署名鍵（**本番では必ず変更**） |
 | `BCARDS_SECURE_COOKIE` | `0` | HTTPS 環境では `1` |
 | `BCARDS_OCR_PROVIDER` | `tesseract` | `mock` / `tesseract` / `azure` |
@@ -217,6 +218,34 @@ export BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcard
 自動生成された内容は必ず目視で確認し、`alembic downgrade -1 && alembic upgrade head` で
 往復できることを確かめてから取り込む。
 
+### 性能の測定
+
+本番相当のデータ量を投入して、応答時間とバックアップ・復元の所要時間を測れる。
+結果は [../capacity-report-2026-07.md](../capacity-report-2026-07.md) を参照。
+
+```bash
+# 架空データを1万件投入する（画像つきで約8分。BCARDS_ENV=production では実行を拒否する）
+PYTHONPATH=src ./.venv/bin/python ops/loadgen.py --cards 10000
+PYTHONPATH=src ./.venv/bin/python ops/loadgen.py --cards 10000 --no-images   # DBだけ・高速
+
+# 応答時間を測る
+PYTHONPATH=src ./.venv/bin/python ops/bench.py --out capacity.md
+```
+
+名刺1万件・画像3万件（1.1GB）での実測値：
+
+| 項目 | 実測 | 目標 |
+| --- | --- | --- |
+| 検索応答時間 | 337 ms（最悪） | 1秒以内 |
+| ホーム画面 | 41 ms | — |
+| CSV全件出力（1万件） | 2.85 秒 | 10秒以内 |
+| バックアップ取得 | 56 秒 | — |
+| 復元＋整合性チェック | 41 秒 | RTO 2営業時間 |
+
+> 使用量の集計（`storage.total_bytes()`）はローカルなら全走査、S3ならバケット全体の
+> リストになるため、既定で300秒キャッシュしている（`BCARDS_STORAGE_USAGE_CACHE_SECONDS`）。
+> キャッシュを無効にするとホーム画面が画像3万件で約0.5秒遅くなる。
+
 ---
 
 ## 4. 構成
@@ -229,7 +258,9 @@ app/
 │   ├── backup.sh          DB（pg_dump）と画像の取得・世代管理
 │   ├── restore.sh         復元（チェックサム検証・件数確認つき）
 │   ├── verify.py          DBの画像レコードに対する実体の有無を確認
-│   └── archive_logs.py    監査ログのアーカイブと期限切れの破棄（日次バッチ）
+│   ├── archive_logs.py    監査ログのアーカイブと期限切れの破棄（日次バッチ）
+│   ├── loadgen.py         本番相当の架空データ投入（性能測定用。本番では実行不可）
+│   └── bench.py           検索・一覧・容量集計の応答時間を測る
 ├── poc/                   OCR精度の計測
 │   ├── samples.py         正解ラベル付きの名刺サンプル生成
 │   ├── runner.py          パイプライン比較と精度レポート
@@ -297,7 +328,7 @@ app/
 
 | 項目 | 状況 | 内容 |
 | --- | --- | --- |
-| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全66テストを PostgreSQL 16 で確認 |
+| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全71テストを PostgreSQL 16 で確認 |
 | マイグレーション管理 | 実施済み | Alembic を導入。`upgrade` / `downgrade` の往復を確認済み |
 | オブジェクトストレージ | 実施済み | `local` / `s3`（S3互換含む）を設定で切替。S3 は moto でテスト |
 | HTTPS・鍵・プロキシ | 手順を整備 | [運用手引き §2.4–2.5](../operations-guide.md#24-秘密鍵の生成) に nginx 設定例と `BCARDS_TRUSTED_PROXIES` の指定を記載 |
@@ -305,6 +336,7 @@ app/
 | 取込の並列度・性能 | 実施済み | OCRのCPU競合を解消（10分超→2.1秒）。DBトランザクションもOCR中は閉じる |
 | バックアップ・復元 | 実施済み | `ops/backup.sh` / `ops/restore.sh` / `ops/verify.py`。実機で取得→復元→検証まで確認 |
 | 復元訓練 | 第1回実施済み | [実施記録](../restore-drill-2026-07.md)。手順の不具合を1件検出し修正、回帰テストを追加 |
+| 性能・容量の実測 | 実施済み | 名刺1万件で[実測](../capacity-report-2026-07.md)。性能問題を2件検出し修正（ホーム画面 551→41ms、CSV出力 12.0→2.9秒） |
 | 監査ログのアーカイブ | 実施済み | 論点Hを実装。1年でアーカイブ・3年で破棄（設定で変更可）。`ops/archive_logs.py` |
 | ワーカーの分離 | 選択可能 | `worker.py` で別プロセス化できる。既定はアプリ内スレッド |
 
@@ -314,7 +346,7 @@ app/
 2. クラウド事業者・OCRサービスの確定（論点C）と、実名刺での精度実測
    （仕分けは `poc/classify.py` で行える。計測には正解ラベルの作成が必要）
 3. 監査ログの保存期間（1年アーカイブ／3年破棄）の妥当性を社内規程と突き合わせる
-4. 本番相当のデータ量での復元時間の測定（RTO の確定。論点O）
+4. 非機能要件の確定値（検索1秒以内・RTO 2営業時間）の決裁
 
 ### 現時点で未実装の項目
 

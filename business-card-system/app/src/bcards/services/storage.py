@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
@@ -168,6 +169,7 @@ def set_backend(backend: StorageBackend | None) -> None:
     """テストや切り替え用。None を渡すと設定から作り直す。"""
     global _backend
     _backend = backend
+    invalidate_usage_cache()
 
 
 # --------------------------------------------------------------------------
@@ -203,8 +205,46 @@ def checksum(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def total_bytes() -> int:
-    return get_backend().total_bytes()
+# --------------------------------------------------------------------------
+# 使用量の集計（キャッシュつき）
+# --------------------------------------------------------------------------
+#
+# 使用量はホーム画面と管理画面で毎回参照するが、集計そのものは重い。
+# ローカル保存ではディレクトリ全体を走査し（画像3万件で実測 490ms）、
+# S3 ではバケット全体を ListObjectsV2 でページングするため、
+# 画面を開くたびに API 呼び出しが発生してしまう。
+#
+# この値は容量アラートの判定に使うもので、秒単位の正確さは要らない。
+# 短時間キャッシュして、画面表示のたびに集計しないようにする。
+
+_usage_cache: tuple[float, int] | None = None
+
+
+def invalidate_usage_cache() -> None:
+    global _usage_cache
+    _usage_cache = None
+
+
+def total_bytes(*, fresh: bool = False) -> int:
+    """保存されているオブジェクトの合計サイズ。
+
+    fresh=True で必ず集計し直す（管理画面の「最新に更新」用）。
+    """
+    global _usage_cache
+    ttl = settings.storage_usage_cache_seconds
+    if not fresh and ttl > 0 and _usage_cache is not None:
+        cached_at, value = _usage_cache
+        if time.monotonic() - cached_at < ttl:
+            return value
+
+    value = get_backend().total_bytes()
+    _usage_cache = (time.monotonic(), value)
+    return value
+
+
+def usage_measured_at() -> float | None:
+    """使用量を最後に集計した時刻（time.monotonic 基準）。未集計なら None。"""
+    return _usage_cache[0] if _usage_cache else None
 
 
 def free_space_bytes() -> int | None:

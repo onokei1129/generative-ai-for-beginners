@@ -6,6 +6,10 @@
   <p class="small">使用 {{ used_mb }}MB / 契約容量 {{ quota_mb }}MB（{{ percent }}%）
     {% if free_mb is not none %}/ ディスク空き {{ free_mb }}MB{% endif %}
     <span class="muted">/ 保存先: {{ backend }}</span></p>
+  {% if cache_seconds %}
+  <p class="small muted">使用量は最大 {{ cache_seconds|int }} 秒キャッシュしています。
+    <a href="/admin/storage?fresh=1">いま集計し直す</a></p>
+  {% endif %}
 </div>
 <div class="table-wrap">
   <table>

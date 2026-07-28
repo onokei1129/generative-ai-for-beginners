@@ -40,6 +40,9 @@ class Settings:
     s3_region: str = _env("BCARDS_S3_REGION", "")
     s3_endpoint_url: str = _env("BCARDS_S3_ENDPOINT_URL", "")  # MinIO等のS3互換ストレージ用
     s3_sse: str = _env("BCARDS_S3_SSE", "AES256")  # 保存時暗号化。空文字で無効
+    # 使用量の集計をキャッシュする秒数。0で毎回集計する。
+    # 集計はローカルなら全走査、S3ならバケット全体のリストになるため、画面表示のたびには行わない
+    storage_usage_cache_seconds: float = float(_env("BCARDS_STORAGE_USAGE_CACHE_SECONDS", "300"))
 
     # セッション
     secret_key: str = _env("BCARDS_SECRET_KEY", "dev-secret-key-change-me")

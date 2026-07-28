@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..db import get_db
 from ..deps import current_user, verify_csrf
-from ..models import Company, CsvExportLog, User
+from ..models import BusinessCard, Company, CsvExportLog, User
 from ..services import csv_export
 from ..services.search import build_query, describe_conditions
 from ..settings_store import get_setting
@@ -91,7 +91,9 @@ async def export_csv(request: Request, db: Session = Depends(get_db), user: User
             },
         )
 
-    cards = query.all()
+    # 連絡先はCSVの列（電話・携帯・FAX・メール・URL）で必ず参照する。
+    # まとめて読まないと1名刺につき1クエリ発行され、1万件で10秒以上かかる
+    cards = query.options(selectinload(BusinessCard.contacts)).all()
     content, file_name, _log = csv_export.export(
         db, request, user, cards, columns,
         scope=scope,
