@@ -7,6 +7,8 @@ tar の固め方・展開の仕方だけを切り出して検証する（DB部�
 
 from __future__ import annotations
 
+import functools
+import os
 import shutil
 import subprocess
 import tarfile
@@ -113,9 +115,45 @@ def test_scripts_are_executable(script):
     )
 
 
+@functools.lru_cache(maxsize=1)
+def working_bash() -> str | None:
+    """実際に動く bash の場所を返す。無ければ None。
+
+    Windows では `bash` を探すと `C:\\Windows\\System32\\bash.exe`（WSLの起動用）が
+    先に見つかることが多い。WSLが入っていないとこれは起動に失敗するため、
+    「見つかったか」ではなく「動くか」で判定する。
+    Git for Windows の bash も候補に入れる。
+    """
+    candidates = [shutil.which("bash")]
+    if os.name == "nt":
+        candidates += [
+            r"C:\Program Files\Git\bin\bash.exe",
+            r"C:\Program Files (x86)\Git\bin\bash.exe",
+        ]
+
+    for candidate in candidates:
+        if not candidate or not Path(candidate).exists():
+            continue
+        try:
+            # 中身の無いスクリプトで動作確認する。ここが通らない bash は使えない
+            probe = subprocess.run(
+                [candidate, "-n", "-c", ":"], capture_output=True, timeout=30
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if probe.returncode == 0:
+            return candidate
+    return None
+
+
 @pytest.mark.parametrize("script", ["backup.sh", "restore.sh"])
 def test_scripts_have_no_syntax_error(script):
     """構文エラーがあると、障害対応の最中に初めて気づくことになる。"""
-    if shutil.which("bash") is None:
-        pytest.skip("bash が見つからないため省略します（Windows など）")
-    subprocess.run(["bash", "-n", str(OPS / script)], check=True)
+    bash = working_bash()
+    if bash is None:
+        pytest.skip("動作する bash が無いため省略します（Windows で WSL 未導入など）")
+
+    result = subprocess.run(
+        [bash, "-n", str(OPS / script)], capture_output=True, text=True, errors="replace"
+    )
+    assert result.returncode == 0, f"{script} に構文エラーがあります:\n{result.stderr}"
