@@ -20,19 +20,28 @@ if not exist "%DESKTOP%" (
 set "FOLDER=%DESKTOP%\名刺システム"
 if not exist "%FOLDER%" mkdir "%FOLDER%"
 
+rem 番号が変わったときに古いショートカットが残ると紛らわしいので、
+rem このフォルダのショートカット（.lnk）だけ作り直す。
+rem 消すのはショートカットのみで、名刺の画像やラベルには一切触れない。
+if exist "%FOLDER%\*.lnk" del /q "%FOLDER%\*.lnk"
+
 call :make "1 セットアップ"                 "setup.bat"
 call :make "2 練習サンプルを作る"           "make-practice-samples.bat"
 call :make "3 ラベル入力（練習）"           "label-practice.bat"
 call :make "4 名刺を仕分ける"               "classify-scans.bat"
-call :make "5 ラベル入力（実際の名刺）"     "label-real-cards.bat"
-call :make "6 アプリを起動"                 "run-app.bat"
+call :make "5 仕分け結果を確認する"         "open-card-folder.bat"
+call :make "6 ラベル入力（実際の名刺）"     "label-real-cards.bat"
+call :make "7 進み具合を見る"               "check-progress.bat"
+call :make "8 精度を測る"                   "measure-accuracy.bat"
+call :make "9 アプリを起動"                 "run-app.bat"
 
 echo.
 echo ============================================
 echo  作成しました: %FOLDER%
 echo.
-echo  デスクトップの「名刺システム」フォルダを開き、
-echo  番号の順に実行してください。
+echo  はじめて使う場合   : 1 から順に実行してください。
+echo  実名刺のテスト     : 4 → 5 → 6 → 7 → 8 の順です。
+echo                       6 と 7 は何度往復しても構いません。
 echo ============================================
 echo.
 explorer "%FOLDER%"
