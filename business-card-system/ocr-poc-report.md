@@ -16,8 +16,8 @@
 
 ```bash
 cd app
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md          # 合成サンプル
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --real ./poc/samples --out ../x.md  # 実名刺
+./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md          # 合成サンプル
+./.venv/bin/python -m poc.runner --real ./poc/samples --out ../x.md  # 実名刺
 ```
 
 > **重要な前提**：今回のサンプルは**合成画像**である。実名刺のフォント・紙質・印刷のかすれ・
@@ -155,13 +155,13 @@ export ANTHROPIC_API_KEY=...        # または ant auth login
 cd app
 
 # 構成Eだけを計測する（既存の構成A〜Dの再計測を省いて費用と時間を抑える）
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --only E --out ../ocr-poc-report-llm.md
+./.venv/bin/python -m poc.runner --only E --out ../ocr-poc-report-llm.md
 
 # 全構成を並べて比較する場合
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md
+./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md
 
 # エフォートを振って精度と費用の関係を見る場合
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --only E --llm-effort medium --out /tmp/e-medium.md
+./.venv/bin/python -m poc.runner --only E --llm-effort medium --out /tmp/e-medium.md
 ```
 
 計測すると、構成Eの行に**正答率・処理時間・1枚あたりの費用（トークン数から算出）**が入る。
@@ -209,11 +209,11 @@ cd business-card-system/app
 apt-get install -y tesseract-ocr tesseract-ocr-jpn tesseract-ocr-jpn-vert
 
 # 合成サンプルで計測（16枚・約5分）
-PYTHONPATH=src ./.venv/bin/python -m poc.runner \
+./.venv/bin/python -m poc.runner \
     --out ../ocr-poc-report.md --json poc/last-result.json
 
 # サンプル画像を目視確認したい場合
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --save-samples /tmp/samples --out /tmp/r.md
+./.venv/bin/python -m poc.runner --save-samples /tmp/samples --out /tmp/r.md
 ```
 
 生データ（1枚ごとの抽出結果と正解の対比）は `app/poc/last-result.json` に残る。

@@ -254,9 +254,10 @@ PostgreSQL は「結合してから絞り込む」計画を選び、列ごとの
 サイズは連絡先40万件で 13MB、作成は数秒。書き込みは年間3,000件程度のため
 索引更新の負荷は無視できる。
 
-**PostgreSQL 専用**で、SQLite では何もしない。また `pg_trgm` の作成には
-スーパーユーザー権限が要るため、権限が無い場合は索引を見送って
-マイグレーション自体は成功させる（メッセージで手順を案内する）。
+**PostgreSQL 専用**で、SQLite では何もしない。`pg_trgm` は PostgreSQL 13 以降
+trusted 拡張のため通常はスーパーユーザー不要だが、マネージドサービス等で
+拡張の作成が制限されている場合は索引を見送ってマイグレーション自体は成功させる
+（メッセージで手順を案内する）。この経路も実際に権限を落として検証した。
 
 ### 氏名・会社名の検索を速くするには
 
@@ -293,21 +294,21 @@ createdb bcards_bench
 export BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcards_bench"
 export BCARDS_STORAGE_DIR=/tmp/bench-objects
 .venv/bin/alembic upgrade head
-PYTHONPATH=src .venv/bin/python seed.py
+.venv/bin/python seed.py
 
 # 2. 本番相当のデータを投入する（1万件・画像つきで約8分）
-PYTHONPATH=src .venv/bin/python ops/loadgen.py --cards 10000
+.venv/bin/python ops/loadgen.py --cards 10000
 
 # 3. 応答時間を測る（単独）
-PYTHONPATH=src .venv/bin/python ops/bench.py --out capacity.md
+.venv/bin/python ops/bench.py --out capacity.md
 
 # 3b. 同時アクセス時を測る（検索5人＋取込2人）
-PYTHONPATH=src .venv/bin/python ops/bench_concurrent.py --readers 5 --importers 2 --seconds 30
+.venv/bin/python ops/bench_concurrent.py --readers 5 --importers 2 --seconds 30
 
 # 4. バックアップ・復元の所要時間を測る
 time ./ops/backup.sh
 time ./ops/restore.sh /var/backups/bcards/<取得日時> --force
-time PYTHONPATH=src .venv/bin/python ops/verify.py
+time .venv/bin/python ops/verify.py
 ```
 
 `ops/loadgen.py` は `BCARDS_ENV=production` のときは実行を拒否する。

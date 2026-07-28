@@ -14,6 +14,72 @@
 
 ---
 
+## 0. Windows で動かす場合（PowerShell）
+
+Linux/macOS の方は「1. 起動方法」へ。
+
+**PowerShell では `PYTHONPATH=src python ...` のような書き方は使えません**
+（`VAR=値 コマンド` は bash の書き方）。以下のとおり実行してください。
+なお本書のスクリプトは自分でパスを通すため、`PYTHONPATH` の設定自体が不要です。
+
+### 0.1 必要なもの
+
+| 必要なもの | 入手方法 |
+| --- | --- |
+| Python 3.11 以上 | <https://www.python.org/downloads/windows/>（**Add python.exe to PATH** に必ずチェック） |
+| Git | <https://git-scm.com/download/win> |
+| tesseract（OCRを動かす場合のみ） | <https://github.com/UB-Mannheim/tesseract/wiki>。インストール時に **Japanese** と **Japanese (vertical)** を選ぶ |
+
+正解ラベルの入力（`poc/label.py`）だけなら **tesseract は不要**です。
+
+### 0.2 取得と準備
+
+```powershell
+cd $HOME
+git clone https://github.com/onokei1129/generative-ai-for-beginners.git
+cd generative-ai-for-beginners
+git checkout claude/business-card-system-requirements-oznnvt
+cd business-card-system\app
+
+python -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\pip install -r requirements.txt
+```
+
+### 0.3 実行例
+
+```powershell
+# 動作確認（テスト）
+.venv\Scripts\python -m pytest tests -q
+
+# アプリを起動する
+.venv\Scripts\python seed.py                       # 初期ユーザーを作成
+.venv\Scripts\python -m uvicorn bcards.main:app --app-dir src --port 8000
+#   → http://127.0.0.1:8000/  （admin / AdminPass123!）
+
+# 名刺と領収書を仕分ける
+.venv\Scripts\python poc\classify.py "$HOME\Dropbox\ScanSnap" `
+    --copy-to .\poc\real-cards --copy-unknown --report sort.md
+
+# 正解ラベルを入力する
+.venv\Scripts\python poc\label.py .\poc\real-cards
+#   → http://127.0.0.1:8100/
+```
+
+環境変数を設定する場合は PowerShell の書き方を使います。
+
+```powershell
+$env:BCARDS_OCR_PROVIDER = "mock"        # 設定する
+$env:ANTHROPIC_API_KEY   = "sk-ant-..."  # LLM抽出を測るとき
+Remove-Item Env:\BCARDS_OCR_PROVIDER     # 解除する
+```
+
+> tesseract を入れたのに `TesseractNotFoundError` が出る場合は、
+> インストール先（既定は `C:\Program Files\Tesseract-OCR`）を PATH に追加するか、
+> PowerShell を開き直してください。
+
+---
+
 ## 1. 起動方法
 
 ```bash
@@ -23,10 +89,10 @@ cd business-card-system/app
 ./run.sh
 
 # 初期ユーザーの作成（別ターミナルで実行）
-PYTHONPATH=src ./.venv/bin/python seed.py
+./.venv/bin/python seed.py
 
 # デモ用の名刺画像を生成し、取込〜OCR〜登録まで実行する場合
-PYTHONPATH=src ./.venv/bin/python seed.py --demo --count 6
+./.venv/bin/python seed.py --demo --count 6
 ```
 
 ブラウザで <http://127.0.0.1:8000/> を開く。
@@ -69,7 +135,7 @@ tesseract が無い環境では `BCARDS_OCR_PROVIDER=mock` を指定すると、
 ```bash
 # 別プロセスでワーカーを動かす場合
 BCARDS_WORKER_ENABLED=0 ./run.sh                 # Web側はワーカーを起動しない
-PYTHONPATH=src ./.venv/bin/python worker.py      # ワーカー（Ctrl-Cで安全に停止）
+./.venv/bin/python worker.py      # ワーカー（Ctrl-Cで安全に停止）
 ```
 
 - 同時実行数は `BCARDS_WORKER_CONCURRENCY`（既定2）
@@ -99,9 +165,9 @@ OCRの精度には影響しない（PoCの正答率 44.8% は設定前後で同�
 `poc/` に、正解ラベル付きサンプルで精度を実測する仕組みがある。
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md --json poc/last-result.json
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --real ./poc/samples --out ../real.md   # 実名刺で計測
-PYTHONPATH=src ./.venv/bin/python -m poc.runner --only E --out /tmp/llm.md              # LLM抽出だけ計測
+./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md --json poc/last-result.json
+./.venv/bin/python -m poc.runner --real ./poc/samples --out ../real.md   # 実名刺で計測
+./.venv/bin/python -m poc.runner --only E --out /tmp/llm.md              # LLM抽出だけ計測
 ```
 
 項目別正答率・1枚あたりの修正項目数・処理時間・（LLM利用時は）費用を出力する。
@@ -113,10 +179,10 @@ ScanSnap の保存先のように名刺と領収書が混在したフォルダ�
 
 ```bash
 # 判定するだけ（ファイルは動かさない）
-PYTHONPATH=src ./.venv/bin/python poc/classify.py "/path/to/ScanSnap" --report sort.md
+./.venv/bin/python poc/classify.py "/path/to/ScanSnap" --report sort.md
 
 # 名刺と判定したものを別フォルダへコピーする（不明も分けて入れる）
-PYTHONPATH=src ./.venv/bin/python poc/classify.py "/path/to/ScanSnap" \
+./.venv/bin/python poc/classify.py "/path/to/ScanSnap" \
     --copy-to ./poc/real-cards --copy-unknown --csv sort.csv
 ```
 
@@ -134,8 +200,8 @@ PYTHONPATH=src ./.venv/bin/python poc/classify.py "/path/to/ScanSnap" \
 自分の環境で数値を確かめる場合：
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python -m poc.receipts --out /tmp/mixed      # 混在フォルダを生成
-PYTHONPATH=src ./.venv/bin/python -m poc.classify_eval /tmp/mixed       # 混同行列と正答率
+./.venv/bin/python -m poc.receipts --out /tmp/mixed      # 混在フォルダを生成
+./.venv/bin/python -m poc.classify_eval /tmp/mixed       # 混同行列と正答率
 ```
 
 実データで測る場合は、対象フォルダに `_truth.csv`（`file,truth` の2列。
@@ -146,7 +212,7 @@ PYTHONPATH=src ./.venv/bin/python -m poc.classify_eval /tmp/mixed       # 混同
 OCR精度を実データで測るには、名刺ごとの**正解**が要る。入力用の画面を用意している。
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python poc/label.py ./poc/real-cards
+./.venv/bin/python poc/label.py ./poc/real-cards
 # → http://127.0.0.1:8100/ をブラウザで開く
 ```
 
@@ -157,9 +223,9 @@ PYTHONPATH=src ./.venv/bin/python poc/label.py ./poc/real-cards
 Excel で入力したい・入力を他の人に頼みたい場合は CSV で受け渡せる。
 
 ```bash
-PYTHONPATH=src ./.venv/bin/python -m poc.labels_csv export ./poc/real-cards --out labels.csv
+./.venv/bin/python -m poc.labels_csv export ./poc/real-cards --out labels.csv
 # labels.csv を Excel で入力（file 列は変更しない）
-PYTHONPATH=src ./.venv/bin/python -m poc.labels_csv import ./poc/real-cards --csv labels.csv
+./.venv/bin/python -m poc.labels_csv import ./poc/real-cards --csv labels.csv
 ```
 
 **`--prefill` は測定目的では使わないこと。** OCRの結果を初期値に入れるため入力は速くなるが、
@@ -270,14 +336,14 @@ CREATE EXTENSION pg_trgm;
 
 ```bash
 # 架空データを1万件投入する（画像つきで約8分。BCARDS_ENV=production では実行を拒否する）
-PYTHONPATH=src ./.venv/bin/python ops/loadgen.py --cards 10000
-PYTHONPATH=src ./.venv/bin/python ops/loadgen.py --cards 10000 --no-images   # DBだけ・高速
+./.venv/bin/python ops/loadgen.py --cards 10000
+./.venv/bin/python ops/loadgen.py --cards 10000 --no-images   # DBだけ・高速
 
 # 応答時間を測る（単独）
-PYTHONPATH=src ./.venv/bin/python ops/bench.py --out capacity.md
+./.venv/bin/python ops/bench.py --out capacity.md
 
 # 同時アクセス時を測る（検索5人＋取込2人。要件§5の想定）
-PYTHONPATH=src ./.venv/bin/python ops/bench_concurrent.py --readers 5 --importers 2 --seconds 30
+./.venv/bin/python ops/bench_concurrent.py --readers 5 --importers 2 --seconds 30
 ```
 
 名刺1万件・画像3万件（1.1GB）での実測値：

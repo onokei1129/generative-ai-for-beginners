@@ -33,7 +33,7 @@
 ```bash
 cd app
 ./run.sh                                          # 起動（http://127.0.0.1:8000/）
-PYTHONPATH=src ./.venv/bin/python seed.py --demo   # 初期ユーザーとデモ名刺を投入
+./.venv/bin/python seed.py --demo   # 初期ユーザーとデモ名刺を投入
 ./.venv/bin/python -m pytest tests -q              # テスト
 ```
 

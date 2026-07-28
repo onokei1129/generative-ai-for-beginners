@@ -190,20 +190,20 @@ AWS Textract・Google Document AI にも名刺専用モデルはなく、いず�
 cd business-card-system/app
 
 # 1. スキャンフォルダから名刺だけを取り出す（領収書等を除く）
-PYTHONPATH=src .venv/bin/python poc/classify.py "C:/Users/xxx/Dropbox/ScanSnap" \
+.venv/bin/python poc/classify.py "C:/Users/xxx/Dropbox/ScanSnap" \
     --copy-to ./poc/real-cards --copy-unknown --report sort.md
 
 # 2. 「不明」に落ちたものを目視で振り分ける（poc/real-cards/unknown/ を確認）
 
 # 3. 正解ラベルを入力する（画面が開く。1枚1〜2分、40枚で1時間強）
-PYTHONPATH=src .venv/bin/python poc/label.py ./poc/real-cards
+.venv/bin/python poc/label.py ./poc/real-cards
 #    Excel で入力したい場合は poc/labels_csv.py で CSV に書き出して受け渡す
 
 # 4. ルールベースの精度を測る
-PYTHONPATH=src .venv/bin/python poc/runner.py --real ./poc/real-cards --out real-rule.md
+.venv/bin/python poc/runner.py --real ./poc/real-cards --out real-rule.md
 
 # 5. LLM抽出の精度を測る（ANTHROPIC_API_KEY が必要）
-ANTHROPIC_API_KEY=... PYTHONPATH=src .venv/bin/python poc/runner.py \
+ANTHROPIC_API_KEY=... .venv/bin/python poc/runner.py \
     --real ./poc/real-cards --only E --out real-llm.md
 ```
 

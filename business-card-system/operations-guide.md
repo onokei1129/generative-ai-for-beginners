@@ -481,8 +481,8 @@ cd /opt/bcards/app
 （**検証環境で** `ops/loadgen.py` によりデータを投入してから実行してください）。
 
 ```bash
-PYTHONPATH=src .venv/bin/python ops/bench.py                                    # 単独
-PYTHONPATH=src .venv/bin/python ops/bench_concurrent.py --readers 5 --importers 2  # 同時
+.venv/bin/python ops/bench.py                                    # 単独
+.venv/bin/python ops/bench_concurrent.py --readers 5 --importers 2  # 同時
 ```
 
 ### 件数が増えたときに先に来る限界
