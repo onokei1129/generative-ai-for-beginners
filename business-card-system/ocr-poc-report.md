@@ -152,13 +152,32 @@ Claude API に名刺画像とOCRテキストの両方を渡し、JSON Schema に
 
 ```bash
 export ANTHROPIC_API_KEY=...        # または ant auth login
-export BCARDS_FIELD_EXTRACTOR=llm   # アプリ側で使う場合
-cd app && PYTHONPATH=src ./.venv/bin/python -m poc.runner --out ../ocr-poc-report-llm.md
+cd app
+
+# 構成Eだけを計測する（既存の構成A〜Dの再計測を省いて費用と時間を抑える）
+PYTHONPATH=src ./.venv/bin/python -m poc.runner --only E --out ../ocr-poc-report-llm.md
+
+# 全構成を並べて比較する場合
+PYTHONPATH=src ./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md
+
+# エフォートを振って精度と費用の関係を見る場合
+PYTHONPATH=src ./.venv/bin/python -m poc.runner --only E --llm-effort medium --out /tmp/e-medium.md
 ```
 
 計測すると、構成Eの行に**正答率・処理時間・1枚あたりの費用（トークン数から算出）**が入る。
 モデルは既定で `claude-opus-5`、エフォートは `low`（抽出は単純なタスクのため）。
-`BCARDS_LLM_MODEL` / `BCARDS_LLM_EFFORT` で変更できる。
+`--llm-model` / `--llm-effort`、または `BCARDS_LLM_MODEL` / `BCARDS_LLM_EFFORT` で変更できる。
+
+アダプタ自体は認証情報が無くても検証済みで、`app/tests/test_llm_extractor.py` が
+HTTPトランスポートを差し替えて次を確認している。
+
+- 名刺画像（base64 JPEG）とOCRテキストの両方を送っていること
+- 構造化出力のスキーマに全項目が含まれ、余分なキーを許さないこと
+- 長辺1600pxを超える画像は縮小してから送ること（費用と転送量の抑制）
+- 拒否応答を抽出結果として扱わないこと
+- `auto` ではLLMが失敗してもルールベースへ退避し、取込が止まらないこと
+
+したがって鍵を設定すれば、追加の実装なしにそのまま計測に入れる。
 
 ### 5.2 クラウドOCRの計測手順
 

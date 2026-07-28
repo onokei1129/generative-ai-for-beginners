@@ -80,6 +80,7 @@ PYTHONPATH=src ./.venv/bin/python worker.py      # ワーカー（Ctrl-Cで安�
 ```bash
 PYTHONPATH=src ./.venv/bin/python -m poc.runner --out ../ocr-poc-report.md --json poc/last-result.json
 PYTHONPATH=src ./.venv/bin/python -m poc.runner --real ./poc/samples --out ../real.md   # 実名刺で計測
+PYTHONPATH=src ./.venv/bin/python -m poc.runner --only E --out /tmp/llm.md              # LLM抽出だけ計測
 ```
 
 項目別正答率・1枚あたりの修正項目数・処理時間・（LLM利用時は）費用を出力する。
@@ -94,7 +95,8 @@ cd business-card-system/app
 ```
 
 要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・CSV出力の監査記録・編集権限の切替）を
-30 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、LLM抽出は無効）。
+37 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
+LLM抽出は HTTP トランスポートを差し替えた契約テスト）。
 
 ---
 

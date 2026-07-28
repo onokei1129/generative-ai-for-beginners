@@ -138,10 +138,15 @@ class RulePipeline:
 class LlmPipeline:
     """tesseract + LLMによる項目分離。"""
 
-    def __init__(self, label: str) -> None:
+    def __init__(self, label: str, model: str | None = None, effort: str | None = None) -> None:
         self.label = label
         self.provider = TesseractOcrProvider()
         self.extractor = get_llm_extractor()
+        if self.extractor is not None:
+            if model:
+                self.extractor.model = model
+            if effort:
+                self.extractor.effort = effort
 
     def run(self, sample: Sample) -> PipelineResult:
         if self.extractor is None:
@@ -315,6 +320,9 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=None, help="サンプル枚数の上限")
     parser.add_argument("--real", type=Path, default=None, help="実名刺サンプルのディレクトリ")
     parser.add_argument("--save-samples", type=Path, default=None, help="生成サンプルの保存先")
+    parser.add_argument("--only", default=None, help="実行する構成の記号（例: --only A,D,E）")
+    parser.add_argument("--llm-model", default=None, help="LLM抽出のモデル（既定は BCARDS_LLM_MODEL）")
+    parser.add_argument("--llm-effort", default=None, help="LLM抽出のエフォート（low/medium/high）")
     args = parser.parse_args()
 
     samples = load_real_samples(args.real) if args.real else build_samples(args.count)
@@ -331,8 +339,14 @@ def main() -> None:
         RulePipeline("C 改善後(横書き言語)", preprocessor="current", languages="jpn+eng"),
         RulePipeline("D 改善後(縦書き言語追加)", preprocessor="current", languages="jpn+jpn_vert+eng"),
     ]
-    llm_pipeline = LlmPipeline("E 改善後+LLM抽出")
+    llm_pipeline = LlmPipeline("E 改善後+LLM抽出", model=args.llm_model, effort=args.llm_effort)
     pipelines.append(llm_pipeline)
+
+    if args.only:
+        wanted = {token.strip().upper() for token in args.only.split(",") if token.strip()}
+        pipelines = [p for p in pipelines if p.label.split()[0].upper() in wanted]
+        if not pipelines:
+            raise SystemExit(f"--only の指定に一致する構成がありません: {args.only}")
 
     aggregates: list[Aggregate] = []
     raw: dict[str, Any] = {"samples": [s.sample_id for s in samples], "results": {}}

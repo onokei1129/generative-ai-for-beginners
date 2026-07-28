@@ -59,14 +59,17 @@ class LlmFieldExtractor:
 
     name = "llm"
 
-    def __init__(self, model: str | None = None, effort: str | None = None) -> None:
-        import anthropic
-
+    def __init__(self, model: str | None = None, effort: str | None = None, client: Any = None) -> None:
         self.model = model or settings.llm_model
         # 抽出は単純なタスクのため既定は低いエフォート。精度が不足する場合は
         # BCARDS_LLM_EFFORT=medium / high に上げる。
         self.effort = effort or settings.llm_effort
-        self.client = anthropic.Anthropic()
+        if client is not None:  # テストや別クライアント（Bedrock等）を差し込む用
+            self.client = client
+        else:
+            import anthropic
+
+            self.client = anthropic.Anthropic()
 
     @staticmethod
     def available() -> bool:
