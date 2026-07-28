@@ -11,7 +11,8 @@
 | [open-issues-v0.3.md](./open-issues-v0.3.md) | 未確定事項の論点整理（編集権限・クラウド事業者・OCRサービス等） | Ver.0.3 | ドラフト（決裁待ち） |
 | [screens-and-functions-v0.3.md](./screens-and-functions-v0.3.md) | 画面一覧・機能一覧 | Ver.0.3 | ドラフト |
 | [ocr-poc-report.md](./ocr-poc-report.md) | OCR精度PoCの計測報告（論点C） | 第1回 | 実測済み |
-| [operations-guide.md](./operations-guide.md) | 本番導入・運用手引き（構築／HTTPS／バックアップ／監視） | Ver.0.3 | ドラフト |
+| [operations-guide.md](./operations-guide.md) | 本番導入・運用手引き（構築／HTTPS／バックアップ／監査ログのアーカイブ／監視） | Ver.0.3 | ドラフト |
+| [restore-drill-2026-07.md](./restore-drill-2026-07.md) | 復元訓練 第1回の実施記録 | 第1回 | 実施済み |
 | [app/](./app/) | 実装（動作するWebアプリケーション） | — | 動作確認済み |
 
 ## 読む順序

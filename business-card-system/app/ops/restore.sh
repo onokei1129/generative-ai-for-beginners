@@ -43,8 +43,13 @@ pg_restore --dbname="${PG_URL}" --clean --if-exists --no-owner --no-privileges "
 echo "[2/3] 画像を復元しています..."
 if [[ -f "${SRC}/objects.tar.gz" ]]; then
   STORAGE_DIR="${BCARDS_STORAGE_DIR:-$(cd "$(dirname "$0")/.." && pwd)/storage/objects}"
-  mkdir -p "$(dirname "${STORAGE_DIR}")"
-  tar -C "$(dirname "${STORAGE_DIR}")" -xzf "${SRC}/objects.tar.gz"
+  mkdir -p "${STORAGE_DIR}"
+  # 現行の書式は中身だけを固めている。古い書式は objects/ を含むため、その場合だけ1階層外す
+  if tar -tzf "${SRC}/objects.tar.gz" | head -1 | grep -q '^objects/'; then
+    tar -C "${STORAGE_DIR}" -xzf "${SRC}/objects.tar.gz" --strip-components=1
+  else
+    tar -C "${STORAGE_DIR}" -xzf "${SRC}/objects.tar.gz"
+  fi
   echo "      ${STORAGE_DIR}"
 else
   echo "      objects.tar.gz なし（S3運用のためスキップ）"

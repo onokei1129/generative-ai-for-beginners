@@ -106,6 +106,41 @@ PYTHONPATH=src ./.venv/bin/python -m poc.runner --only E --out /tmp/llm.md      
 
 項目別正答率・1枚あたりの修正項目数・処理時間・（LLM利用時は）費用を出力する。
 
+#### スキャンフォルダから名刺だけを取り出す
+
+ScanSnap の保存先のように名刺と領収書が混在したフォルダから、名刺だけを仕分ける。
+画像を外部へ送信せず、ローカルだけで完結する。
+
+```bash
+# 判定するだけ（ファイルは動かさない）
+PYTHONPATH=src ./.venv/bin/python poc/classify.py "/path/to/ScanSnap" --report sort.md
+
+# 名刺と判定したものを別フォルダへコピーする（不明も分けて入れる）
+PYTHONPATH=src ./.venv/bin/python poc/classify.py "/path/to/ScanSnap" \
+    --copy-to ./poc/real-cards --copy-unknown --csv sort.csv
+```
+
+判定は「形状（名刺は縦横比 約1.65）」と「文字（領収書系／名刺系の語）」のスコアを合算し、
+**名刺 / 領収書 / 不明** に分ける。迷ったものは自動で振り分けず不明に落とす。
+
+合成サンプル28件（名刺16・領収書12）での実測値：
+
+| 条件 | 正答 | 不明（要目視） | 誤判定 |
+| --- | --- | --- | --- |
+| 形状＋文字（既定） | 28/28（100%） | 0 | 0 |
+| 形状のみ（`--no-ocr`） | 16/28（57.1%） | 8 | 4 |
+| 余白つき・傾きあり | 19/28（67.9%） | 9 | 0 |
+
+自分の環境で数値を確かめる場合：
+
+```bash
+PYTHONPATH=src ./.venv/bin/python -m poc.receipts --out /tmp/mixed      # 混在フォルダを生成
+PYTHONPATH=src ./.venv/bin/python -m poc.classify_eval /tmp/mixed       # 混同行列と正答率
+```
+
+実データで測る場合は、対象フォルダに `_truth.csv`（`file,truth` の2列。
+`truth` は `business_card` / `receipt`）を用意すれば同じコマンドが使える。
+
 ---
 
 ## 2. テスト
@@ -117,7 +152,7 @@ cd business-card-system/app
 
 要件の主要項目（認証・IP制限・取込キュー・OCR確認・6択登録・履歴・削除復元完全削除・共有範囲・
 CSV出力の監査記録・編集権限の切替・ストレージ実装の切替・起動時の設定チェック・取込の再処理）を
-54 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
+66 件のテストで検証している。テストは外部サービスに依存しない（OCRは mock プロバイダ、
 LLM抽出は HTTP トランスポートを差し替えた契約テスト、S3 は moto で模擬）。
 
 同じテストを PostgreSQL に対しても実行できる（本番と同じDBで検証するため）。
@@ -128,7 +163,7 @@ BCARDS_DATABASE_URL="postgresql+psycopg://bcards:***@127.0.0.1:5432/bcards_test"
   ./.venv/bin/python -m pytest tests -q
 ```
 
-SQLite・PostgreSQL のいずれでも 54 件すべて通ることを確認している。
+SQLite・PostgreSQL のいずれでも 66 件すべて通ることを確認している。
 
 ---
 
@@ -193,8 +228,14 @@ app/
 ├── ops/                   運用スクリプト
 │   ├── backup.sh          DB（pg_dump）と画像の取得・世代管理
 │   ├── restore.sh         復元（チェックサム検証・件数確認つき）
-│   └── verify.py          DBの画像レコードに対する実体の有無を確認
-├── poc/                   OCR精度の計測（サンプル生成・実行・レポート出力）
+│   ├── verify.py          DBの画像レコードに対する実体の有無を確認
+│   └── archive_logs.py    監査ログのアーカイブと期限切れの破棄（日次バッチ）
+├── poc/                   OCR精度の計測
+│   ├── samples.py         正解ラベル付きの名刺サンプル生成
+│   ├── runner.py          パイプライン比較と精度レポート
+│   ├── classify.py        名刺／領収書の仕分け（混在フォルダ対策）
+│   ├── receipts.py        検証用の領収書サンプル生成
+│   └── classify_eval.py   仕分けの正答率（混同行列）
 ├── src/bcards/
 │   ├── main.py            アプリ本体・セッション/端末IDのミドルウェア・例外ハンドラ
 │   ├── config.py          環境変数による設定
@@ -215,6 +256,7 @@ app/
 │   │   ├── cards.py       登録6択・編集・論理削除・復元・完全削除・人物統合
 │   │   ├── search.py      検索条件の組み立て
 │   │   ├── csv_export.py  CSV生成と出力ログ
+│   │   ├── log_archive.py 監査ログのアーカイブ・破棄（論点H）
 │   │   └── storage.py     オブジェクトストレージ層（local / s3 を設定で切替）
 │   ├── templates/         画面（Jinja2）
 │   └── static/app.css
@@ -255,21 +297,24 @@ app/
 
 | 項目 | 状況 | 内容 |
 | --- | --- | --- |
-| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全54テストを PostgreSQL 16 で確認 |
+| PostgreSQL 対応 | 実施済み | 接続プール・`ilike`・`SKIP LOCKED` を含め、全66テストを PostgreSQL 16 で確認 |
 | マイグレーション管理 | 実施済み | Alembic を導入。`upgrade` / `downgrade` の往復を確認済み |
 | オブジェクトストレージ | 実施済み | `local` / `s3`（S3互換含む）を設定で切替。S3 は moto でテスト |
 | HTTPS・鍵・プロキシ | 手順を整備 | [運用手引き §2.4–2.5](../operations-guide.md#24-秘密鍵の生成) に nginx 設定例と `BCARDS_TRUSTED_PROXIES` の指定を記載 |
 | 起動時の設定チェック | 実施済み | `BCARDS_ENV=production` で危険な設定を検出し起動を中止 |
 | 取込の並列度・性能 | 実施済み | OCRのCPU競合を解消（10分超→2.1秒）。DBトランザクションもOCR中は閉じる |
 | バックアップ・復元 | 実施済み | `ops/backup.sh` / `ops/restore.sh` / `ops/verify.py`。実機で取得→復元→検証まで確認 |
+| 復元訓練 | 第1回実施済み | [実施記録](../restore-drill-2026-07.md)。手順の不具合を1件検出し修正、回帰テストを追加 |
+| 監査ログのアーカイブ | 実施済み | 論点Hを実装。1年でアーカイブ・3年で破棄（設定で変更可）。`ops/archive_logs.py` |
 | ワーカーの分離 | 選択可能 | `worker.py` で別プロセス化できる。既定はアプリ内スレッド |
 
 ### 本番導入前に残っている作業
 
 1. 認証基盤（Entra ID 等）に委譲する場合は `security.py` / `routers/auth.py` を置き換える
-2. 監査ログのアーカイブ方針の確定（保存期間は論点H）
-3. クラウド事業者・OCRサービスの確定（論点C）と、実名刺での精度実測
-4. 復元訓練の初回実施（[運用手引き §7](../operations-guide.md#7-復元と復元訓練)）
+2. クラウド事業者・OCRサービスの確定（論点C）と、実名刺での精度実測
+   （仕分けは `poc/classify.py` で行える。計測には正解ラベルの作成が必要）
+3. 監査ログの保存期間（1年アーカイブ／3年破棄）の妥当性を社内規程と突き合わせる
+4. 本番相当のデータ量での復元時間の測定（RTO の確定。論点O）
 
 ### 現時点で未実装の項目
 

@@ -43,8 +43,9 @@ echo "[2/3] 画像を取得しています..."
 BACKEND="${BCARDS_STORAGE_BACKEND:-local}"
 if [[ "${BACKEND}" == "local" ]]; then
   STORAGE_DIR="${BCARDS_STORAGE_DIR:-$(cd "$(dirname "$0")/.." && pwd)/storage/objects}"
-  # 内容ハッシュがキーなので、既存ファイルは変化しない。差分同期で足りる
-  tar -C "$(dirname "${STORAGE_DIR}")" -czf "${DEST}/objects.tar.gz" "$(basename "${STORAGE_DIR}")"
+  # 保存先ディレクトリ名を含めず、中身だけを固める。
+  # 名前を含めると、復元先のディレクトリ名が違うときに間違った場所へ展開されてしまう。
+  tar -C "${STORAGE_DIR}" -czf "${DEST}/objects.tar.gz" .
   echo "      $(du -h "${DEST}/objects.tar.gz" | cut -f1)"
 elif [[ "${BACKEND}" == "s3" ]]; then
   : "${BCARDS_S3_BUCKET:?BCARDS_S3_BUCKET を設定してください}"

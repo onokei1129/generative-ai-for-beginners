@@ -23,6 +23,7 @@ from ..models import (
     ChangeHistory,
     CsvExportLog,
     Device,
+    LogArchive,
     LoginAttempt,
     Person,
     User,
@@ -329,6 +330,87 @@ def audit_logs(request: Request, db: Session = Depends(get_db), admin: User = De
             "users": db.query(User).order_by(User.display_name).all(),
             "params": params,
         },
+    )
+
+
+@router.get("/audit/archives")
+def audit_archives(request: Request, db: Session = Depends(get_db), admin: User = Depends(current_admin)):
+    """監査ログのアーカイブ状況（要件§9、論点H）。"""
+    from ..services import log_archive
+
+    return render(
+        request,
+        "admin/audit_archives.html",
+        {"title": "監査ログのアーカイブ", **log_archive.archive_stats(db)},
+    )
+
+
+@router.post("/audit/archives/run")
+async def run_audit_archive(
+    request: Request, db: Session = Depends(get_db), admin: User = Depends(current_admin)
+):
+    """アーカイブと期限切れの破棄を手動で実行する。通常は日次バッチから呼ぶ。"""
+    from ..services import log_archive
+
+    form = await request.form()
+    verify_csrf(request, form.get("csrf_token"))
+
+    archive = log_archive.archive_audit_logs(db, user=admin)
+    purged = log_archive.purge_expired_archives(db)
+    # アーカイブ操作そのものも監査対象に残す（要件§9）
+    log_audit(
+        db,
+        request,
+        admin,
+        "log_archive",
+        target_type="audit_log",
+        target_id=archive.log_archive_id if archive else None,
+        detail={
+            "archived_rows": archive.row_count if archive else 0,
+            "purged_archives": len(purged),
+            "purged_rows": sum(a.row_count for a in purged),
+        },
+    )
+    db.commit()
+
+    if archive is None and not purged:
+        message = "対象となるログはありませんでした。"
+    else:
+        parts = []
+        if archive:
+            parts.append(f"{archive.row_count}件をアーカイブしました")
+        if purged:
+            parts.append(f"保持期間を過ぎたアーカイブ{len(purged)}件を破棄しました")
+        message = "。".join(parts) + "。"
+    return RedirectResponse(f"/admin/audit/archives?msg={message}", status_code=303)
+
+
+@router.get("/audit/archives/{log_archive_id}/download")
+def download_audit_archive(
+    log_archive_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(current_admin),
+):
+    from fastapi.responses import Response
+
+    from ..services import log_archive
+
+    archive = db.get(LogArchive, log_archive_id)
+    if archive is None:
+        raise HTTPException(status_code=404, detail="アーカイブが見つかりません。")
+    payload = log_archive.read_archive(archive)
+    # 監査ログの持ち出しも監査対象（要件§9）
+    log_audit(
+        db, request, admin, "log_archive_download", target_type="audit_log", target_id=log_archive_id,
+        detail={"row_count": archive.row_count},
+    )
+    db.commit()
+    filename = f"audit-{archive.period_from:%Y%m%d}-{archive.period_to:%Y%m%d}.jsonl.gz"
+    return Response(
+        content=payload,
+        media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

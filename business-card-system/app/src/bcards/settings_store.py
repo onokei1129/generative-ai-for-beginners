@@ -26,6 +26,9 @@ DEFAULTS: dict[str, Any] = {
     "duplicate_match_threshold": 60,
     # 要件§4（open-issues 論点G）
     "image_correction_enabled": True,
+    # 要件§9（open-issues 論点H）ログ・履歴の保存期間
+    "audit_log_retention_days": 1095,  # 監査ログの保持期間（3年）。0で無期限
+    "audit_log_archive_after_days": 365,  # この日数を過ぎた監査ログをアーカイブへ移す。0で移さない
 }
 
 DESCRIPTIONS: dict[str, str] = {
@@ -40,6 +43,8 @@ DESCRIPTIONS: dict[str, str] = {
     "require_reason_on_overwrite_delete": "上書き・削除時に変更理由の入力を必須にする",
     "duplicate_match_threshold": "重複人物候補として提示するスコアの閾値（0-100）",
     "image_correction_enabled": "アップロード画像の自動補正を行う",
+    "audit_log_retention_days": "監査ログの保持期間（日）。この期間を過ぎたアーカイブを破棄する。0で無期限",
+    "audit_log_archive_after_days": "監査ログをアーカイブへ移すまでの日数。0でDBに置いたままにする",
 }
 
 

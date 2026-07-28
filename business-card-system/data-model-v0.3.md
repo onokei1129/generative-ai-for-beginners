@@ -384,7 +384,36 @@ stateDiagram-v2
 | control_number | VARCHAR(64) | ✕ | システム管理番号（CSV本体にも付与、§9） |
 | confirmed_large_export | BOOLEAN | ✕ | 大量出力確認画面での承諾有無（§9） |
 
-> 監査ログ・CSV出力ログは**アプリから更新・削除できない追記専用**とし、DBユーザー権限でも UPDATE / DELETE を禁止する。
+> 監査ログ・CSV出力ログは**アプリから更新・削除できない追記専用**とする。
+> ただし後述のアーカイブ処理だけは、書き出し済みの行を削除する。
+> DBユーザー権限で DELETE を禁止する場合は、アーカイブ処理を別ロールで実行する。
+
+#### `log_archive`（監査ログのアーカイブ）
+
+保存期間（論点H）を実現するためのテーブル。期間を過ぎた `audit_log` を
+JSON Lines（gzip）としてオブジェクトストレージへ書き出し、DBからは削除する。
+
+| 列名 | 型 | NULL | 説明 |
+| --- | --- | --- | --- |
+| log_archive_id | UUID | ✕ | PK |
+| log_type | VARCHAR(32) | ✕ | `audit_log`（将来ほかのログ種別を追加できるようにしている） |
+| period_from / period_to | TIMESTAMP | ✕ | このアーカイブに含まれるログの期間 |
+| row_count | INT | ✕ | 件数 |
+| storage_key | VARCHAR(512) | ✕ | 実体の保存先 |
+| byte_size | INT | ✕ | 圧縮後のサイズ |
+| checksum | VARCHAR(128) | ○ | SHA-256。復元時の検証に使う |
+| created_at / created_by | — | — | 作成日時・実行者 |
+
+**保存期間の方針（論点H）**
+
+| 対象 | 扱い |
+| --- | --- |
+| `audit_log` | 1年でアーカイブ、3年で破棄（`audit_log_archive_after_days` / `audit_log_retention_days`） |
+| `change_history` | **無期限**。要件§10 のとおり名刺データに保存期限がないため、履歴も消さない |
+| `csv_export_log` / `login_attempt` | 監査ログに準じる |
+
+書き出しに成功してからDBの行を削除するため、途中で失敗してもログは失われない。
+アーカイブの作成・破棄・ダウンロードは、それ自体が `audit_log` に記録される。
 
 ---
 

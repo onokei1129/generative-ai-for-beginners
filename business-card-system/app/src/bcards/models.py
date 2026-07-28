@@ -476,6 +476,28 @@ class AuditLog(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
+class LogArchive(Base):
+    """監査ログのアーカイブ（要件§9、open-issues 論点H）。
+
+    一定期間を過ぎた監査ログをオブジェクトストレージへ JSONL(gzip) として書き出し、
+    DBからは削除する。保持期間を過ぎたアーカイブは実体ごと破棄する。
+    アーカイブ自体の作成・破棄も監査ログに残す。
+    """
+
+    __tablename__ = "log_archive"
+
+    log_archive_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    log_type: Mapped[str] = mapped_column(String(32), default="audit_log", index=True)
+    period_from: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    period_to: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    checksum: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    created_by: Mapped[str | None] = mapped_column(String(32))
+
+
 class CsvExportLog(Base):
     __tablename__ = "csv_export_log"
 
