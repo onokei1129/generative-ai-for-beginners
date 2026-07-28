@@ -28,6 +28,14 @@ if not exist "poc\practice\scan_001.jpg" (
     echo.
 )
 
+where tesseract >nul 2>&1
+if errorlevel 1 (
+    echo 補足: tesseract が無いため、入力欄は空欄で開きます。
+    echo   OCRに下書きさせる場合は tesseract を入れてください。
+    echo   https://github.com/UB-Mannheim/tesseract/wiki
+    echo.
+)
+
 echo ブラウザが自動で開きます。開かないときは次を手で開いてください。
 echo   http://127.0.0.1:8100/
 echo.

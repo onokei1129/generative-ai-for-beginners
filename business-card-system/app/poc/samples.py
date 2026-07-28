@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import json
 import random
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -344,6 +345,8 @@ def load_real_samples(directory: Path) -> list[Sample]:
     directory 内に card01.jpg と card01.json（正解ラベル）を対で置く。
     """
     samples: list[Sample] = []
+    unverified: set[str] = set()
+    unverified_files = 0
     for image_path in sorted(directory.glob("*")):
         if image_path.suffix.lower() not in (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heic"):
             continue
@@ -351,6 +354,9 @@ def load_real_samples(directory: Path) -> list[Sample]:
         if not label_path.exists():
             continue
         truth: dict[str, Any] = json.loads(label_path.read_text(encoding="utf-8"))
+        unverified.update(truth.get("_unverified") or [])
+        if truth.get("_unverified"):
+            unverified_files += 1
         samples.append(
             Sample(
                 sample_id=image_path.stem,
@@ -358,6 +364,17 @@ def load_real_samples(directory: Path) -> list[Sample]:
                 image=Image.open(image_path).convert("RGB"),
                 truth={key: str(truth.get(key, "") or "") for key in FIELD_KEYS},
             )
+        )
+
+    if unverified_files:
+        # OCRの下書きをそのまま正解にしていると、その分だけ数値が良く出る。
+        # 黙って測ると気づけないため、必ず知らせる。
+        print(
+            f"\n【注意】{unverified_files} 件の正解ラベルに、人が確認していない項目が含まれています。\n"
+            f"  該当項目: {'、'.join(sorted(unverified))}\n"
+            "  これらはOCRの下書きがそのまま正解になっているため、\n"
+            "  精度が実際より良く出ます。入力画面で黄色の欄を確認してください。\n",
+            file=sys.stderr,
         )
     return samples
 

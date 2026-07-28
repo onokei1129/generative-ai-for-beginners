@@ -14,12 +14,16 @@ OCR精度の比較（論点C）には、**人が確認した正解**が要る。
 名刺1枚あたり14項目、40枚で560項目になる。1枚1〜2分として1時間強。
 記載のない項目は空欄のままでよい（空欄も「その項目は無い」という正解になる）。
 
-## --prefill について
+## OCRの下書きについて
 
-`--prefill` を付けるとOCRの結果を初期値として埋める。入力は速くなるが、
-**OCRの誤りをそのまま正解として登録してしまう危険がある**。
-その状態で精度を測ると、実際より良い数値が出る。
-正確に測りたい場合は付けずに、画像を見て入力すること。
+既定でOCRが下書きを入れる（実際のアプリと同じ流れ）。OCRが入れた欄は
+**黄色＋「未確認」**で示され、その欄に触れると印が消える。
+
+保存時、触っていない欄は `_unverified` として記録する。
+その正解ラベルで精度を測ると `poc/runner.py` が警告を出す。
+OCRの下書きをそのまま正解にすると、測定値が実際より良く出るため。
+
+空欄から入力したい場合は `--no-prefill` を付ける。
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -76,6 +81,10 @@ HINTS = {
 
 def build_app(directory: Path, prefill: bool) -> FastAPI:
     app = FastAPI(title="正解ラベル入力", docs_url=None, redoc_url=None)
+
+    # OCRは1枚あたり数秒かかるため、結果を覚えておき、次の分は裏で先に処理する
+    _ocr_cache: dict[str, tuple[dict[str, str], str | None]] = {}
+    _cache_lock = threading.Lock()
 
     def image_files() -> list[Path]:
         return sorted(
@@ -130,28 +139,78 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         return FileResponse(path)
 
     @app.get("/api/label/{name}")
-    def api_get_label(name: str) -> JSONResponse:
+    def api_get_label(name: str, draft: str | None = None) -> JSONResponse:
         path = directory / name
         saved = label_path(path)
         if saved.exists():
             data = json.loads(saved.read_text(encoding="utf-8"))
-            return JSONResponse({"values": {k: str(data.get(k, "") or "") for k in FIELD_KEYS},
-                                 "source": "保存済み"})
+            return JSONResponse({
+                "values": {k: str(data.get(k, "") or "") for k in FIELD_KEYS},
+                "source": "保存済み",
+                "kind": "saved",
+                "prefilled": [],
+            })
 
-        values = {key: "" for key in FIELD_KEYS}
-        source = "未入力"
-        if prefill:
-            try:
-                from bcards.services.images import process_file
-                from bcards.services.ocr import recognize_card
+        use_draft = prefill if draft is None else (draft == "1")
+        if not use_draft:
+            return JSONResponse({
+                "values": {key: "" for key in FIELD_KEYS},
+                "source": "未入力",
+                "kind": "empty",
+                "prefilled": [],
+            })
 
-                cards = process_file(path.read_bytes(), path.name)
-                _output, parsed = recognize_card(cards[0].ocr_image)
-                values = {key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}
-                source = "OCRの結果（誤りが含まれます。必ず画像と見比べてください）"
-            except Exception as exc:
-                source = f"OCRに失敗しました: {exc}"
-        return JSONResponse({"values": values, "source": source})
+        values, error = _ocr_draft(path)
+        _warm_next(name)
+        if error:
+            return JSONResponse({
+                "values": {key: "" for key in FIELD_KEYS},
+                "source": f"OCRを使えませんでした: {error}",
+                "kind": "error",
+                "prefilled": [],
+            })
+        filled = [k for k, v in values.items() if v]
+        return JSONResponse({
+            "values": values,
+            "source": "OCRの下書きです。黄色の欄は未確認です。画像と見比べて直してください。",
+            "kind": "draft",
+            "prefilled": filled,
+        })
+
+    def _ocr_draft(path: Path) -> tuple[dict[str, str], str | None]:
+        """OCRで下書きを作る。結果はファイルごとにキャッシュする。"""
+        with _cache_lock:
+            hit = _ocr_cache.get(path.name)
+        if hit is not None:
+            return hit
+
+        try:
+            from bcards.services.images import process_file
+            from bcards.services.ocr import recognize_card
+
+            cards = process_file(path.read_bytes(), path.name)
+            _output, parsed = recognize_card(cards[0].ocr_image)
+            result = ({key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}, None)
+        except Exception as exc:
+            result = ({key: "" for key in FIELD_KEYS}, str(exc))
+
+        with _cache_lock:
+            _ocr_cache[path.name] = result
+        return result
+
+    def _warm_next(name: str) -> None:
+        """次の名刺のOCRを裏で先に済ませておく（1枚あたり数秒かかるため）。"""
+        files = [p for p in image_files() if not label_path(p).exists()]
+        names = [p.name for p in image_files()]
+        if name not in names:
+            return
+        index = names.index(name)
+        for nxt in names[index + 1 : index + 3]:
+            target = directory / nxt
+            with _cache_lock:
+                if nxt in _ocr_cache:
+                    continue
+            threading.Thread(target=_ocr_draft, args=(target,), daemon=True).start()
 
     @app.post("/api/label/{name}")
     async def api_save_label(name: str, request: Request) -> JSONResponse:
@@ -160,10 +219,18 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             return JSONResponse({"error": "見つかりません"}, status_code=404)
         payload = await request.json()
         values = {key: str(payload.get(key, "") or "").strip() for key in FIELD_KEYS}
+
+        # OCRの下書きをそのまま採用した項目を記録する。
+        # 精度を測るとき、正解がOCR由来だと数値が実際より良く出るため、
+        # あとから「どれを人が確認したか」を追えるようにしておく。
+        unverified = [k for k in payload.get("_unverified", []) if k in FIELD_KEYS]
+        record: dict = dict(values)
+        if unverified:
+            record["_unverified"] = unverified
         label_path(path).write_text(
-            json.dumps(values, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        return JSONResponse({"ok": True})
+        return JSONResponse({"ok": True, "unverified": len(unverified)})
 
     @app.delete("/api/label/{name}")
     def api_delete_label(name: str) -> JSONResponse:
@@ -210,6 +277,10 @@ PAGE = """
   .field input { width: 100%; padding: 7px 9px; font-size: 14px; border: 1px solid #c8ccd4;
                  border-radius: 4px; font-family: inherit; }
   .field input:focus { outline: 2px solid #1f5fa9; outline-offset: -1px; border-color: #1f5fa9; }
+  .field input.draft { background: #fff8e1; border-color: #e0b64a; }
+  .field.unverified label::after { content: " 未確認"; color: #8a5300; font-weight: 400; }
+  .toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #fff; }
+  .toggle input { width: auto; }
   .field .hint { font-size: 11px; color: #888; margin-top: 2px; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
@@ -233,6 +304,7 @@ PAGE = """
   <h1>正解ラベル入力</h1>
   <span class="progress-text" id="progress">読み込み中…</span>
   <div class="bar"><div id="bar"></div></div>
+  <label class="toggle"><input type="checkbox" id="draft"> OCRで下書きする</label>
 </header>
 <main>
   <div>
@@ -251,6 +323,7 @@ PAGE = """
         <button type="button" class="primary" id="next">保存して次へ →</button>
         <button type="button" id="skip">スキップ</button>
         <span class="saved" id="saved"></span>
+        <span class="small muted" id="unverified"></span>
       </div>
       <p class="kbd">
         <code>Ctrl</code>+<code>Enter</code> 保存して次へ ／
@@ -264,13 +337,16 @@ PAGE = """
   </div>
 </main>
 <script>
-let state = { files: [], fields: [], index: 0, prefill: false };
+let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set() };
 
 async function boot() {
   const meta = await (await fetch('/api/files')).json();
   state.fields = meta.fields;
   state.files = meta.files;
   state.prefill = meta.prefill;
+  const draftBox = document.getElementById('draft');
+  draftBox.checked = meta.prefill;
+  draftBox.onchange = () => show(state.index);
   if (!state.files.length) {
     document.getElementById('progress').textContent = '画像が見つかりません: ' + meta.directory;
     return;
@@ -299,7 +375,8 @@ function fieldHtml(key) {
   const f = state.fields.find(x => x.key === key);
   return `<div class="field">
     <label for="f_${f.key}">${f.label}</label>
-    <input id="f_${f.key}" name="${f.key}" type="text">
+    <input id="f_${f.key}" name="${f.key}" type="text"
+           oninput="confirmField('${f.key}')" onfocus="confirmField('${f.key}')">
     ${f.hint ? `<div class="hint">${f.hint}</div>` : ''}
   </div>`;
 }
@@ -311,20 +388,58 @@ async function show(i) {
   document.getElementById('image').src = '/api/image/' + encodeURIComponent(file.name);
   document.getElementById('image').classList.remove('zoom');
   document.getElementById('saved').textContent = '';
+  clearMarks();
 
-  const data = await (await fetch('/api/label/' + encodeURIComponent(file.name))).json();
+  const useDraft = document.getElementById('draft').checked ? '1' : '0';
+  const src = document.getElementById('source');
+  src.textContent = useDraft === '1' ? 'OCRで下書きしています…' : '';
+  src.className = 'source plain';
+
+  const url = '/api/label/' + encodeURIComponent(file.name) + '?draft=' + useDraft;
+  const data = await (await fetch(url)).json();
+  if (state.index !== i) return;   // 待っている間に別の名刺へ移った
+
   for (const f of state.fields) {
     document.getElementById('f_' + f.key).value = data.values[f.key] || '';
   }
-  const src = document.getElementById('source');
+  // OCRが入れた欄は「未確認」として色を付ける。触れば消える
+  state.unverified = new Set(data.prefilled || []);
+  for (const key of state.unverified) mark(key, true);
+
   src.textContent = data.source;
-  src.className = 'source ' + (data.source.startsWith('OCR') ? 'warn' : 'plain');
+  src.className = 'source ' + (data.kind === 'draft' || data.kind === 'error' ? 'warn' : 'plain');
 
   document.getElementById('prev').disabled = i === 0;
   renderProgress();
   renderFiles();
+  renderUnverified();
   const first = document.getElementById('f_' + state.fields[0].key);
   if (first) first.focus();
+}
+
+function mark(key, on) {
+  const input = document.getElementById('f_' + key);
+  if (!input) return;
+  input.classList.toggle('draft', on);
+  input.closest('.field').classList.toggle('unverified', on);
+}
+
+function clearMarks() {
+  for (const f of state.fields) mark(f.key, false);
+  state.unverified = new Set();
+}
+
+function confirmField(key) {
+  if (!state.unverified.has(key)) return;
+  state.unverified.delete(key);
+  mark(key, false);
+  renderUnverified();
+}
+
+function renderUnverified() {
+  const n = state.unverified.size;
+  document.getElementById('unverified').textContent =
+    n ? `未確認 ${n} 項目（黄色の欄）` : '';
 }
 
 function renderProgress() {
@@ -343,7 +458,7 @@ function renderFiles() {
 
 async function save() {
   const file = state.files[state.index];
-  const body = {};
+  const body = { _unverified: [...state.unverified] };
   for (const f of state.fields) body[f.key] = document.getElementById('f_' + f.key).value;
   await fetch('/api/label/' + encodeURIComponent(file.name), {
     method: 'POST',
@@ -384,9 +499,9 @@ def main() -> int:
     parser.add_argument("directory", help="名刺画像の入っているフォルダ")
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument(
-        "--prefill",
+        "--no-prefill",
         action="store_true",
-        help="OCRの結果を初期値にする（速いが、誤りをそのまま正解にしてしまう危険がある）",
+        help="OCRの下書きを使わず、空欄から入力する（測定用の正解を厳密に作る場合）",
     )
     parser.add_argument("--no-browser", action="store_true", help="ブラウザを自動で開かない")
     args = parser.parse_args()
@@ -404,10 +519,12 @@ def main() -> int:
     labeled = sum(1 for p in images if p.with_suffix(".json").exists())
     print(f"対象: {directory}")
     print(f"画像 {len(images)} 枚（入力済み {labeled} 枚 / 残り {len(images) - labeled} 枚）")
-    if args.prefill:
-        print("\n--prefill 指定：OCRの結果を初期値にします。")
-        print("  誤りをそのまま正解として保存すると、精度が実際より良く出ます。")
-        print("  必ず画像と見比べてください。\n")
+    if args.no_prefill:
+        print("\n--no-prefill 指定：空欄から入力します。\n")
+    else:
+        print("\nOCRが下書きを入れます。黄色い欄は「未確認」です。")
+        print("  画像と見比べて直してください。触れば色が消えます。")
+        print("  下書きを使わずに入力する場合は --no-prefill を付けてください。\n")
     url = f"http://127.0.0.1:{args.port}/"
     print(f"\n入力画面: {url}")
     print("終了するには、この画面で Ctrl-C を押すか、ウィンドウを閉じてください。")
@@ -441,7 +558,7 @@ def main() -> int:
     import uvicorn
 
     uvicorn.run(
-        build_app(directory, args.prefill),
+        build_app(directory, not args.no_prefill),
         host="127.0.0.1", port=args.port, log_level="warning",
     )
     return 0
