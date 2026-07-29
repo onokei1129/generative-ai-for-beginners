@@ -32,6 +32,7 @@ import argparse
 import json
 import sys
 import threading
+import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -184,15 +185,27 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         if hit is not None:
             return hit
 
+        # どの工程で落ちたかを残す。工程名が無いと、画像の読み込みなのか
+        # OCRなのか切り分けられず、原因の報告だけで何往復もすることになる。
+        step = "準備"
         try:
             from bcards.services.images import process_file
             from bcards.services.ocr import recognize_card
 
+            step = "画像の読み込みと補正"
             cards = process_file(path.read_bytes(), path.name)
+            if not cards:
+                raise RuntimeError("画像を1枚も取り出せませんでした")
+
+            step = "OCR"
             _output, parsed = recognize_card(cards[0].ocr_image)
             result = ({key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}, None)
         except Exception as exc:
-            result = ({key: "" for key in FIELD_KEYS}, str(exc))
+            # 画面には要約しか出せないので、原因を追えるようにコンソールへ全文を出す
+            print(f"\n[{path.name}] {step}で失敗しました", file=sys.stderr)
+            traceback.print_exc()
+            detail = str(exc) or exc.__class__.__name__
+            result = ({key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）")
 
         with _cache_lock:
             _ocr_cache[path.name] = result

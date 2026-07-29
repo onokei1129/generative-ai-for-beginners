@@ -55,6 +55,8 @@ RECEIPT_WORDS = (
     "但し", "上記正に領収", "お預り", "お預かり", "お釣り", "おつり", "釣銭",
     "点数", "単価", "数量", "金額", "税率", "適格請求書", "インボイス",
     "毎度ありがとう", "ありがとうございました", "レジ", "取引", "伝票",
+    # 手書きの領収証。宛名の「様」も、但し書きの「但」も、名刺には印字されない
+    "様", "但", "印紙", "上記", "として",
 )
 
 CARD_WORDS = (
@@ -72,6 +74,10 @@ RECEIPT_STRONG = (
     # 実データで名刺として通ってしまったもの
     "入場券", "入場料", "乗車券", "利用券", "半券", "収入印紙",
     "納品書", "請求書", "見積書",
+    # 大きな見出しの「領　収　証」は、地紋や字間のせいで1文字だけ落ちることがある
+    # （実データで「領」が読めず "tH 収 証" になった）。部分でも拾えるようにする。
+    # いずれも名刺には印字されない並びなので、誤って名刺を落とす心配はない。
+    "領収", "収証", "収書",
 )
 
 AMOUNT_PATTERN = re.compile(r"[¥￥]\s?[\d,]{3,}|[\d,]{3,}\s?円")
@@ -325,9 +331,36 @@ def write_report(verdicts: list[Verdict], out: Path, source: Path) -> None:
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def explain_one(path: Path, *, use_ocr: bool) -> int:
+    """1枚だけ判定し、その根拠とOCRが読んだ文字を表示する。"""
+    if use_ocr:
+        try:
+            probe_ocr()
+        except OcrUnavailable as exc:
+            print(f"OCRが動きません: {exc}", file=sys.stderr)
+            return 2
+
+    verdict = classify_file(path, use_ocr=use_ocr)
+    print(f"ファイル : {path.name}")
+    print(f"判定    : {verdict.label_ja}（得点 {verdict.score:+.1f}）")
+    print(f"大きさ  : {verdict.width} x {verdict.height}（縦横比 {verdict.ratio}）")
+    print("根拠    :")
+    for reason in verdict.reasons:
+        print(f"  - {reason}")
+    if verdict.error:
+        print(f"エラー  : {verdict.error}")
+    if verdict.text:
+        print()
+        print("OCRが読んだ文字（ここが読めていなければ、判定材料がありません）:")
+        print("-" * 44)
+        print(verdict.text.strip()[:1200])
+        print("-" * 44)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("directory", help="スキャンファイルの入っているフォルダ")
+    parser.add_argument("directory", help="スキャンファイルの入っているフォルダ（1枚だけ調べたい場合はファイルでも可）")
     parser.add_argument("--copy-to", help="名刺と判定したファイルのコピー先")
     parser.add_argument("--copy-unknown", action="store_true", help="不明もコピー先へ入れる（unknown/ 配下）")
     parser.add_argument("--csv", help="判定結果のCSV出力先")
@@ -338,6 +371,10 @@ def main() -> int:
     args = parser.parse_args()
 
     source = Path(args.directory).expanduser()
+    if source.is_file():
+        # 「この1枚がなぜその判定になったのか」を確かめるための入口。
+        # 誤りの報告を受けたとき、全件を仕分け直さずに原因を見られるようにする。
+        return explain_one(source, use_ocr=not args.no_ocr)
     if not source.is_dir():
         print(f"フォルダが見つかりません: {source}", file=sys.stderr)
         return 2

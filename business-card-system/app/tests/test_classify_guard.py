@@ -149,6 +149,81 @@ class TestSpacedCharactersStillMatch:
         assert score > 2.0
 
 
+class TestHandwrittenReceiptHeading:
+    """手書きの領収証。見出しが1文字欠けても拾えること。
+
+    実データで、地紋（薄い模様）の上に字間を空けて印字された「領　収　証」の
+    「領」が読めず、OCRが `tH 収 証` を返していた。見出しは最も強い手がかりなので、
+    1文字落ちただけで取りこぼすと、宛名・金額しか無い領収証が名刺として通る。
+    """
+
+    # 実データのOCR結果をそのまま使う（作文すると、実際の壊れ方から離れてしまう）
+    ACTUAL_OCR = (
+        "tH 収 証     小野木 圭一 様 no. szze\n"
+        "¥ 9, 900-\n"
+        "但          光トポグラフィー検査費として\n"
+        "2025 年8月4日 上記正に領収いたしました\n"
+        "ma     内 訳               品川メンタルクリニック 品川本院\n"
+        "税抜金額                  〒108-0975 東京都港区港南2-16-3\n"
+        "印 紙       消費税額等 ( %)"
+    )
+
+    def test_broken_heading_is_still_detected(self):
+        from poc.classify import score_text
+
+        score, reasons = score_text(self.ACTUAL_OCR)
+
+        assert score < -2.0, f"見出しが欠けた領収証を取りこぼした: {reasons}"
+
+    def test_broken_heading_alone_is_enough(self):
+        """欠けた見出しだけで領収書と分かること。
+
+        手書きの帳償は、印字と手書きが重なる行から先に壊れる。定型句
+        （「上記正に領収」「内訳」など）が全部落ちて、宛名・金額・発行元しか
+        残らないことがある。そこに残った見出しを拾えないと、
+        発行元の社名・住所・電話が名刺の手がかりとして働いてしまう。
+        """
+        from poc.classify import score_text
+
+        text = (
+            "tH 収 証\n"
+            "小野木 圭一\n"
+            "品川メンタルクリニック 品川本院\n"
+            "〒108-0075 東京都港区港南2-16-3 シントミビル5F\n"
+            "TEL 0120-772-248"
+        )
+        score, reasons = score_text(text)
+
+        assert score <= -2.0, f"欠けた見出しを拾えていない: {reasons}"
+
+    def test_heading_lost_entirely_falls_back_to_unknown(self):
+        """見出しが丸ごと消えたら、名刺と断定せず人に回すこと。"""
+        from poc.classify import score_text
+
+        text = (
+            "小野木 圭一 様 no. szze\n¥ 9, 900-\n"
+            "但          光トポグラフィー検査費として\n2025 年8月4日\n"
+            "品川メンタルクリニック 品川本院\n"
+            "〒108-0075 東京都港区港南2-16-3\nTEL 0120-772-248"
+        )
+        score, _ = score_text(text)
+
+        assert score < 2.0, "名刺として確定してはいけない"
+
+    def test_real_card_is_not_dragged_down(self):
+        """語を足したことで名刺側が巻き添えになっていないこと。"""
+        from poc.classify import score_text
+
+        text = (
+            "株式会社サンプル商事\n営業本部 第一営業部 部長\n山田 太郎\n"
+            "〒100-0001 東京都千代田区\nTEL 03-1234-5678\nFAX 03-1234-5679\n"
+            "taro@example.co.jp\nhttps://www.example.co.jp"
+        )
+        score, _ = score_text(text)
+
+        assert score > 2.0
+
+
 @pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract が無い環境ではOCRの実測を行わない")
 class TestRotatedReceipt:
     """90度回った領収書も領収書と分かること。

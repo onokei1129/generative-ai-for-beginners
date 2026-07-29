@@ -35,6 +35,8 @@ call :make "6 ラベル入力（実際の名刺）"     "label-real-cards.bat"
 call :make "7 進み具合を見る"               "check-progress.bat"
 call :make "8 精度を測る"                   "measure-accuracy.bat"
 call :make "9 アプリを起動"                 "run-app.bat"
+call :make "この1枚を調べる"               "explain-one.bat"
+call :make "動かないとき（診断）"         "doctor.bat"
 
 echo.
 echo ============================================
@@ -43,6 +45,10 @@ echo.
 echo  はじめて使う場合   : 1 から順に実行してください。
 echo  実名刺のテスト     : 4 → 5 → 6 → 7 → 8 の順です。
 echo                       6 と 7 は何度往復しても構いません。
+echo.
+echo  仕分けが違っていたとき:
+echo    その画像を「この1枚を調べる」へドラッグ＆ドロップすると、
+echo    判定の根拠とOCRが読んだ文字が出ます。
 echo.
 echo  次からは「0 最新版に更新する」を押すだけで、
 echo  最新版の取得とショートカットの作り直しが終わります。
