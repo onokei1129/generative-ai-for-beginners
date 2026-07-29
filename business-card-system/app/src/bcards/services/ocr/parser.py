@@ -135,9 +135,29 @@ def normalize(text: str) -> str:
     return unicodedata.normalize("NFKC", text or "").strip()
 
 
+def join_spaced_letters(text: str) -> str:
+    """「Ｆ Ａ Ｘ」のように1文字ずつ離して印字された英字ラベルをつなぐ。
+
+    名刺では TEL / FAX / E-mail を字間を空けて印字することが多い。
+    そのままだと "fax" のラベル照合に失敗し、FAX番号が電話番号として
+    登録されてしまう（実データで発生した）。
+    """
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(r"\b([A-Za-z])[ \t]+(?=[A-Za-z]\b)", r"\1", text)
+    return text
+
+
 def strip_inner_spaces(text: str) -> str:
-    """日本語文字の間に入った空白を除去する（tesseract の日本語出力対策）。"""
-    return re.sub(r"(?<=[^\x00-\x7F])\s+(?=[^\x00-\x7F])", "", text or "").strip()
+    """日本語文字の間に入った空白を除去する（tesseract の日本語出力対策）。
+
+    注意: これは姓と名を区切る空白も消す。氏名・ふりがなの分割には
+    この関数を通す前の文字列を使うこと（通すと「とみた おさむ」が
+    「とみたおさむ」になり、文字数で機械的に分けてしまう）。
+    """
+    text = join_spaced_letters(text or "")
+    return re.sub(r"(?<=[^\x00-\x7F])\s+(?=[^\x00-\x7F])", "", text).strip()
 
 
 def normalize_phone(value: str) -> str:
@@ -194,8 +214,16 @@ def split_person_name(full: str) -> tuple[str, str]:
 
 def parse_fields(lines: list[str]) -> dict[str, Any]:
     """OCRの行リストから名刺項目を抽出する。"""
-    cleaned = [strip_inner_spaces(normalize(line)) for line in lines]
-    cleaned = [line for line in cleaned if line]
+    # spaced: 空白を残したまま正規化した行。氏名・ふりがなの分割に使う。
+    # cleaned: さらに字間の空白を除いた行。ラベル照合や語の判定に使う。
+    pairs = []
+    for line in lines:
+        spaced = join_spaced_letters(normalize(line)).strip()
+        compact = strip_inner_spaces(normalize(line))
+        if compact:
+            pairs.append((compact, spaced))
+    cleaned = [c for c, _ in pairs]
+    spaced_lines = [s for _, s in pairs]
 
     fields: dict[str, Any] = {
         "last_name": "",
@@ -336,7 +364,8 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 break
 
     if name_index is not None:
-        last, first = split_person_name(cleaned[name_index])
+        # 空白を残した行で分ける。「冨田　修」「佐々木 健」を取り違えないため
+        last, first = split_person_name(spaced_lines[name_index])
         fields["last_name"], fields["first_name"] = last, first
         confidence["last_name"] = confidence["first_name"] = 0.7
         used.add(name_index)
@@ -346,7 +375,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         if index in used:
             continue
         if _is_kana_only(line) and 2 <= len(re.sub(r"\s+", "", line)) <= 16:
-            last, first = split_person_name(line)
+            last, first = split_person_name(spaced_lines[index])
             fields["last_name_kana"], fields["first_name_kana"] = last, first
             confidence["last_name_kana"] = 0.7
             used.add(index)
