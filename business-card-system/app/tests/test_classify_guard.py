@@ -96,3 +96,53 @@ class TestOcrFailureIsNotSilent:
 
         with pytest.raises(OcrUnavailable):
             classify_file(path, use_ocr=True)
+
+
+class TestSpacedCharactersStillMatch:
+    """字間を空けた印字でも語を拾えること。
+
+    実物の領収証は「領　収　証」のように均等割付で印字されることが多く、
+    OCRもそのまま空白を返す。素の文字列で照合すると "領収証" が一致せず、
+    最も強い手がかりを取りこぼしていた（実データで領収証が名刺として通った）。
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "領収 証",
+            "領 収 証",
+            "領　収　書",
+            "領収\n書",
+        ],
+    )
+    def test_spaced_receipt_heading_is_detected(self, text: str):
+        from poc.classify import score_text
+
+        score, reasons = score_text(text)
+
+        assert score < 0, f"字間ありで検出できていない: {reasons}"
+        assert any("領収書を示す語" in r for r in reasons)
+
+    def test_admission_ticket_is_not_a_card(self):
+        """入場券・乗車券は名刺には無い語。実データで名刺として通った。"""
+        from poc.classify import score_text
+
+        text = (
+            "国立大学法人 茨城大学五浦美術文化研究所 入場券\n"
+            "入場料 400円(税込み)\n"
+            "http://rokkakudo.izura.ibaraki.ac.jp/\n"
+            "TEL 029-228-8425"
+        )
+        score, _ = score_text(text)
+        assert score < 0
+
+    def test_real_card_still_scores_positive(self):
+        """語を足したことで名刺側が巻き添えになっていないこと。"""
+        from poc.classify import score_text
+
+        text = (
+            "株式会社サンプル商事\n営業本部 第一営業部 部長\n山田 太郎\n"
+            "〒100-0001 東京都千代田区\nTEL 03-1234-5678\ntaro@example.co.jp"
+        )
+        score, _ = score_text(text)
+        assert score > 2.0

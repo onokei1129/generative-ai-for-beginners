@@ -48,7 +48,9 @@ DOC_RATIO_MIN = 1.35
 DOC_RATIO_MAX = 1.48
 
 RECEIPT_WORDS = (
-    "領収書", "領収証", "レシート", "納品書", "請求書", "見積書",
+    "レシート",
+    # 実データ（ScanSnapフォルダ）で混ざっていたもの
+    "内訳", "但し書", "発行", "有効期限", "ご利用", "お買上", "税抜金額", "消費税額",
     "合計", "小計", "税込", "税抜", "消費税", "内税", "外税", "軽減税率",
     "但し", "上記正に領収", "お預り", "お預かり", "お釣り", "おつり", "釣銭",
     "点数", "単価", "数量", "金額", "税率", "適格請求書", "インボイス",
@@ -63,8 +65,14 @@ CARD_WORDS = (
     "http", "www", "@",
 )
 
-# 明らかに領収書を示す語。1つでも出れば強く減点する
-RECEIPT_STRONG = ("領収書", "領収証", "上記正に領収", "適格請求書", "軽減税率", "お預り")
+# 名刺には出ない語。1つでも出れば強く減点する。
+# 「名刺に印刷されうるか」で選ぶ。会社名や役職に紛れうる語は入れない。
+RECEIPT_STRONG = (
+    "領収書", "領収証", "上記正に領収", "適格請求書", "軽減税率", "お預り",
+    # 実データで名刺として通ってしまったもの
+    "入場券", "入場料", "乗車券", "利用券", "半券", "収入印紙",
+    "納品書", "請求書", "見積書",
+)
 
 AMOUNT_PATTERN = re.compile(r"[¥￥]\s?[\d,]{3,}|[\d,]{3,}\s?円")
 INVOICE_NO_PATTERN = re.compile(r"T\d{13}")
@@ -160,10 +168,23 @@ def score_shape(width: int, height: int) -> tuple[float, list[str]]:
     return 0.0, reasons
 
 
+def normalize_for_match(text: str) -> str:
+    """語の照合用に空白を落とす。
+
+    実物の領収証は「領　収　証」のように字間を空けて印字されることが多く、
+    OCRもそのまま空白を返す。素の文字列で照合すると "領収証" が一致せず、
+    領収書を示す最も強い手がかりを取りこぼす（実データで発生した）。
+    """
+    return re.sub(r"\s+", "", text)
+
+
 def score_text(text: str) -> tuple[float, list[str]]:
     """本文の語からのスコア。"""
     reasons: list[str] = []
     score = 0.0
+
+    # 字間の空白で照合が外れないよう、空白を除いた文字列で語を探す
+    text = normalize_for_match(text)
 
     strong = [word for word in RECEIPT_STRONG if word in text]
     if strong:
