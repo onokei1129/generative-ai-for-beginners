@@ -52,18 +52,19 @@ echo.
 .venv\Scripts\python -m pytest tests -q
 echo.
 
-where tesseract >nul 2>&1
+echo --------------------------------------------
+echo  OCR^(tesseract^)の状態
+echo.
+rem 他のバッチと同じ確認を使う。PATH に無い場合は既定の場所も探す。
+call "%~dp0_check-tesseract.bat"
 if errorlevel 1 (
-    echo --------------------------------------------
-    echo  補足: tesseract が見つかりません。
-    echo.
-    echo   ラベル入力を試すだけなら不要です。
-    echo   名刺の仕分けやOCRを動かす場合は次から入れてください。
-    echo   https://github.com/UB-Mannheim/tesseract/wiki
-    echo   インストール時に Japanese と Japanese ^(vertical^) を選んでください。
-    echo --------------------------------------------
-    echo.
+    echo   ラベル入力を試すだけなら、無くても進められます。
+    echo   名刺の仕分け^(4^)と精度測定^(8^)には必要です。
+) else (
+    echo  日本語データを含めて使える状態です。
 )
+echo --------------------------------------------
+echo.
 
 echo ============================================
 echo  セットアップが終わりました。
