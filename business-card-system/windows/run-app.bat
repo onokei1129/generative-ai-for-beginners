@@ -15,6 +15,13 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
+rem tesseract が PATH に無くても既定の場所を見つけて補う（失敗しても続行）。
+call "%~dp0_check-tesseract.bat"
+if errorlevel 1 (
+    echo   ※ OCRの下書きは入りませんが、手入力で進められます。
+    echo.
+)
+
 if not exist "storage\bcards.db" (
     echo 初回起動のため、利用者とデモ用の名刺を用意します...
     echo （tesseract が無い場合はデモ名刺の作成でエラーになりますが、

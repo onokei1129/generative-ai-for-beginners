@@ -25,6 +25,13 @@ if not exist "poc\real-cards" (
     exit /b 1
 )
 
+rem tesseract が PATH に無くても既定の場所を見つけて補う（失敗しても続行）。
+call "%~dp0_check-tesseract.bat"
+if errorlevel 1 (
+    echo   ※ OCRの下書きは入りませんが、手入力で進められます。
+    echo.
+)
+
 echo 対象: %CD%\poc\real-cards
 echo.
 echo ブラウザが自動で開きます。開かない場合は
