@@ -13,6 +13,9 @@ from typing import Any
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 URL_RE = re.compile(r"(?:https?://|www\.)[\w\-./?%&=~+#:]+", re.IGNORECASE)
 POSTAL_RE = re.compile(r"〒?\s*(\d{3})\s*[-ー－]\s*(\d{4})")
+# 〒 は読み違えられやすい。郵便番号の直前に限って読み捨てる。
+POSTAL_MARK_RE = re.compile(r"[〒〠亍干テT7]\s*$")
+PHONE_RE = re.compile(r"(?:\+81[\d\-() ]{8,}|0\d{1,4}[-ー－(\s]\d{1,4}[)\-ー－\s]?\d{3,4})")
 PHONE_RE = re.compile(r"(?:\+81[\d\-() ]{8,}|0\d{1,4}[-ー－(\s]\d{1,4}[)\-ー－\s]?\d{3,4})")
 
 COMPANY_KEYWORDS = (
@@ -149,6 +152,37 @@ def join_spaced_letters(text: str) -> str:
     return text
 
 
+def for_web_match(text: str) -> str:
+    """メール・URLを探すための整形。
+
+    OCRはドットの直後に空白を入れやすい。実測（合成サンプル16枚）では
+
+        `https://www.example.co.jp` → `https://www. example. co. jp`
+
+    となり、URLが `https://www.` で切れていた（16枚中4枚）。
+
+    直した文字列はメール・URLの照合にだけ使い、他の項目には持ち込まない。
+    住所や会社名にとっては、ここでの詰めすぎは害になるため。
+    """
+    # 「co. jp」は繋ぐが、「.jp Mobile」は繋がない（空白の直前がドットのときだけ詰める）
+    return re.sub(r"(?<=\.)[ \t]+(?=[A-Za-z0-9])", "", text)
+
+
+def recover_email_head(text: str, match: re.Match) -> str:
+    """ローカル部のドットをカンマと読み違えたメールを繋ぎ直す。
+
+    実測では `taro.yamada@example.co.jp` が `taro, yamada@example.co.jp` と
+    読まれ、正規表現が `yamada@example.co.jp` しか拾えていなかった。
+
+    直前の語が行頭か空白から始まるときだけ繋ぐ。`info@a.com, sales@b.com`
+    のようにメールを2つ並べた行で、前のアドレスの末尾を巻き込まないため。
+    """
+    head = re.search(r"(?:^|(?<=\s))([A-Za-z0-9._%+\-]+)\s*,\s*$", text[: match.start()])
+    if not head:
+        return match.group(0)
+    return f"{head.group(1)}.{match.group(0)}"
+
+
 def strip_inner_spaces(text: str) -> str:
     """日本語文字の間に入った空白を除去する（tesseract の日本語出力対策）。
 
@@ -247,16 +281,17 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
 
     # メール・URL
     for index, line in enumerate(cleaned):
+        candidate = for_web_match(line)
         if not fields["email"]:
-            match = EMAIL_RE.search(line)
+            match = EMAIL_RE.search(candidate)
             if match:
-                fields["email"] = match.group(0)
+                fields["email"] = recover_email_head(candidate, match)
                 confidence["email"] = 0.95
                 used.add(index)
         if not fields["url"]:
-            match = URL_RE.search(line)
+            match = URL_RE.search(candidate)
             if match and "@" not in match.group(0):
-                fields["url"] = match.group(0)
+                fields["url"] = match.group(0).rstrip(".")
                 confidence["url"] = 0.9
                 used.add(index)
 
@@ -299,7 +334,13 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         if match and not fields["postal_code"]:
             fields["postal_code"] = f"{match.group(1)}-{match.group(2)}"
             confidence["postal_code"] = 0.95
-            remainder = POSTAL_RE.sub("", line).strip()
+            # 〒 が読めずに残った1文字を住所の先頭に持ち込まない。
+            # 実測では `〒100-0001 東京都…` が `7100-0001 東京都…` と読まれ、
+            # 郵便番号を抜いたあとの住所が `7 東京都…` になっていた。
+            # 郵便番号の直前に接している場合だけ落とすので、英字表記の
+            # 「7-1-1 Chiyoda, 100-0001」のような住所は削らない。
+            head = POSTAL_MARK_RE.sub("", line[: match.start()])
+            remainder = (head + line[match.end() :]).strip()
             if remainder and not fields["address"]:
                 fields["address"] = remainder
                 confidence["address"] = 0.7

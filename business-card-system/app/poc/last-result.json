@@ -19,16 +19,16 @@
   ],
   "results": {
     "A 前処理なし": {
-      "overall_accuracy": 0.4380952380952381,
-      "mean_edits": 7.375,
-      "mean_seconds": 2.3972789028750157,
+      "overall_accuracy": 0.47619047619047616,
+      "mean_edits": 6.875,
+      "mean_seconds": 2.301580997437501,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 2.706,
+          "seconds": 3.009,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -42,8 +42,8 @@
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "https://www.",
+            "email": "taro.yamada@example.co",
+            "url": "https://www.jp",
             "note": ""
           },
           "truth": {
@@ -66,7 +66,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 2.343,
+          "seconds": 2.289,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -76,7 +76,7 @@
             "department_name": "開発部",
             "title": "主任",
             "postal_code": "530-0001",
-            "address": "7 大孤府大阪市",
+            "address": "大孤府大阪市",
             "tel": "06-9876-5432",
             "mobile": "080-2222-3333",
             "fax": "",
@@ -104,7 +104,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.234,
+          "seconds": 2.406,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -142,7 +142,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 2.464,
+          "seconds": 2.683,
           "fields": {
             "last_name": "Re",
             "first_name": "AL",
@@ -180,7 +180,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.679,
+          "seconds": 2.332,
           "fields": {
             "last_name": "海",
             "first_name": "品 長 橋",
@@ -190,7 +190,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "555-6666",
-            "address": "TEL 911- FAX 011-",
+            "address": "TEL 911- FAX 011-555-6667",
             "tel": "",
             "mobile": "",
             "fax": "011-555-6667",
@@ -218,7 +218,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 1.946,
+          "seconds": 1.771,
           "fields": {
             "last_name": "一",
             "first_name": "鍋 主",
@@ -228,7 +228,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "150-0002",
-            "address": "7 東京都谷区渋谷 6-6-6",
+            "address": "東京都谷区渋谷 6-6-6",
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
@@ -256,7 +256,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 2.941,
+          "seconds": 2.714,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -266,12 +266,12 @@
             "department_name": "営業本部 BB",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都千代田区千代田 1-1-1",
+            "address": "東京都千代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "",
             "fax": "",
             "email": "",
-            "url": "https://www.",
+            "url": "https://www.example.co.jp",
             "note": ""
           },
           "truth": {
@@ -294,7 +294,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.021,
+          "seconds": 1.974,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -304,7 +304,7 @@
             "department_name": "開発部",
             "title": "",
             "postal_code": "530-0001",
-            "address": "7 大阪府大孤市北区梅田 2-2-2",
+            "address": "大阪府大孤市北区梅田 2-2-2",
             "tel": "",
             "mobile": "",
             "fax": "",
@@ -332,7 +332,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.358,
+          "seconds": 2.302,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -346,8 +346,8 @@
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
-            "email": "",
-            "url": "https://jda.",
+            "email": "ito@jda.example",
+            "url": "https://jda.example",
             "note": "+"
           },
           "truth": {
@@ -370,7 +370,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 2.353,
+          "seconds": 2.058,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -384,8 +384,8 @@
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "https://www.",
+            "email": "taro.yamada@example.co.jp",
+            "url": "https://www.example.co",
             "note": ""
           },
           "truth": {
@@ -408,7 +408,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 2.553,
+          "seconds": 2.056,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -446,7 +446,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 2.042,
+          "seconds": 1.966,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -484,7 +484,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 2.637,
+          "seconds": 2.438,
           "fields": {
             "last_name": "会",
             "first_name": "企 中",
@@ -494,7 +494,7 @@
             "department_name": "株物課田",
             "title": "",
             "postal_code": "812-0011",
-            "address": "7 福岡県福岡市博多区博多駅前 4-4-4",
+            "address": "福岡県福岡市博多区博多駅前 4-4-4",
             "tel": "092-333-4444",
             "mobile": "",
             "fax": "",
@@ -522,7 +522,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 2.206,
+          "seconds": 1.968,
           "fields": {
             "last_name": "北",
             "first_name": "商 人",
@@ -532,7 +532,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "555-6666",
-            "address": "TEL 011- FAx 011- |",
+            "address": "TEL 011- FAx 011-555-6667 |",
             "tel": "011-555-6666",
             "mobile": "",
             "fax": "011-555-6667",
@@ -560,7 +560,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 2.824,
+          "seconds": 2.68,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
@@ -570,12 +570,12 @@
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
             "postal_code": "150-0002",
-            "address": "7 東京都渋谷区渋谷 6-6-6",
+            "address": "東京都渋谷区渋谷 6-6-6",
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
             "email": "ito@jda.example",
-            "url": "https://jda.",
+            "url": "https://jda.example",
             "note": "ry ミ = ral\n伊藤直樹"
           },
           "truth": {
@@ -598,7 +598,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 2.051,
+          "seconds": 2.178,
           "fields": {
             "last_name": "spaces",
             "first_name": "EEA",
@@ -636,16 +636,16 @@
       ]
     },
     "B 改善前の前処理": {
-      "overall_accuracy": 0.34285714285714286,
-      "mean_edits": 8.625,
-      "mean_seconds": 3.041328856249976,
+      "overall_accuracy": 0.4,
+      "mean_edits": 7.875,
+      "mean_seconds": 2.76295494799999,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 2.926,
+          "seconds": 2.756,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -655,11 +655,11 @@
             "department_name": "営業本部第一営業部",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都千代田区千代田 1-1-1",
+            "address": "東京都千代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
+            "email": "taro.yamada@example.co.jp",
             "url": "",
             "note": "まだ 67 だ (の"
           },
@@ -683,7 +683,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 3.231,
+          "seconds": 2.809,
           "fields": {
             "last_name": "発",
             "first_name": "部",
@@ -721,7 +721,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.689,
+          "seconds": 2.149,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -759,7 +759,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 3.763,
+          "seconds": 3.512,
           "fields": {
             "last_name": "",
             "first_name": "",
@@ -769,7 +769,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "812-0011",
-            "address": "RR 7",
+            "address": "RR",
             "tel": "092-333-4444",
             "mobile": "070-4444-5555",
             "fax": "",
@@ -797,7 +797,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.408,
+          "seconds": 2.285,
           "fields": {
             "last_name": "SM",
             "first_name": "a al",
@@ -835,7 +835,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 2.461,
+          "seconds": 2.433,
           "fields": {
             "last_name": "wm",
             "first_name": "os SH",
@@ -873,7 +873,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 2.892,
+          "seconds": 2.797,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -883,12 +883,12 @@
             "department_name": "営業本部 BEAR 部長",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都代田区千代田 1-1-1",
+            "address": "東京都代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "",
             "email": "",
-            "url": "https://www.",
+            "url": "https://www.example.co.jp",
             "note": ""
           },
           "truth": {
@@ -911,7 +911,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.906,
+          "seconds": 3.16,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -921,12 +921,12 @@
             "department_name": "開発部主任",
             "title": "開発部主任",
             "postal_code": "530-0001",
-            "address": "7 大阪府大阪市北区梅田 2=2-2",
+            "address": "大阪府大阪市北区梅田 2=2-2",
             "tel": "06-9876-5432",
             "mobile": "",
             "fax": "",
-            "email": "sato@example.jp",
-            "url": "https://tech.",
+            "email": "hanako.sato@example.jp",
+            "url": "https://tech.example.jp",
             "note": "と\n1\nfe\nty"
           },
           "truth": {
@@ -949,7 +949,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.841,
+          "seconds": 2.46,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -963,8 +963,8 @@
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
-            "email": "",
-            "url": "https://jda.",
+            "email": "ito@jda.example",
+            "url": "https://jda.example",
             "note": "+"
           },
           "truth": {
@@ -987,7 +987,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 2.71,
+          "seconds": 2.526,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -997,12 +997,12 @@
             "department_name": "営業本部第一営業部 |",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都田区千代田 1-1-1",
+            "address": "東京都田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "https://www.",
+            "email": "taro.yamada@example.co.jp",
+            "url": "https://www.example.co",
             "note": ""
           },
           "truth": {
@@ -1025,7 +1025,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 2.363,
+          "seconds": 2.294,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -1063,7 +1063,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 3.419,
+          "seconds": 2.745,
           "fields": {
             "last_name": "Wasa",
             "first_name": "a",
@@ -1073,7 +1073,7 @@
             "department_name": "クリエイティブ室 Head Office |",
             "title": "代表社員",
             "postal_code": "460-0008",
-            "address": "代表社員 7 |",
+            "address": "代表社員  |",
             "tel": "052-111-2222",
             "mobile": "",
             "fax": "052-111-2223",
@@ -1101,7 +1101,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 2.634,
+          "seconds": 2.36,
           "fields": {
             "last_name": "gz",
             "first_name": "HES",
@@ -1139,7 +1139,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 4.396,
+          "seconds": 3.858,
           "fields": {
             "last_name": "ニニ",
             "first_name": "",
@@ -1177,7 +1177,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 3.153,
+          "seconds": 2.847,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -1187,12 +1187,12 @@
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
             "postal_code": "150-0002",
-            "address": "7 東京都渋谷区渋谷 6-6-6",
+            "address": "東京都渋谷区渋谷 6-6-6",
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "",
             "email": "ito@jda.example",
-            "url": "https://jda.",
+            "url": "https://jda.example",
             "note": "="
           },
           "truth": {
@@ -1215,7 +1215,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 3.871,
+          "seconds": 3.217,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1225,12 +1225,12 @@
             "department_name": "営業本部第一営業部部長",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都千代田区千代田 1-1-1",
+            "address": "東京都千代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "",
+            "email": "taro.yamada@example.co.jp",
+            "url": "www.example.co.jp",
             "note": "全社リンブル商事\nーー\nーーーー"
           },
           "truth": {
@@ -1253,16 +1253,16 @@
       ]
     },
     "C 改善後(横書き言語)": {
-      "overall_accuracy": 0.44761904761904764,
-      "mean_edits": 7.25,
-      "mean_seconds": 2.830105431499973,
+      "overall_accuracy": 0.5047619047619047,
+      "mean_edits": 6.5,
+      "mean_seconds": 3.6692084731875028,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 3.104,
+          "seconds": 3.515,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1276,8 +1276,8 @@
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "https://www.",
+            "email": "taro.yamada@example.co",
+            "url": "https://www.jp",
             "note": ""
           },
           "truth": {
@@ -1300,7 +1300,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 3.105,
+          "seconds": 3.255,
           "fields": {
             "last_name": "",
             "first_name": "",
@@ -1338,7 +1338,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.642,
+          "seconds": 3.054,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1376,7 +1376,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 3.078,
+          "seconds": 3.584,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1386,13 +1386,13 @@
             "department_name": "物流企画部",
             "title": "",
             "postal_code": "812-0011",
-            "address": "7",
+            "address": "福岡県福岡市博多区博多駅前 4-4-4",
             "tel": "092-333-4444",
             "mobile": "070-4444-5555",
             "fax": "",
             "email": "tanaka@logi-kyushu.example",
             "url": "https://logi-kyushu.example",
-            "note": "i .\n福岡県福岡市博多区博多駅前 4-4-4\nan\non\n中健\nO00\n|"
+            "note": "i .\nan\non\n中健\nO00\n|"
           },
           "truth": {
             "last_name": "田中",
@@ -1414,7 +1414,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.95,
+          "seconds": 3.686,
           "fields": {
             "last_name": "海",
             "first_name": "品 長 橋",
@@ -1424,7 +1424,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "555-6666",
-            "address": "TEL 911- FAX 011-",
+            "address": "TEL 911- FAX 011-555-6667",
             "tel": "",
             "mobile": "",
             "fax": "011-555-6667",
@@ -1452,7 +1452,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 2.42,
+          "seconds": 4.475,
           "fields": {
             "last_name": "一",
             "first_name": "調 主",
@@ -1490,7 +1490,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 2.923,
+          "seconds": 4.237,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1500,12 +1500,12 @@
             "department_name": "営業本部 BB",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都千代田区千代田 1-1-1",
+            "address": "東京都千代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "",
             "fax": "",
             "email": "",
-            "url": "https://www.",
+            "url": "https://www.example.co.jp",
             "note": ""
           },
           "truth": {
@@ -1528,7 +1528,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.651,
+          "seconds": 3.907,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -1542,8 +1542,8 @@
             "tel": "",
             "mobile": "",
             "fax": "",
-            "email": "",
-            "url": "https://tech.",
+            "email": "hanako.sato@example.jp",
+            "url": "https://tech.example.jp",
             "note": "TEL 96-9876-5432 携帯 980-2222-3333"
           },
           "truth": {
@@ -1566,7 +1566,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.789,
+          "seconds": 3.953,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -1580,8 +1580,8 @@
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
-            "email": "",
-            "url": "https://jda.",
+            "email": "ito@jda.example",
+            "url": "https://jda.example",
             "note": "+"
           },
           "truth": {
@@ -1604,7 +1604,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 2.476,
+          "seconds": 3.123,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1618,8 +1618,8 @@
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "https://www.",
+            "email": "taro.yamada@example.co.jp",
+            "url": "https://www.example.co",
             "note": ""
           },
           "truth": {
@@ -1642,7 +1642,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 2.418,
+          "seconds": 3.235,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1680,7 +1680,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 2.34,
+          "seconds": 3.397,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1718,7 +1718,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 3.124,
+          "seconds": 3.396,
           "fields": {
             "last_name": "会",
             "first_name": "企 中",
@@ -1728,7 +1728,7 @@
             "department_name": "株物課田",
             "title": "",
             "postal_code": "812-0011",
-            "address": "7 福岡県福岡市博多区博多駅前 4-4-4",
+            "address": "福岡県福岡市博多区博多駅前 4-4-4",
             "tel": "092-333-4444",
             "mobile": "",
             "fax": "",
@@ -1756,7 +1756,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 2.601,
+          "seconds": 3.058,
           "fields": {
             "last_name": "北",
             "first_name": "商",
@@ -1766,7 +1766,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "555-6666",
-            "address": "TEL 011- FAX 011-",
+            "address": "TEL 011- FAX 011-555-6667",
             "tel": "011-555-6666",
             "mobile": "090-6666-7777",
             "fax": "011-555-6667",
@@ -1794,7 +1794,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 3.239,
+          "seconds": 4.149,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
@@ -1804,12 +1804,12 @@
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
             "postal_code": "150-0002",
-            "address": "7 東京都渋谷区渋谷 6-6-6",
+            "address": "東京都渋谷区渋谷 6-6-6",
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
             "email": "ito@jda.example",
-            "url": "https://jda.",
+            "url": "https://jda.example",
             "note": "ry ミ = ral\n伊藤直樹"
           },
           "truth": {
@@ -1832,7 +1832,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 3.42,
+          "seconds": 4.681,
           "fields": {
             "last_name": "全",
             "first_name": "サ ンプ ル 商",
@@ -1842,7 +1842,7 @@
             "department_name": "営業本部第一",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都千代田区千代田 1-1-1",
+            "address": "東京都千代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
@@ -1870,16 +1870,16 @@
       ]
     },
     "D 改善後(縦書き言語追加)": {
-      "overall_accuracy": 0.4523809523809524,
-      "mean_edits": 7.1875,
-      "mean_seconds": 4.4404136351874826,
+      "overall_accuracy": 0.5095238095238095,
+      "mean_edits": 6.4375,
+      "mean_seconds": 4.802085452999997,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 4.858,
+          "seconds": 5.111,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1893,8 +1893,8 @@
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "https://www.",
+            "email": "taro.yamada@example.co",
+            "url": "https://www.jp",
             "note": ""
           },
           "truth": {
@@ -1917,7 +1917,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 3.907,
+          "seconds": 4.023,
           "fields": {
             "last_name": "",
             "first_name": "",
@@ -1955,7 +1955,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 3.753,
+          "seconds": 3.932,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1993,7 +1993,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 5.232,
+          "seconds": 4.876,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -2003,13 +2003,13 @@
             "department_name": "物流企画部",
             "title": "",
             "postal_code": "812-0011",
-            "address": "7",
+            "address": "福岡県福岡市博多区博多駅前 4-4-4",
             "tel": "092-333-4444",
             "mobile": "070-4444-5555",
             "fax": "",
             "email": "tanaka@logi-kyushu.example",
             "url": "https://logi-kyushu.example",
-            "note": "|\n福岡県福岡市博多区博多駅前 4-4-4\nan\non\n中健\nO00\n|"
+            "note": "|\nan\non\n中健\nO00\n|"
           },
           "truth": {
             "last_name": "田中",
@@ -2031,7 +2031,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 4.414,
+          "seconds": 5.419,
           "fields": {
             "last_name": "海",
             "first_name": "品 長 橋",
@@ -2041,7 +2041,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "555-6666",
-            "address": "TEL 911- FAX 011-",
+            "address": "TEL 911- FAX 011-555-6667",
             "tel": "",
             "mobile": "",
             "fax": "011-555-6667",
@@ -2069,7 +2069,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 3.683,
+          "seconds": 4.205,
           "fields": {
             "last_name": "一",
             "first_name": "調 主",
@@ -2107,7 +2107,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 6.162,
+          "seconds": 6.055,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -2117,12 +2117,12 @@
             "department_name": "営業本部 BB",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都千代田区千代田 1-1-1",
+            "address": "東京都千代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "",
             "fax": "",
             "email": "",
-            "url": "https://www.",
+            "url": "https://www.example.co.jp",
             "note": ""
           },
           "truth": {
@@ -2145,7 +2145,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 4.653,
+          "seconds": 4.786,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -2159,8 +2159,8 @@
             "tel": "",
             "mobile": "",
             "fax": "",
-            "email": "",
-            "url": "https://tech.",
+            "email": "hanako.sato@example.jp",
+            "url": "https://tech.example.jp",
             "note": "TEL 96-9876-5432 携帯 980-2222-3333"
           },
           "truth": {
@@ -2183,7 +2183,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 4.46,
+          "seconds": 4.964,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -2197,8 +2197,8 @@
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
-            "email": "",
-            "url": "https://jda.",
+            "email": "ito@jda.example",
+            "url": "https://jda.example",
             "note": "+"
           },
           "truth": {
@@ -2221,7 +2221,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 4.424,
+          "seconds": 4.824,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -2235,8 +2235,8 @@
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
-            "email": "yamada@example.co",
-            "url": "https://www.",
+            "email": "taro.yamada@example.co.jp",
+            "url": "https://www.example.co",
             "note": ""
           },
           "truth": {
@@ -2259,7 +2259,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 3.655,
+          "seconds": 3.924,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -2297,7 +2297,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 3.462,
+          "seconds": 3.762,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -2335,7 +2335,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 4.652,
+          "seconds": 5.183,
           "fields": {
             "last_name": "会",
             "first_name": "企 中",
@@ -2345,7 +2345,7 @@
             "department_name": "株物課田",
             "title": "",
             "postal_code": "812-0011",
-            "address": "7 福岡県福岡市博多区博多駅前 4-4-4",
+            "address": "福岡県福岡市博多区博多駅前 4-4-4",
             "tel": "092-333-4444",
             "mobile": "",
             "fax": "",
@@ -2373,7 +2373,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 3.432,
+          "seconds": 3.887,
           "fields": {
             "last_name": "北",
             "first_name": "商",
@@ -2383,7 +2383,7 @@
             "department_name": "",
             "title": "",
             "postal_code": "555-6666",
-            "address": "TEL 011- FAX 011-",
+            "address": "TEL 011- FAX 011-555-6667",
             "tel": "011-555-6666",
             "mobile": "090-6666-7777",
             "fax": "011-555-6667",
@@ -2411,7 +2411,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 5.33,
+          "seconds": 5.929,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
@@ -2421,12 +2421,12 @@
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
             "postal_code": "150-0002",
-            "address": "7 東京都渋谷区渋谷 6-6-6",
+            "address": "東京都渋谷区渋谷 6-6-6",
             "tel": "03-7777-8888",
             "mobile": "",
             "fax": "03-7777-8889",
             "email": "ito@jda.example",
-            "url": "https://jda.",
+            "url": "https://jda.example",
             "note": "ry ミ = ral\n伊藤直樹"
           },
           "truth": {
@@ -2449,7 +2449,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 4.971,
+          "seconds": 5.952,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -2459,7 +2459,7 @@
             "department_name": "営業本部第一",
             "title": "部長",
             "postal_code": "100-0001",
-            "address": "7 東京都千代田区千代田 1-1-1",
+            "address": "東京都千代田区千代田 1-1-1",
             "tel": "03-1234-5678",
             "mobile": "090-1234-5678",
             "fax": "03-1234-5679",
