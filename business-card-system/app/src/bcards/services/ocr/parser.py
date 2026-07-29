@@ -152,6 +152,35 @@ def join_spaced_letters(text: str) -> str:
     return text
 
 
+def split_department_and_title(line: str) -> tuple[str, str]:
+    """1行に並んだ部署と役職を分ける。分けられなければ (行, "") を返す。
+
+    名刺は「開発部 主任」「営業本部 第一営業部 部長」のように部署と役職を
+    1行に印字することが多い。実測（合成サンプル16枚）では部署が
+
+        `開発部 主任`            → 部署 `開発部主任`（正解は `開発部`）
+        `営業本部 第一営業部 部長` → 部署 `営業本部第一営業部部長`
+
+    のように役職を巻き込み、両方とも不一致になっていた。
+
+    役職の語が行頭にある場合は分けない。「Sales Department」のように、
+    役職の語で始まる部署名を役職と取り違えないため。
+    """
+    for keyword in sorted(TITLE_KEYWORDS, key=len, reverse=True):
+        position = line.rfind(keyword)
+        if position < 0:
+            continue
+        if position == 0:
+            # 行全体が役職のときだけ「部署なし」とみなす
+            return ("", line) if line == keyword else (line, "")
+        head, tail = line[:position].strip(), line[position:].strip()
+        if head and any(word in head for word in DEPARTMENT_KEYWORDS):
+            return head, tail
+        # 部署の手がかりが無いなら、役職の一部（「シニアエンジニア」など）の可能性がある
+        return line, ""
+    return line, ""
+
+
 def for_web_match(text: str) -> str:
     """メール・URLを探すための整形。
 
@@ -369,21 +398,32 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         if index in used:
             continue
         if any(keyword in line for keyword in DEPARTMENT_KEYWORDS):
-            fields["department_name"] = line
+            department, title = split_department_and_title(line)
+            if not department:
+                continue  # 役職だけの行。部署として取らない
+            fields["department_name"] = department
             confidence["department_name"] = 0.75
+            if title:
+                fields["title"] = title
+                confidence["title"] = 0.8
             used.add(index)
             break
 
-    # 役職（部署と同じ行に含まれる場合は分離する）
-    for index, line in enumerate(cleaned):
-        for keyword in TITLE_KEYWORDS:
-            if keyword in line:
-                fields["title"] = keyword if line != keyword and len(line) > len(keyword) + 6 else line
-                confidence["title"] = 0.8
-                used.add(index)
+    # 役職（部署の行から取れなかった場合）
+    if not fields["title"]:
+        for index, line in enumerate(cleaned):
+            if index in used:
+                # 部署として採った行から役職を拾い直さない。
+                # 「Sales Department」の `Sales` を役職にしてしまう。
+                continue
+            for keyword in TITLE_KEYWORDS:
+                if keyword in line:
+                    fields["title"] = keyword if line != keyword and len(line) > len(keyword) + 6 else line
+                    confidence["title"] = 0.8
+                    used.add(index)
+                    break
+            if fields["title"]:
                 break
-        if fields["title"]:
-            break
 
     # 氏名
     # ふりがなの直後の行は氏名である可能性が高いので優先的に採用する。
