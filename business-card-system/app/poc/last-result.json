@@ -19,21 +19,21 @@
   ],
   "results": {
     "A 前処理なし": {
-      "overall_accuracy": 0.43333333333333335,
-      "mean_edits": 7.4375,
-      "mean_seconds": 2.136443960749915,
+      "overall_accuracy": 0.4380952380952381,
+      "mean_edits": 7.375,
+      "mean_seconds": 2.3972789028750157,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 2.167,
+          "seconds": 2.706,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部第一営業部",
             "title": "部長",
@@ -66,12 +66,12 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 1.872,
+          "seconds": 2.343,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "株式会社",
             "department_name": "開発部",
             "title": "主任",
@@ -104,12 +104,12 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.338,
+          "seconds": 2.234,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
             "last_name_kana": "すず",
-            "first_name_kana": "きいちろう",
+            "first_name_kana": "き いち ろう",
             "company_name": "合同会社みらいデザイン",
             "department_name": "クリエイティブ室",
             "title": "代表社員",
@@ -142,7 +142,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 2.026,
+          "seconds": 2.464,
           "fields": {
             "last_name": "Re",
             "first_name": "AL",
@@ -180,10 +180,10 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.524,
+          "seconds": 2.679,
           "fields": {
-            "last_name": "海品",
-            "first_name": "長橋",
+            "last_name": "海",
+            "first_name": "品 長 橋",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -218,10 +218,10 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 1.657,
+          "seconds": 1.946,
           "fields": {
-            "last_name": "一鍋",
-            "first_name": "主",
+            "last_name": "一",
+            "first_name": "鍋 主",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -256,12 +256,12 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 2.625,
+          "seconds": 2.941,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部 BB",
             "title": "部長",
@@ -294,7 +294,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.039,
+          "seconds": 2.021,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -332,12 +332,12 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.227,
+          "seconds": 2.358,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター",
             "title": "主任研究員",
@@ -370,12 +370,12 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 1.986,
+          "seconds": 2.353,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部第一営業部",
             "title": "部長",
@@ -408,12 +408,12 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 1.892,
+          "seconds": 2.553,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "テクノロジー株式会社",
             "department_name": "開発部",
             "title": "主任",
@@ -446,12 +446,12 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 2.034,
+          "seconds": 2.042,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
-            "last_name_kana": "きい",
-            "first_name_kana": "ちろう",
+            "last_name_kana": "き",
+            "first_name_kana": "いち ろう",
             "company_name": "合同会社みらいデザイン",
             "department_name": "クリエイティブ室",
             "title": "代表社員",
@@ -484,10 +484,10 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 2.214,
+          "seconds": 2.637,
           "fields": {
-            "last_name": "会企",
-            "first_name": "中",
+            "last_name": "会",
+            "first_name": "企 中",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -522,10 +522,10 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 1.875,
+          "seconds": 2.206,
           "fields": {
-            "last_name": "北商",
-            "first_name": "人",
+            "last_name": "北",
+            "first_name": "商 人",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -560,12 +560,12 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 2.601,
+          "seconds": 2.824,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
@@ -598,12 +598,12 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 2.106,
+          "seconds": 2.051,
           "fields": {
             "last_name": "spaces",
             "first_name": "EEA",
-            "last_name_kana": "やま",
-            "first_name_kana": "た",
+            "last_name_kana": "や",
+            "first_name_kana": "また",
             "company_name": "株式会社サ",
             "department_name": "",
             "title": "部長",
@@ -638,14 +638,14 @@
     "B 改善前の前処理": {
       "overall_accuracy": 0.34285714285714286,
       "mean_edits": 8.625,
-      "mean_seconds": 2.552942757312479,
+      "mean_seconds": 3.041328856249976,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 2.802,
+          "seconds": 2.926,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -683,10 +683,10 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 2.636,
+          "seconds": 3.231,
           "fields": {
-            "last_name": "発部",
-            "first_name": "",
+            "last_name": "発",
+            "first_name": "部",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -721,12 +721,12 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.0,
+          "seconds": 2.689,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
             "last_name_kana": "すず",
-            "first_name_kana": "きいちろう",
+            "first_name_kana": "き いち ろう",
             "company_name": "合同会社みらいデザイン",
             "department_name": "",
             "title": "代表社員",
@@ -759,10 +759,10 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 3.888,
+          "seconds": 3.763,
           "fields": {
-            "last_name": "a",
-            "first_name": "a",
+            "last_name": "",
+            "first_name": "",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "株式会社ロジスティクス九州 be",
@@ -775,7 +775,7 @@
             "fax": "",
             "email": "tanaka@logi-kyushu.example",
             "url": "",
-            "note": "ips,\nュ a i a a A 4 iT ピ\n福岡県福岡市博多区博多駅前 4-4-4\n-\nNN NN _httpsi/logi-kyushu.example aa\n| い wu\n本 1\n_\nに"
+            "note": "ips,\nュ aiaaA 4 iT ピ\naa\n福岡県福岡市博多区博多駅前 4-4-4\n-\nNN NN _httpsi/logi-kyushu.example aa\n| い wu\n本 1\n_\nに"
           },
           "truth": {
             "last_name": "田中",
@@ -797,7 +797,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.146,
+          "seconds": 2.408,
           "fields": {
             "last_name": "SM",
             "first_name": "a al",
@@ -835,7 +835,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 2.327,
+          "seconds": 2.461,
           "fields": {
             "last_name": "wm",
             "first_name": "os SH",
@@ -873,12 +873,12 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 2.65,
+          "seconds": 2.892,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部 BEAR 部長",
             "title": "部長",
@@ -911,12 +911,12 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.529,
+          "seconds": 2.906,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "テクノロジー株式会社",
             "department_name": "開発部主任",
             "title": "開発部主任",
@@ -949,12 +949,12 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.214,
+          "seconds": 2.841,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター",
             "title": "主任研究員",
@@ -987,12 +987,12 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 2.157,
+          "seconds": 2.71,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事 |",
             "department_name": "営業本部第一営業部 |",
             "title": "部長",
@@ -1025,12 +1025,12 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 1.994,
+          "seconds": 2.363,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "テクノロジニ株式会社",
             "department_name": "開発部 Head Office",
             "title": "主任",
@@ -1063,12 +1063,12 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 2.463,
+          "seconds": 3.419,
           "fields": {
             "last_name": "Wasa",
             "first_name": "a",
-            "last_name_kana": "はキ",
-            "first_name_kana": "ュ",
+            "last_name_kana": "は",
+            "first_name_kana": "キュ",
             "company_name": "合同会社みらいデザイン |",
             "department_name": "クリエイティブ室 Head Office |",
             "title": "代表社員",
@@ -1101,7 +1101,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 2.035,
+          "seconds": 2.634,
           "fields": {
             "last_name": "gz",
             "first_name": "HES",
@@ -1139,12 +1139,12 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 3.52,
+          "seconds": 4.396,
           "fields": {
             "last_name": "ニニ",
             "first_name": "",
-            "last_name_kana": "ーーーー",
-            "first_name_kana": "",
+            "last_name_kana": "ーー",
+            "first_name_kana": "ーー",
             "company_name": "",
             "department_name": "",
             "title": "",
@@ -1177,12 +1177,12 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 2.6,
+          "seconds": 3.153,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
@@ -1215,12 +1215,12 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 2.886,
+          "seconds": 3.871,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "",
             "department_name": "営業本部第一営業部部長",
             "title": "部長",
@@ -1253,21 +1253,21 @@
       ]
     },
     "C 改善後(横書き言語)": {
-      "overall_accuracy": 0.4380952380952381,
-      "mean_edits": 7.375,
-      "mean_seconds": 2.287198017499975,
+      "overall_accuracy": 0.44761904761904764,
+      "mean_edits": 7.25,
+      "mean_seconds": 2.830105431499973,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 2.181,
+          "seconds": 3.104,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部第一営業部",
             "title": "部長",
@@ -1300,12 +1300,12 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 2.264,
+          "seconds": 3.105,
           "fields": {
             "last_name": "",
             "first_name": "",
-            "last_name_kana": "うは",
-            "first_name_kana": "なこ",
+            "last_name_kana": "う",
+            "first_name_kana": "は な こ",
             "company_name": "テクノロジー株式会社",
             "department_name": "開発部",
             "title": "",
@@ -1338,12 +1338,12 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.068,
+          "seconds": 2.642,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
             "last_name_kana": "すず",
-            "first_name_kana": "きいちろう",
+            "first_name_kana": "き いち ろう",
             "company_name": "合同会社みらいデザイン",
             "department_name": "クリエイティブ室",
             "title": "代表社員",
@@ -1376,7 +1376,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 2.517,
+          "seconds": 3.078,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1414,10 +1414,10 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.247,
+          "seconds": 2.95,
           "fields": {
-            "last_name": "海品",
-            "first_name": "長橋",
+            "last_name": "海",
+            "first_name": "品 長 橋",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -1452,10 +1452,10 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 2.338,
+          "seconds": 2.42,
           "fields": {
-            "last_name": "一調",
-            "first_name": "主",
+            "last_name": "一",
+            "first_name": "調 主",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -1490,12 +1490,12 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 2.821,
+          "seconds": 2.923,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部 BB",
             "title": "部長",
@@ -1528,12 +1528,12 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.295,
+          "seconds": 2.651,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "テクノロジー株式会社",
             "department_name": "開発部主任",
             "title": "開発部主任",
@@ -1566,12 +1566,12 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.222,
+          "seconds": 2.789,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター",
             "title": "主任研究員",
@@ -1604,12 +1604,12 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 1.98,
+          "seconds": 2.476,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部第一営業部",
             "title": "部長",
@@ -1642,12 +1642,12 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 1.946,
+          "seconds": 2.418,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "テクノロジー株式会社",
             "department_name": "開発部",
             "title": "主任",
@@ -1680,12 +1680,12 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 1.881,
+          "seconds": 2.34,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
-            "last_name_kana": "きい",
-            "first_name_kana": "ちろう",
+            "last_name_kana": "き",
+            "first_name_kana": "いち ろう",
             "company_name": "合同会社みらいデザイン",
             "department_name": "クリエイティブ室",
             "title": "代表社員",
@@ -1718,10 +1718,10 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 2.316,
+          "seconds": 3.124,
           "fields": {
-            "last_name": "会企",
-            "first_name": "中",
+            "last_name": "会",
+            "first_name": "企 中",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -1756,10 +1756,10 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 2.115,
+          "seconds": 2.601,
           "fields": {
-            "last_name": "北商",
-            "first_name": "",
+            "last_name": "北",
+            "first_name": "商",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -1794,12 +1794,12 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 2.488,
+          "seconds": 3.239,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
@@ -1832,10 +1832,10 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 2.918,
+          "seconds": 3.42,
           "fields": {
-            "last_name": "全サ",
-            "first_name": "ンプル商",
+            "last_name": "全",
+            "first_name": "サ ンプ ル 商",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -1870,21 +1870,21 @@
       ]
     },
     "D 改善後(縦書き言語追加)": {
-      "overall_accuracy": 0.44761904761904764,
-      "mean_edits": 7.25,
-      "mean_seconds": 3.599682777250024,
+      "overall_accuracy": 0.4523809523809524,
+      "mean_edits": 7.1875,
+      "mean_seconds": 4.4404136351874826,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 4.004,
+          "seconds": 4.858,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部第一営業部",
             "title": "部長",
@@ -1917,7 +1917,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 3.356,
+          "seconds": 3.907,
           "fields": {
             "last_name": "",
             "first_name": "",
@@ -1955,12 +1955,12 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.73,
+          "seconds": 3.753,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
             "last_name_kana": "すず",
-            "first_name_kana": "きいちろう",
+            "first_name_kana": "き いち ろう",
             "company_name": "合同会社みらいデザイン",
             "department_name": "クリエイティブ室",
             "title": "代表社員",
@@ -1993,7 +1993,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 3.826,
+          "seconds": 5.232,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -2031,10 +2031,10 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 3.858,
+          "seconds": 4.414,
           "fields": {
-            "last_name": "海品",
-            "first_name": "長橋",
+            "last_name": "海",
+            "first_name": "品 長 橋",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -2069,10 +2069,10 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 3.142,
+          "seconds": 3.683,
           "fields": {
-            "last_name": "一調",
-            "first_name": "主",
+            "last_name": "一",
+            "first_name": "調 主",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -2107,12 +2107,12 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 4.724,
+          "seconds": 6.162,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部 BB",
             "title": "部長",
@@ -2145,12 +2145,12 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 3.578,
+          "seconds": 4.653,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "テクノロジー株式会社",
             "department_name": "開発部主任",
             "title": "開発部主任",
@@ -2183,12 +2183,12 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 3.436,
+          "seconds": 4.46,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター",
             "title": "主任研究員",
@@ -2221,12 +2221,12 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 3.287,
+          "seconds": 4.424,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
-            "last_name_kana": "やま",
-            "first_name_kana": "だたろう",
+            "last_name_kana": "や",
+            "first_name_kana": "まだ た ろう",
             "company_name": "株式会社サンプル商事",
             "department_name": "営業本部第一営業部",
             "title": "部長",
@@ -2259,12 +2259,12 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 2.779,
+          "seconds": 3.655,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
             "last_name_kana": "さと",
-            "first_name_kana": "うはなこ",
+            "first_name_kana": "う は な こ",
             "company_name": "テクノロジー株式会社",
             "department_name": "開発部",
             "title": "主任",
@@ -2297,12 +2297,12 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 2.739,
+          "seconds": 3.462,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
-            "last_name_kana": "きい",
-            "first_name_kana": "ちろう",
+            "last_name_kana": "き",
+            "first_name_kana": "いち ろう",
             "company_name": "合同会社みらいデザイン",
             "department_name": "クリエイティブ室",
             "title": "代表社員",
@@ -2335,10 +2335,10 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 4.291,
+          "seconds": 4.652,
           "fields": {
-            "last_name": "会企",
-            "first_name": "中",
+            "last_name": "会",
+            "first_name": "企 中",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -2373,10 +2373,10 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 3.003,
+          "seconds": 3.432,
           "fields": {
-            "last_name": "北商",
-            "first_name": "",
+            "last_name": "北",
+            "first_name": "商",
             "last_name_kana": "",
             "first_name_kana": "",
             "company_name": "",
@@ -2411,12 +2411,12 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 4.665,
+          "seconds": 5.33,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
             "last_name_kana": "いと",
-            "first_name_kana": "うなおき",
+            "first_name_kana": "う な お き",
             "company_name": "一般社団法人日本データ協会",
             "department_name": "調査研究センター主任研究員",
             "title": "主任",
@@ -2449,7 +2449,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 4.176,
+          "seconds": 4.971,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",

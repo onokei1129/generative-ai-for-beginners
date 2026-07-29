@@ -124,10 +124,15 @@ def quick_ocr(image: Image.Image, languages: str = "jpn+eng") -> str:
 
     from bcards.config import settings
 
+    from bcards.services import orientation
+
     work = image
     if max(work.size) > 1200:
         scale = 1200 / max(work.size)
         work = work.resize((int(work.width * scale), int(work.height * scale)), Image.LANCZOS)
+    # 90度回った画像はほとんど文字が読めない。読めないと「領収書」の語も拾えず、
+    # 領収書が名刺として通ってしまうため、判定用のOCRでも向きを直しておく。
+    work, _ = orientation.upright(work)
     try:
         return pytesseract.image_to_string(
             work, lang=languages, config="--psm 6", timeout=settings.ocr_timeout_seconds

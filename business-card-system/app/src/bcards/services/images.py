@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from ..config import settings
+from . import orientation
 
 try:  # HEIC 対応
     import pillow_heif
@@ -338,7 +339,12 @@ def _finish_card(
     corrections: dict[str, Any] = {"outline_detected": detected, "perspective_corrected": detected}
     ocr_image = image
     if correct:
-        ocr_image, angle = deskew(image)
+        # 90度単位の回転を先に直す。deskew が扱うのは数度のズレだけで、
+        # 横向きに置いてスキャンした名刺はここで直さないとOCRがほぼ何も読めない。
+        ocr_image, turned = orientation.upright(image)
+        corrections["orientation_degrees"] = turned
+
+        ocr_image, angle = deskew(ocr_image)
         corrections["deskew_angle"] = round(angle, 2)
 
         display, rotated = orient_landscape(ocr_image)

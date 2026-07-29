@@ -13,11 +13,12 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -146,3 +147,32 @@ class TestSpacedCharactersStillMatch:
         )
         score, _ = score_text(text)
         assert score > 2.0
+
+
+@pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract が無い環境ではOCRの実測を行わない")
+class TestRotatedReceipt:
+    """90度回った領収書も領収書と分かること。
+
+    回った画像はほとんど文字が読めず、最も強い手がかりである「領収証」を
+    取りこぼす。文字の裏づけが無いまま名刺の形をしていると人手に回ってしまい、
+    そこで名刺として拾われれば、また正解ラベル付けが汚れる。
+    """
+
+    def _receipt(self, path: Path) -> None:
+        from bcards import fonts
+
+        image = Image.new("RGB", (1400, 950), "white")
+        draw = ImageDraw.Draw(image)
+        draw.text((450, 80), "領 収 証", font=fonts.load(70), fill="black")
+        draw.text((120, 300), "金額 12,000円", font=fonts.load(44), fill="black")
+        draw.text((120, 400), "上記正に領収いたしました", font=fonts.load(44), fill="black")
+        draw.text((120, 500), "株式会社サンプル交通", font=fonts.load(44), fill="black")
+        image.rotate(-90, expand=True).save(path)
+
+    def test_rotated_receipt_is_still_a_receipt(self, tmp_path: Path):
+        path = tmp_path / "receipt.jpg"
+        self._receipt(path)
+
+        verdict = classify_file(path, use_ocr=True)
+
+        assert verdict.label == "receipt", f"回転した領収書を取りこぼした: {verdict.reasons}"
