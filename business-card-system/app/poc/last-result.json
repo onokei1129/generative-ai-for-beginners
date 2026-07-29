@@ -21,14 +21,14 @@
     "A 前処理なし": {
       "overall_accuracy": 0.48095238095238096,
       "mean_edits": 6.8125,
-      "mean_seconds": 2.3407155925625016,
+      "mean_seconds": 1.7488875152499972,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 4.346,
+          "seconds": 1.828,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -66,7 +66,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 2.059,
+          "seconds": 1.704,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -104,7 +104,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.046,
+          "seconds": 1.622,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -142,7 +142,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 2.218,
+          "seconds": 1.687,
           "fields": {
             "last_name": "Re",
             "first_name": "AL",
@@ -180,7 +180,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.355,
+          "seconds": 1.837,
           "fields": {
             "last_name": "海",
             "first_name": "品 長 橋",
@@ -218,7 +218,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 1.899,
+          "seconds": 1.395,
           "fields": {
             "last_name": "一",
             "first_name": "鍋 主",
@@ -256,7 +256,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 2.745,
+          "seconds": 2.158,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -294,7 +294,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.494,
+          "seconds": 1.571,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -332,7 +332,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.341,
+          "seconds": 1.874,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -370,7 +370,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 2.014,
+          "seconds": 1.656,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -408,7 +408,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 2.029,
+          "seconds": 1.672,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -446,7 +446,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 1.854,
+          "seconds": 1.533,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -484,7 +484,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 2.359,
+          "seconds": 1.861,
           "fields": {
             "last_name": "会",
             "first_name": "企 中",
@@ -522,7 +522,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 1.879,
+          "seconds": 1.617,
           "fields": {
             "last_name": "北",
             "first_name": "商 人",
@@ -560,7 +560,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 2.611,
+          "seconds": 2.184,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
@@ -598,7 +598,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 2.201,
+          "seconds": 1.784,
           "fields": {
             "last_name": "spaces",
             "first_name": "EEA",
@@ -638,14 +638,14 @@
     "B 改善前の前処理": {
       "overall_accuracy": 0.4142857142857143,
       "mean_edits": 7.6875,
-      "mean_seconds": 2.9215721451875023,
+      "mean_seconds": 2.1265784688750315,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 3.867,
+          "seconds": 2.244,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -683,7 +683,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 2.698,
+          "seconds": 2.164,
           "fields": {
             "last_name": "発",
             "first_name": "部",
@@ -721,7 +721,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.396,
+          "seconds": 1.753,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -759,7 +759,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 3.733,
+          "seconds": 2.861,
           "fields": {
             "last_name": "",
             "first_name": "",
@@ -797,7 +797,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 2.485,
+          "seconds": 1.831,
           "fields": {
             "last_name": "SM",
             "first_name": "a al",
@@ -835,7 +835,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 2.583,
+          "seconds": 1.852,
           "fields": {
             "last_name": "wm",
             "first_name": "os SH",
@@ -873,7 +873,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 3.031,
+          "seconds": 2.163,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -911,7 +911,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 2.798,
+          "seconds": 2.18,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -949,7 +949,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 2.503,
+          "seconds": 1.861,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -987,7 +987,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 2.442,
+          "seconds": 1.848,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1025,7 +1025,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 2.478,
+          "seconds": 1.74,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -1063,7 +1063,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 2.784,
+          "seconds": 2.103,
           "fields": {
             "last_name": "Wasa",
             "first_name": "a",
@@ -1101,7 +1101,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 2.406,
+          "seconds": 1.783,
           "fields": {
             "last_name": "gz",
             "first_name": "HES",
@@ -1139,7 +1139,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 3.742,
+          "seconds": 2.854,
           "fields": {
             "last_name": "ニニ",
             "first_name": "",
@@ -1177,7 +1177,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 2.895,
+          "seconds": 2.23,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -1215,7 +1215,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 3.905,
+          "seconds": 2.559,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1255,14 +1255,14 @@
     "C 改善後(横書き言語)": {
       "overall_accuracy": 0.5238095238095238,
       "mean_edits": 6.25,
-      "mean_seconds": 3.2939535636874933,
+      "mean_seconds": 2.534891251000019,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 3.6,
+          "seconds": 2.628,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1300,7 +1300,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 3.185,
+          "seconds": 2.48,
           "fields": {
             "last_name": "",
             "first_name": "",
@@ -1338,7 +1338,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 2.942,
+          "seconds": 2.264,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1376,7 +1376,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 3.477,
+          "seconds": 2.705,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1414,7 +1414,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 3.239,
+          "seconds": 2.564,
           "fields": {
             "last_name": "海",
             "first_name": "品 長 橋",
@@ -1452,7 +1452,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 2.897,
+          "seconds": 2.199,
           "fields": {
             "last_name": "一",
             "first_name": "調 主",
@@ -1490,7 +1490,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 3.928,
+          "seconds": 2.968,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1528,7 +1528,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 3.353,
+          "seconds": 2.497,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -1566,7 +1566,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 3.212,
+          "seconds": 2.646,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -1604,7 +1604,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 2.932,
+          "seconds": 2.379,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1642,7 +1642,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 3.291,
+          "seconds": 2.563,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1680,7 +1680,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 2.715,
+          "seconds": 2.194,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1718,7 +1718,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 3.295,
+          "seconds": 2.522,
           "fields": {
             "last_name": "会",
             "first_name": "企 中",
@@ -1756,7 +1756,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 2.863,
+          "seconds": 2.192,
           "fields": {
             "last_name": "北",
             "first_name": "商",
@@ -1794,7 +1794,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 3.896,
+          "seconds": 2.869,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
@@ -1832,7 +1832,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 3.879,
+          "seconds": 2.888,
           "fields": {
             "last_name": "全",
             "first_name": "サ ンプ ル 商",
@@ -1872,14 +1872,14 @@
     "D 改善後(縦書き言語追加)": {
       "overall_accuracy": 0.5285714285714286,
       "mean_edits": 6.1875,
-      "mean_seconds": 4.704210660375001,
+      "mean_seconds": 3.6567397938749906,
       "cost_per_card_usd": 0.0,
       "errors": [],
       "details": [
         {
           "sample": "standard-scan-00",
           "variant": "standard/scan",
-          "seconds": 6.234,
+          "seconds": 3.949,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -1917,7 +1917,7 @@
         {
           "sample": "standard-photo-01",
           "variant": "standard/photo",
-          "seconds": 4.097,
+          "seconds": 3.723,
           "fields": {
             "last_name": "",
             "first_name": "",
@@ -1955,7 +1955,7 @@
         {
           "sample": "bilingual-scan-02",
           "variant": "bilingual/scan",
-          "seconds": 3.845,
+          "seconds": 3.011,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -1993,7 +1993,7 @@
         {
           "sample": "bilingual-photo-03",
           "variant": "bilingual/photo",
-          "seconds": 4.986,
+          "seconds": 3.706,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -2031,7 +2031,7 @@
         {
           "sample": "vertical-scan-04",
           "variant": "vertical/scan",
-          "seconds": 4.712,
+          "seconds": 3.757,
           "fields": {
             "last_name": "海",
             "first_name": "品 長 橋",
@@ -2069,7 +2069,7 @@
         {
           "sample": "vertical-photo-05",
           "variant": "vertical/photo",
-          "seconds": 3.792,
+          "seconds": 3.041,
           "fields": {
             "last_name": "一",
             "first_name": "調 主",
@@ -2107,7 +2107,7 @@
         {
           "sample": "decorated-scan-06",
           "variant": "decorated/scan",
-          "seconds": 6.075,
+          "seconds": 4.699,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -2145,7 +2145,7 @@
         {
           "sample": "decorated-photo-07",
           "variant": "decorated/photo",
-          "seconds": 4.858,
+          "seconds": 3.839,
           "fields": {
             "last_name": "佐藤",
             "first_name": "花子",
@@ -2183,7 +2183,7 @@
         {
           "sample": "standard-scan-08",
           "variant": "standard/scan",
-          "seconds": 4.969,
+          "seconds": 3.833,
           "fields": {
             "last_name": "伊藤",
             "first_name": "直樹",
@@ -2221,7 +2221,7 @@
         {
           "sample": "standard-photo-09",
           "variant": "standard/photo",
-          "seconds": 4.476,
+          "seconds": 3.583,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",
@@ -2259,7 +2259,7 @@
         {
           "sample": "bilingual-scan-10",
           "variant": "bilingual/scan",
-          "seconds": 3.988,
+          "seconds": 3.143,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -2297,7 +2297,7 @@
         {
           "sample": "bilingual-photo-11",
           "variant": "bilingual/photo",
-          "seconds": 3.628,
+          "seconds": 2.876,
           "fields": {
             "last_name": "Head",
             "first_name": "Office",
@@ -2335,7 +2335,7 @@
         {
           "sample": "vertical-scan-12",
           "variant": "vertical/scan",
-          "seconds": 4.783,
+          "seconds": 3.881,
           "fields": {
             "last_name": "会",
             "first_name": "企 中",
@@ -2373,7 +2373,7 @@
         {
           "sample": "vertical-photo-13",
           "variant": "vertical/photo",
-          "seconds": 3.742,
+          "seconds": 2.949,
           "fields": {
             "last_name": "北",
             "first_name": "商",
@@ -2411,7 +2411,7 @@
         {
           "sample": "decorated-scan-14",
           "variant": "decorated/scan",
-          "seconds": 5.474,
+          "seconds": 4.325,
           "fields": {
             "last_name": "ビー",
             "first_name": "",
@@ -2449,7 +2449,7 @@
         {
           "sample": "decorated-photo-15",
           "variant": "decorated/photo",
-          "seconds": 5.607,
+          "seconds": 4.192,
           "fields": {
             "last_name": "山田",
             "first_name": "太郎",

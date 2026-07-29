@@ -15,8 +15,15 @@ URL_RE = re.compile(r"(?:https?://|www\.)[\w\-./?%&=~+#:]+", re.IGNORECASE)
 POSTAL_RE = re.compile(r"〒?\s*(\d{3})\s*[-ー－]\s*(\d{4})")
 # 〒 は読み違えられやすい。郵便番号の直前に限って読み捨てる。
 POSTAL_MARK_RE = re.compile(r"[〒〠亍干テT7]\s*$")
-PHONE_RE = re.compile(r"(?:\+81[\d\-() ]{8,}|0\d{1,4}[-ー－(\s]\d{1,4}[)\-ー－\s]?\d{3,4})")
-PHONE_RE = re.compile(r"(?:\+81[\d\-() ]{8,}|0\d{1,4}[-ー－(\s]\d{1,4}[)\-ー－\s]?\d{3,4})")
+# 電話番号。国番号つき（海外名刺）と国内表記の2通りを見る。
+#
+# 以前は国番号つきを `+81` だけ見ていたため、海外名刺の番号を1件も拾えなかった。
+# 実測では英語の名刺で `TEL +1 212-555-0100` が空になっていた。区切りは国ごとに
+# 様々（`+1 212-555-0100` / `+7 495 123-45-67` / `+44 (0)20 7123 4567`）なので、
+# 国番号のあとは「数字と区切りの並び」として扱う。桁数は E.164 の15桁までに収める。
+INTL_PHONE = r"\+\d{1,3}(?:[\s\-.()]{0,2}\d){6,14}"
+DOMESTIC_PHONE = r"0\d{1,4}[-ー－(\s]\d{1,4}[)\-ー－\s]?\d{3,4}"
+PHONE_RE = re.compile(f"(?:{INTL_PHONE}|{DOMESTIC_PHONE})")
 
 COMPANY_KEYWORDS = (
     "株式会社",
@@ -223,8 +230,38 @@ def strip_inner_spaces(text: str) -> str:
     return re.sub(r"(?<=[^\x00-\x7F])\s+(?=[^\x00-\x7F])", "", text).strip()
 
 
+def domestic_digits(value: str) -> str:
+    """日本の番号を国内表記の数字列に揃える。それ以外は数字だけ残す。
+
+    `+81 90-1234-5678` と `090-1234-5678` は同じ番号だが、`+81` のままでは
+    別の値になる。これは2か所で問題になっていた。
+
+    1. 種別の判定：携帯の先頭3桁（090/080/070/050）と照合できず、
+       日本の携帯が固定電話として登録されていた
+    2. 重複人物の判定：同じ人が2つの表記で別人として扱われていた
+
+    他国の番号は携帯の見分け方が国ごとに違うため、国番号を残したまま返す
+    （結果として「電話」に入る。誤って「携帯」に入れるより無害）。
+    """
+    text = normalize(value).strip()
+    if text.startswith("+"):
+        # 国際表記の「(0)」は「国内でかけるときだけ0を付ける」という慣習表記。
+        # 付いている名刺と付いていない名刺で別の値にならないよう、先に落とす。
+        text = re.sub(r"\(\s*0\s*\)", "", text)
+    digits = re.sub(r"\D", "", text)
+    if text.startswith("+") and digits.startswith("81"):
+        return "0" + digits[2:]
+    return digits
+
+
 def normalize_phone(value: str) -> str:
-    return re.sub(r"[^\d+]", "", normalize(value))
+    """照合・重複判定に使う正規形。
+
+    保存時（card_contact.value_normalized）と検索時の両方で使うため、
+    変えるときは既存データの詰め替えが必要になる
+    （migrations/versions/…_normalize_phone_to_domestic_form）。
+    """
+    return domestic_digits(value)
 
 
 def normalize_name(value: str) -> str:
@@ -342,8 +379,8 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         label_positions.sort()
 
         for match in PHONE_RE.finditer(line):
-            number = match.group(0).strip()
-            digits = normalize_phone(number)
+            number = match.group(0).strip(" \t-ー－.")
+            digits = domestic_digits(number)
             if len(digits) < 9:
                 continue
             preceding = [kind for position, kind in label_positions if position < match.start()]
