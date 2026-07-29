@@ -51,8 +51,30 @@ if errorlevel 1 (
 )
 
 echo 対象: %CD%
+
+rem いまのブランチ名を取る
+set "BRANCH="
+for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set "BRANCH=%%b"
+if "%BRANCH%"=="" (
+    echo [エラー] ブランチ名を取得できませんでした。
+    pause
+    exit /b 1
+)
+echo ブランチ: %BRANCH%
 echo.
-git pull
+
+rem 追跡先（upstream）が設定されていないと、引数なしの git pull は
+rem "There is no tracking information for the current branch." で止まる。
+rem その場合は origin から明示的に取得し、次回以降のために追跡先も設定する。
+git rev-parse --abbrev-ref --symbolic-full-name @{u} >nul 2>&1
+if errorlevel 1 (
+    echo 追跡先が未設定のため、origin/%BRANCH% から取得します。
+    echo.
+    git pull origin "%BRANCH%"
+    if not errorlevel 1 git branch --set-upstream-to=origin/%BRANCH% >nul 2>&1
+) else (
+    git pull
+)
 if errorlevel 1 (
     echo.
     echo ============================================
@@ -65,6 +87,10 @@ if errorlevel 1 (
     echo           git stash
     echo         そのあともう一度このボタンを押します。
     echo   ・ネットワークにつながっていない
+    echo   ・origin にこのブランチが無い
+    echo       → 次で作業用ブランチに切り替えてから、もう一度押してください。
+    echo           git fetch origin
+    echo           git checkout claude/business-card-system-requirements-oznnvt
     echo.
     echo  上の英語のメッセージをそのまま共有していただければ調べられます。
     echo ============================================
