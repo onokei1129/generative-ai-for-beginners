@@ -43,6 +43,9 @@ IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".heic", ".p
 # 名刺の縦横比。91×55mm = 1.655。スキャン時の余白や裁ち落としで前後する
 CARD_RATIO = 91 / 55
 RATIO_TOLERANCE = 0.28
+# A4/A5 などの書類の帯。名刺帯より先に判定するので重なりは生じない
+DOC_RATIO_MIN = 1.35
+DOC_RATIO_MAX = 1.48
 
 RECEIPT_WORDS = (
     "領収書", "領収証", "レシート", "納品書", "請求書", "見積書",
@@ -98,6 +101,15 @@ def load_image(path: Path) -> Image.Image:
     return pages[0].image
 
 
+class OcrUnavailable(RuntimeError):
+    """OCR そのものが動かない（tesseract 未導入・日本語データ無し等）。
+
+    「文字が読めなかった」と区別する。読めなかっただけなら空文字でよいが、
+    OCR が動いていないなら形状だけの判定になり、領収書を名刺として通してしまう。
+    黙って続けると気づけないため、例外にして呼び出し側で止める。
+    """
+
+
 def quick_ocr(image: Image.Image, languages: str = "jpn+eng") -> str:
     """判定用の軽いOCR。本処理と違い1パスだけ・縦書き言語なし・縮小して掛ける。"""
     import pytesseract
@@ -112,8 +124,17 @@ def quick_ocr(image: Image.Image, languages: str = "jpn+eng") -> str:
         return pytesseract.image_to_string(
             work, lang=languages, config="--psm 6", timeout=settings.ocr_timeout_seconds
         )
-    except Exception:
-        return ""
+    except Exception as exc:  # noqa: BLE001 - 種類を問わず「OCRが使えない」として扱う
+        raise OcrUnavailable(str(exc)) from exc
+
+
+def probe_ocr() -> None:
+    """OCR が実際に動くかを1枚試して確かめる。動かなければ OcrUnavailable。
+
+    1件目の判定に入る前に呼ぶ。全件を形状だけで誤判定してから気づく、を避ける。
+    """
+    probe = Image.new("RGB", (400, 120), "white")
+    quick_ocr(probe)
 
 
 def score_shape(width: int, height: int) -> tuple[float, list[str]]:
@@ -123,15 +144,18 @@ def score_shape(width: int, height: int) -> tuple[float, list[str]]:
     ratio = max(width, height) / min(width, height)
     reasons: list[str] = []
 
-    if abs(ratio - CARD_RATIO) <= RATIO_TOLERANCE:
-        reasons.append(f"縦横比 {ratio:.2f} が名刺(1.65)に近い")
-        return 2.0, reasons
+    # 判定の順序が重要。以前は名刺帯を先に見ていたため、A4/A5帯（1.35〜1.48）が
+    # 名刺帯（1.37〜1.93）に飲み込まれ、書類でも +2.0 になっていた。
+    # 細長い→書類→名刺 の順に、重ならない帯として見る。
     if ratio >= 2.2:
         reasons.append(f"縦横比 {ratio:.2f} が細長い（レシート形状）")
         return -2.0, reasons
-    if 1.35 <= ratio <= 1.48:
+    if DOC_RATIO_MIN <= ratio <= DOC_RATIO_MAX:
         reasons.append(f"縦横比 {ratio:.2f} がA4/A5に近い（書類形状）")
         return -1.0, reasons
+    if abs(ratio - CARD_RATIO) <= RATIO_TOLERANCE:
+        reasons.append(f"縦横比 {ratio:.2f} が名刺(1.65)に近い")
+        return 2.0, reasons
     reasons.append(f"縦横比 {ratio:.2f}")
     return 0.0, reasons
 
@@ -197,6 +221,13 @@ def classify_file(path: Path, *, use_ocr: bool = True) -> Verdict:
         label = "receipt"
     else:
         label = "unknown"
+
+    # 形状だけで「名刺」と決めない。縦横比が名刺に近い書類（領収書など）は珍しくなく、
+    # 文字の裏づけが無いまま通すと、領収書がそのまま正解ラベル付けに回ってしまう。
+    # 迷ったら人に投げる方針なので unknown に落とす。
+    if label == "business_card" and not text.strip():
+        label = "unknown"
+        text_reasons = text_reasons + ["文字の裏づけが無いため名刺と断定しない"]
 
     return Verdict(
         path=path,
@@ -292,10 +323,30 @@ def main() -> int:
         print(f"対象ファイルがありません（{'/'.join(IMAGE_SUFFIXES)}）: {source}", file=sys.stderr)
         return 2
 
+    # 判定を始める前にOCRが動くか確かめる。動かないまま全件を形状だけで判定すると、
+    # 縦横比が名刺に近い領収書がそのまま名刺として通ってしまう。
+    if not args.no_ocr:
+        try:
+            probe_ocr()
+        except OcrUnavailable as exc:
+            print("OCRが動きません。判定を中止します。", file=sys.stderr)
+            print(f"  理由: {exc}", file=sys.stderr)
+            print(file=sys.stderr)
+            print("  OCRが無いと形状だけの判定になり、縦横比が名刺に近い領収書を", file=sys.stderr)
+            print("  名刺として通してしまうため、ここで止めています。", file=sys.stderr)
+            print("  tesseract と日本語データ(jpn)を入れてからやり直してください。", file=sys.stderr)
+            print("  形状だけで仕分けたい場合は --no-ocr を付けてください", file=sys.stderr)
+            print("  （その場合、名刺と断定はせず『不明』が増えます）。", file=sys.stderr)
+            return 2
+
     print(f"{len(files)} 件を判定します...")
     verdicts: list[Verdict] = []
     for index, path in enumerate(files, start=1):
-        verdict = classify_file(path, use_ocr=not args.no_ocr)
+        try:
+            verdict = classify_file(path, use_ocr=not args.no_ocr)
+        except OcrUnavailable as exc:
+            print(f"途中でOCRが使えなくなりました: {exc}", file=sys.stderr)
+            return 2
         verdicts.append(verdict)
         print(f"  [{index}/{len(files)}] {path.name}: {verdict.label_ja}（{verdict.score:+.1f}）")
 
