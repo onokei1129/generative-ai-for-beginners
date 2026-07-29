@@ -74,6 +74,7 @@
 
 | ファイル | 対応するコマンド |
 | --- | --- |
+| `_check-tesseract.bat` | tesseract 本体と日本語データ（`jpn` / `jpn_vert`）の確認。他のバッチから `call` する |
 | `update.bat` | `git pull` ＋ `create-desktop-shortcuts.bat`。実行中に自分自身が書き換わらないよう、一時フォルダへコピーしてから動く |
 | `setup.bat` | `python -m venv .venv` ＋ `pip install -r requirements.txt` ＋ `pytest` |
 | `make-practice-samples.bat` | `python -m poc.receipts --out .\poc\practice` |
@@ -94,7 +95,10 @@
 | --- | --- |
 | 「Python が見つかりません」 | [Python](https://www.python.org/downloads/windows/) を入れ直す。**Add python.exe to PATH** にチェック |
 | 「セットアップがまだです」 | 先に「1 セットアップ」を実行する |
-| 「tesseract が見つかりません」 | 上記のインストーラを実行し、**画面を開き直す**（PATH の反映に必要） |
+| 「tesseract が見つかりません」 | 下記「tesseract の入れ方」を参照。入れたあとは**画面を開き直す**（PATH の反映に必要） |
+| 「日本語データ (jpn) がありません」 | 本体だけ入って言語データが入っていない状態。下記の手順2を参照 |
+| インストーラで Windows が警告する | UB-Mannheim 版は**未署名**のため SmartScreen が「発行元不明」と出す。tesseract 公式wikiが案内している標準のWindows版 |
+| 最初の言語選択に Japanese が無い | それは**インストーラの表示言語**の選択。English で進め、`Choose Components` で日本語データを選ぶ |
 | 文字が化ける／`is not recognized as an internal or external command` | バッチが UTF-8 で保存されています。CP932 で保存し直してください（下記「文字コードについて」） |
 | 画面がすぐ閉じる | ショートカットではなく `.bat` を直接ダブルクリックした場合に起きます。ショートカットから実行してください |
 | ブラウザが開かない | 黒い画面に出ている URL（`http://127.0.0.1:8100/` など）を手で開いてください |
@@ -104,6 +108,48 @@
 | 更新できない（`local changes` 等） | 黒い画面で `git stash` を実行してから、もう一度「0」を押す。名刺の画像とラベルは git の管理外なので消えません |
 
 黒い画面に出たエラーは、そのまま画面を撮って共有していただければ調べられます。
+
+## tesseract の入れ方
+
+[インストーラ](https://github.com/UB-Mannheim/tesseract/wiki)（`tesseract-ocr-w64-setup-*.exe`）を実行します。
+
+**0. 最初に出る「Installer Language」は関係ありません**
+
+起動直後に `Please select a language.`（Deutsch / English / Español ...）という小さな窓が出ますが、
+これは**インストーラ自体の表示言語**で、OCRが読める言語とは別物です。**日本語は選べませんが正常**です。
+`English` のまま OK で進めてください。
+
+> **OCRの日本語データを選ぶのは、この先の `Choose Components` の画面です。**
+> ここで探しても Japanese は見つかりません。
+
+**1. PATH に入れる**
+
+インストーラの序盤にある **`Add to PATH`** にチェックを入れます。
+入れ忘れた場合は、`C:\Program Files\Tesseract-OCR` を環境変数 PATH に手で追加します。
+
+**2. 日本語データを選ぶ（見落としやすい）**
+
+**Choose Components** の画面で、**`Additional language data (download)` の左の `[+]` を押して展開**します。
+**畳まれているため、展開しないと言語の一覧そのものが見えません。**「Japanese が見つからない」はほぼこれが原因です。
+
+展開したらアルファベット順の長い一覧から次の2つにチェックします。
+
+- **Japanese**
+- **Japanese (vertical)** — 縦書きの名刺用
+
+入れ忘れた場合は、**インストーラをもう一度実行して上書き**すれば追加できます。
+
+**3. 確認**
+
+新しくコマンド画面を開いて（PATH の反映に必要）:
+
+```
+tesseract --list-langs
+```
+
+一覧に `jpn` と `jpn_vert` があれば完了です。
+「4 名刺を仕分ける」「8 精度を測る」も起動時に同じ確認を行い、
+足りなければ入れ方を表示して止まります。
 
 ## 文字コードについて（編集する場合の注意）
 

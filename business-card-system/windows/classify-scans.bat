@@ -15,14 +15,8 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-where tesseract >nul 2>&1
+call "%~dp0_check-tesseract.bat"
 if errorlevel 1 (
-    echo [エラー] tesseract が見つかりません。仕分けには必要です。
-    echo.
-    echo   https://github.com/UB-Mannheim/tesseract/wiki からインストールし、
-    echo   Japanese と Japanese ^(vertical^) を選んでください。
-    echo   入れたあとに反応しない場合は、この画面を閉じて開き直してください。
-    echo.
     pause
     exit /b 1
 )
