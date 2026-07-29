@@ -205,7 +205,10 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             print(f"\n[{path.name}] {step}で失敗しました", file=sys.stderr)
             traceback.print_exc()
             detail = str(exc) or exc.__class__.__name__
-            result = ({key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）")
+            # 失敗はキャッシュしない。一時的な失敗（メモリ不足、他プロセスとの
+            # 競合など）を覚え込むと、原因を直しても画面を開き直すまで
+            # 失敗したままになる。次に開いたときにやり直せるようにする。
+            return {key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）"
 
         with _cache_lock:
             _ocr_cache[path.name] = result

@@ -116,6 +116,31 @@ CHECKS: list[tuple[str, str]] = [
         """,
     ),
     (
+        "tesseract（縦書き言語データ jpn_vert）",
+        """
+        import pytesseract
+        from PIL import Image
+        pytesseract.image_to_string(Image.new("RGB", (400, 120), "white"), lang="jpn+jpn_vert")
+        print("ok")
+        """,
+    ),
+    (
+        "tesseract（語ごとの読み取り）",
+        """
+        import pytesseract
+        from PIL import Image
+        # 本処理はこの呼び方をする。仕分け(image_to_string)とは通る経路が違う。
+        for psm in (4, 6, 11):
+            pytesseract.image_to_data(
+                Image.new("RGB", (900, 550), "white"),
+                lang="jpn+jpn_vert",
+                config=f"--psm {psm}",
+                output_type=pytesseract.Output.DICT,
+            )
+        print("ok")
+        """,
+    ),
+    (
         "アプリの画像処理（取込と同じ経路）",
         """
         import io
@@ -125,6 +150,21 @@ CHECKS: list[tuple[str, str]] = [
         Image.new("RGB", (1650, 1000), "white").save(buf, format="JPEG")
         cards = process_file(buf.getvalue(), "sample.jpg")
         print("ok", len(cards))
+        """,
+    ),
+    (
+        "アプリのOCR（ラベル入力と同じ経路）",
+        """
+        import io, os
+        os.environ["BCARDS_OCR_PROVIDER"] = "tesseract"
+        from PIL import Image
+        from bcards.services.images import process_file
+        from bcards.services.ocr import recognize_card
+        buf = io.BytesIO()
+        Image.new("RGB", (1650, 1000), "white").save(buf, format="JPEG")
+        cards = process_file(buf.getvalue(), "sample.jpg")
+        recognize_card(cards[0].ocr_image)
+        print("ok")
         """,
     ),
 ]
