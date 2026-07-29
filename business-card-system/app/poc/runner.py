@@ -253,7 +253,7 @@ FIELD_LABELS = {
 
 def build_report(aggregates: list[Aggregate], sample_count: int, note: str) -> str:
     lines: list[str] = []
-    lines.append("## 1. 計測条件")
+    lines.append("### 計測条件")
     lines.append("")
     lines.append(f"- サンプル枚数：{sample_count} 枚（レイアウト4種 × 撮影条件2種 × 人物違い）")
     lines.append("- 一致判定：全角半角・空白・記号を正規化したうえでの完全一致（電話番号は数字のみで比較）")
@@ -262,7 +262,7 @@ def build_report(aggregates: list[Aggregate], sample_count: int, note: str) -> s
         lines.append(f"- {note}")
     lines.append("")
 
-    lines.append("## 2. 構成別の結果")
+    lines.append("### 構成別の結果")
     lines.append("")
     lines.append("| 構成 | 項目正答率 | 1枚あたり修正項目数 | 処理時間/枚 | 費用/枚 |")
     lines.append("| --- | ---: | ---: | ---: | ---: |")
@@ -277,7 +277,7 @@ def build_report(aggregates: list[Aggregate], sample_count: int, note: str) -> s
         )
     lines.append("")
 
-    lines.append("## 3. 項目別の正答率")
+    lines.append("### 項目別の正答率")
     lines.append("")
     header = "| 項目 | " + " | ".join(agg.label for agg in aggregates) + " |"
     lines.append(header)
@@ -290,7 +290,7 @@ def build_report(aggregates: list[Aggregate], sample_count: int, note: str) -> s
         lines.append(f"| {FIELD_LABELS[key]} | " + " | ".join(cells) + " |")
     lines.append("")
 
-    lines.append("## 4. レイアウト・撮影条件別の修正項目数（1枚あたり）")
+    lines.append("### レイアウト・撮影条件別の修正項目数（1枚あたり）")
     lines.append("")
     variants = sorted({variant for agg in aggregates for variant in agg.per_variant_edits})
     lines.append("| 条件 | " + " | ".join(agg.label for agg in aggregates) + " |")
@@ -305,12 +305,39 @@ def build_report(aggregates: list[Aggregate], sample_count: int, note: str) -> s
 
     failing = [agg for agg in aggregates if agg.errors]
     if failing:
-        lines.append("## 5. 実行できなかった構成")
+        lines.append("### 実行できなかった構成")
         lines.append("")
         for agg in failing:
             lines.append(f"- **{agg.label}**：{agg.errors[0]}")
         lines.append("")
     return "\n".join(lines)
+
+
+# 出力先に人が書いた考察がある場合、この目印の間だけを差し替える。
+# 目印が無ければ従来どおりファイル全体を計測結果で置き換える。
+BEGIN_MARK = "<!-- 計測結果ここから（poc.runner が自動で書き換えます。手で編集しないこと） -->"
+END_MARK = "<!-- 計測結果ここまで -->"
+
+
+def merge_report(out_path: Path, report: str) -> str:
+    """既存レポートの目印の内側だけを差し替える。
+
+    レポートには計測値のほかに人が書いた考察・判断の経緯が含まれる。
+    再計測のたびに全体を上書きすると、その考察ごと消えてしまう（実際に消した）。
+    """
+    try:
+        current = out_path.read_text(encoding="utf-8")
+    except OSError:
+        return report
+
+    begin = current.find(BEGIN_MARK)
+    end = current.find(END_MARK, begin + 1)
+    if begin < 0 or end < 0:
+        return report
+
+    head = current[: begin + len(BEGIN_MARK)]
+    tail = current[end:]
+    return f"{head}\n\n{report}\n{tail}"
 
 
 def main() -> None:
@@ -392,7 +419,7 @@ def main() -> None:
             "ANTHROPIC_API_KEY を設定して同じコマンドを実行すると計測される"
         )
     report = build_report([a for a in aggregates if a.cards or a.errors], len(samples), note)
-    args.out.write_text(report, encoding="utf-8")
+    args.out.write_text(merge_report(args.out, report), encoding="utf-8")
     print(f"\nレポートを書き出しました: {args.out}")
 
     if args.json:
