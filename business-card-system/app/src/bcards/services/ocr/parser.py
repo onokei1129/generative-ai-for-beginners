@@ -336,6 +336,12 @@ def pick_title(line: str, keyword: str) -> str:
                 if keyword in seg:
                     return seg
             return japanese[0]
+        # 日本語が無い行（英語だけの名刺）。役職の語を含む区切りを採る。
+        # 実データでは `Chief Business Officer & Head of Japan | APAC` が
+        # `Chief` になっていた。
+        for seg in segments:
+            if keyword in seg:
+                return seg
 
     if line == keyword:
         return line
@@ -676,6 +682,16 @@ def split_person_name(full: str) -> tuple[str, str]:
             key=lambda at: abs(len("".join(parts[:at])) - len("".join(parts[at:]))),
         )
         return "".join(parts[:best]), "".join(parts[best:])
+    # カタカナと漢字が混じる氏名は、字種の変わり目で分ける。
+    # 実データでは `ジョンソン 裕子` が `ジョ ンソン 裕子` と読まれ、
+    # 先頭の空白で切って `ジョ` / `ンソン 裕子` になっていた。
+    compact = re.sub(r"[\s　]+", "", text)
+    boundary = re.match(r"^([ァ-ヴー・]{2,})([一-龥々]{1,4})$", compact) or re.match(
+        r"^([一-龥々]{1,4})([ァ-ヴー・]{2,})$", compact
+    )
+    if boundary:
+        return boundary.group(1), boundary.group(2)
+
     if len(parts) >= 2:
         return parts[0], " ".join(parts[1:])
     if len(text) >= 4 and _has_japanese(text):
@@ -1051,12 +1067,21 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             # 直さないと、名が空になったうえに姓が『伊』『藤』に割れる。
             name_length = len(re.sub(r"\s+", "", cleaned[name_index])) if name_index is not None else 0
             reading_length = len(re.sub(r"\s+", "", line))
+            # `伊 藤` のように姓だけが空白入りで読まれると、姓『伊』名『藤』に
+            # 割れる。1文字ずつに割れているときは、姓と見て繋ぎ直す
+            # （姓1文字＋名1文字の氏名もあるが、そのときは続く行がふりがなで、
+            # 漢字より長くなるためここには来ない）。
+            split_into_single_characters = (
+                len(fields["last_name"]) == 1 and len(fields["first_name"]) == 1
+            )
             if (
                 name_index is not None
                 and index > name_index
-                and not fields["first_name"]
+                and (not fields["first_name"] or split_into_single_characters)
                 and reading_length <= name_length
             ):
+                if split_into_single_characters:
+                    fields["last_name"] += fields["first_name"]
                 fields["first_name"] = re.sub(r"\s+", "", line)
                 confidence["first_name"] = 0.6
                 used.add(index)

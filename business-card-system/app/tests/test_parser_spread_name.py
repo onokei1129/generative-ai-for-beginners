@@ -136,3 +136,75 @@ class TestPublicOfficeIsACompany:
         got = fields(ITO)
 
         assert got["last_name"] != "沖縄県"
+
+
+class TestSurnameSplitIntoSingleCharacters:
+    """姓だけが空白入りで読まれ、1文字ずつに割れる場合。
+
+    実データ（5枚目）では `伊藤 しの` の `伊藤` が `伊 藤` と読まれ、
+    姓『伊』名『藤』・せい『し』めい『の』になっていた。
+    """
+
+    def test_the_surname_is_joined_and_the_kana_becomes_the_name(self):
+        got = fields(["沖縄県 東京事務所", "企業誘致チーム", "主幹", "伊 藤", "し の"])
+
+        assert got["last_name"] == "伊藤"
+        assert got["first_name"] == "しの"
+        assert got["last_name_kana"] == ""
+
+    def test_a_one_character_name_with_a_reading_is_untouched(self):
+        """`林 修` のような1文字＋1文字の氏名を壊さないこと。
+
+        続く行はふりがなで、漢字より長くなるため区別できる。
+        """
+        got = fields(["林 修", "はやし おさむ"])
+
+        assert (got["last_name"], got["first_name"]) == ("林", "修")
+        assert (got["last_name_kana"], got["first_name_kana"]) == ("はやし", "おさむ")
+
+
+class TestMixedScriptName:
+    """カタカナと漢字が混じる氏名（実データ8枚目 `ジョンソン 裕子`）。"""
+
+    @pytest.mark.parametrize(
+        ("printed", "expected"),
+        [
+            ("ジョ ンソン 裕子", ("ジョンソン", "裕子")),
+            ("ジョンソン 裕子", ("ジョンソン", "裕子")),
+            ("田中 マリア", ("田中", "マリア")),
+        ],
+    )
+    def test_the_split_follows_the_script_boundary(self, printed: str, expected: tuple[str, str]):
+        from bcards.services.ocr.parser import split_person_name
+
+        assert split_person_name(printed) == expected
+
+    @pytest.mark.parametrize(
+        ("printed", "expected"),
+        [
+            ("パトリシオ バスケス", ("パトリシオ", "バスケス")),
+            ("山田 太郎", ("山田", "太郎")),
+            ("ユン ソクン", ("ユン", "ソクン")),
+        ],
+    )
+    def test_single_script_names_are_unchanged(self, printed: str, expected: tuple[str, str]):
+        from bcards.services.ocr.parser import split_person_name
+
+        assert split_person_name(printed) == expected
+
+
+class TestEnglishOnlyTitle:
+    def test_the_whole_segment_is_kept(self):
+        """英語だけの役職を語だけに切り詰めないこと（実データ8枚目）。"""
+        from bcards.services.ocr.parser import pick_title
+
+        line = "Chief Business Officer & Head of Japan | APAC"
+
+        assert pick_title(line, "Chief") == "Chief Business Officer & Head of Japan"
+
+    def test_a_japanese_title_still_wins(self):
+        from bcards.services.ocr.parser import pick_title
+
+        line = "エグゼクティブ・プロデューサー / Executive Producer"
+
+        assert pick_title(line, "プロデューサー") == "エグゼクティブ・プロデューサー"
