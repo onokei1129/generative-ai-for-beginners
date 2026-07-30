@@ -228,6 +228,24 @@ MOBILE_PREFIXES = ("090", "080", "070")
 # 英字の行を氏名と間違えやすい語。実測では和英併記の名刺で `Head Office` を
 # 氏名として登録し（姓 `Head` / 名 `Office`）、本来の氏名が空になっていた
 # （合成サンプル16枚のうち4枚）。住所や建物の語であって人名ではない。
+# 氏名と間違えやすい日本語の語。実データでは `へ特設サイトノ`（特設サイトの
+# 案内）を氏名として登録し、姓『へ特』名『設サイトノ』になっていた。
+NOT_A_NAME_WORDS_JA = (
+    "特設",
+    "サイト",
+    "ホームページ",
+    "ガイド",
+    "案内",
+    "公式",
+    "会館",
+    "ビル",
+    "地図",
+    "電話",
+    "携帯",
+    "メール",
+    "検索",
+)
+
 NOT_A_NAME_WORDS = (
     "office",
     "building",
@@ -387,6 +405,42 @@ def find_labels(line: str) -> list[tuple[int, str]]:
                 found.append((match.start(), kind))
     found.sort()
     return found
+
+
+# OCRが拾う短いノイズ（`©` `_s` `Ob` `eC` `Ai` `AP` `LOBE`）。実データでは
+# ロゴ・QRコード・飾り罫が英数字1〜4文字として読まれ、会社名や住所の前後に付いていた。
+NOISE_TOKEN_RE = re.compile(r"^[A-Za-z0-9©®=_\-–—,.'\"|/\\+*~^`:;!?()\[\]{}<>]{1,4}$")
+
+
+def trim_ocr_noise(text: str) -> str:
+    """日本語の項目の前後に付いた短い英数字・記号を落とす。
+
+    日本語を含まない行（`AONE GAMES` のような英字の社名）は触らない。
+    4文字までに限るので、`Acme株式会社` の `Acme` は残る。
+    """
+    if not _has_japanese(text):
+        return text
+    tokens = [token for token in re.split(r"\s+", text.strip()) if token]
+    while tokens and NOISE_TOKEN_RE.match(tokens[0]):
+        tokens.pop(0)
+    while tokens and NOISE_TOKEN_RE.match(tokens[-1]):
+        tokens.pop()
+    return " ".join(tokens)
+
+
+def japanese_segment(text: str) -> str:
+    """行の中の日本語だけの部分を取り出す（いちばん長いもの）。
+
+    実データでは氏名の行にロゴが混ざって読まれていた。
+
+        `de Fh SHB eA        宮田 修` → `宮田 修`
+
+    そのままでは氏名として判定できず、氏名が空になる。
+    """
+    segments = re.findall(r"[一-龥々〆ヶヵぁ-んァ-ヴー・][一-龥々〆ヶヵぁ-んァ-ヴー・\s]*", text)
+    if not segments:
+        return ""
+    return max((segment.strip() for segment in segments), key=len)
 
 
 def strip_phone_parts(text: str) -> str:
@@ -564,6 +618,8 @@ def _looks_like_person_name(line: str) -> bool:
     if not (2 <= len(text) <= 12):
         return False
     if any(keyword in line for keyword in COMPANY_KEYWORDS + TITLE_KEYWORDS + DEPARTMENT_KEYWORDS):
+        return False
+    if any(word in text for word in NOT_A_NAME_WORDS_JA):
         return False
     if re.search(r"\d", text):
         return False
@@ -896,12 +952,20 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             reading_index, reading_tail = previous, index
         break
 
+    # 氏名の行にロゴが混ざって読まれることがある（`de Fh SHB eA  宮田 修`）。
+    # 行そのままでは判定できないので、日本語の部分だけを取り出して見る。
+    name_from_segment: str | None = None
     if name_index is None:
         for index, line in enumerate(cleaned):
             if index in used or _is_hiragana_only(line):
                 continue
             if _looks_like_person_name(line):
                 name_index = index
+                break
+            segment = japanese_segment(spaced_lines[index])
+            if segment and _looks_like_person_name(segment) and not _is_hiragana_only(segment):
+                name_index = index
+                name_from_segment = segment
                 break
 
     if name_index is None and title_name is not None:
@@ -912,7 +976,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
 
     if name_index is not None:
         # 空白を残した行で分ける。「冨田　修」「佐々木 健」を取り違えないため
-        last, first = split_person_name(spaced_lines[name_index])
+        last, first = split_person_name(name_from_segment or spaced_lines[name_index])
         fields["last_name"], fields["first_name"] = last, first
         confidence["last_name"] = confidence["first_name"] = 0.7
         used.add(name_index)
@@ -979,6 +1043,13 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             confidence["last_name_kana"] = 0.7
             used.add(index)
             break
+
+    # ロゴ・QRコード・飾り罫が英数字1〜4文字として読まれ、項目の前後に付く。
+    # 実データでは会社名が `© 沖縄県東京事務所`、住所が
+    # `Ob eC F 東京都千代田区平河町2-6-3 Ai AP APE LOBE` になっていた。
+    for key in ("company_name", "department_name", "title", "address"):
+        if fields[key]:
+            fields[key] = trim_ocr_noise(fields[key])
 
     leftovers = [line for index, line in enumerate(cleaned) if index not in used]
     fields["note"] = "\n".join(leftovers)

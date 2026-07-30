@@ -181,3 +181,41 @@ class TestNotACard:
         names = [f["name"] for f in client.get("/api/files").json()["files"]]
 
         assert names == ["card01.jpg", "card02.jpg", "card03.jpg"]
+
+
+class TestSwitchingCards:
+    """名刺を切り替えたときの画面の状態（実テストで報告された2件）。"""
+
+    def test_the_form_is_cleared_before_loading(self, cards: Path, monkeypatch):
+        """前の名刺の値を残さないこと。
+
+        OCRを待つ間、前の名刺の値が入ったままで、そのまま保存できてしまった。
+        7枚目の画面に6枚目の氏名・電話が入った状態が報告された。
+        """
+        _counting_ocr(monkeypatch)
+        html = TestClient(build_app(cards, prefill=True)).get("/").text
+
+        body = html[html.index("async function show("):]
+        clearing = body.index("input.value = ''")
+        fetching = body.index("await fetch(url)")
+
+        assert clearing < fetching, "値を消す前に読み込んでいる"
+
+    def test_saving_is_disabled_while_loading(self, cards: Path, monkeypatch):
+        """読み込み中は保存できないようにすること。"""
+        _counting_ocr(monkeypatch)
+        html = TestClient(build_app(cards, prefill=True)).get("/").text
+
+        assert "getElementById('next').disabled = true" in html
+        assert "getElementById('next').disabled = false" in html
+
+    def test_an_unreadable_image_reports_why(self, cards: Path, monkeypatch):
+        """画像を出せないとき、壊れたアイコンではなく理由を返すこと。"""
+        _counting_ocr(monkeypatch)
+        (cards / "broken.pdf").write_bytes("これはPDFではない".encode("utf-8"))
+        client = TestClient(build_app(cards, prefill=False))
+
+        response = client.get("/api/image/broken.pdf")
+
+        assert response.status_code == 415
+        assert "画像を表示できません" in response.json()["error"]

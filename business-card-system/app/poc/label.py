@@ -159,16 +159,29 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         if not path.is_file() or path.parent.resolve() != directory.resolve():
             return JSONResponse({"error": "見つかりません"}, status_code=404)
         if path.suffix.lower() in (".pdf", ".heic", ".tif", ".tiff"):
-            # ブラウザが表示できない形式はJPEGに変換して返す
+            # ブラウザが表示できない形式はJPEGに変換して返す。
+            # 失敗しても壊れた画像アイコンだけを出さず、理由を返す
+            # （実テストで1枚だけ画像が出ず、原因が分からない状態になった）。
             import io
+            import traceback
+
+            from fastapi.responses import Response
 
             from bcards.services.images import load_pages
 
-            pages = load_pages(path.read_bytes(), path.name)
-            buffer = io.BytesIO()
-            pages[0].image.save(buffer, format="JPEG", quality=90)
-            from fastapi.responses import Response
-
+            try:
+                pages = load_pages(path.read_bytes(), path.name)
+                if not pages:
+                    raise ValueError("ページがありません")
+                buffer = io.BytesIO()
+                pages[0].image.save(buffer, format="JPEG", quality=90)
+            except Exception as exc:  # noqa: BLE001 - 画面に理由を出すため握る
+                traceback.print_exc()
+                print(f"[画像を表示できません] {path.name}: {exc}")
+                return JSONResponse(
+                    {"error": f"画像を表示できません: {type(exc).__name__}: {exc}"},
+                    status_code=415,
+                )
             return Response(content=buffer.getvalue(), media_type="image/jpeg")
         return FileResponse(path)
 
@@ -366,6 +379,9 @@ PAGE = """
                       max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
                       margin: auto; z-index: 100; cursor: zoom-out; box-shadow: 0 8px 40px rgba(0,0,0,.4); }
   .filename { font-size: 13px; color: #555; margin: 0 0 8px; word-break: break-all; }
+  .imgerror:empty { display: none; }
+  .imgerror { font-size: 13px; padding: 8px 10px; border-radius: 4px; margin: 8px 0;
+              background: #fff4e5; border: 1px solid #ffd8a8; color: #8a5300; }
   .source { font-size: 12px; padding: 6px 8px; border-radius: 4px; margin-bottom: 10px; }
   .source.warn { background: #fff4e5; border: 1px solid #ffd8a8; color: #8a5300; }
   .source.plain { background: #f0f2f5; color: #555; }
@@ -415,7 +431,9 @@ PAGE = """
   <div>
     <div class="panel imgwrap">
       <p class="filename" id="filename">—</p>
-      <img id="image" alt="名刺画像" onclick="this.classList.toggle('zoom')">
+      <img id="image" alt="名刺画像" onclick="this.classList.toggle('zoom')"
+           onerror="showImageError()">
+      <div id="imgerror" class="imgerror"></div>
       <p class="kbd">画像をクリックすると拡大します。</p>
       <!-- 「名刺ではない」は画像を見た時点で判断するので、画像のすぐ下に置く。
            入力欄の下（14項目ぶん下）だと画面外で気づけない。 -->
@@ -492,14 +510,36 @@ function fieldHtml(key) {
   </div>`;
 }
 
+// 画像が出せないときは、壊れたアイコンではなく理由を出す。
+async function showImageError() {
+  const box = document.getElementById('imgerror');
+  const file = state.files[state.index];
+  box.textContent = '画像を表示できません（この1枚だけの問題です。入力は続けられます）';
+  try {
+    const res = await fetch('/api/image/' + encodeURIComponent(file.name));
+    const body = await res.json();
+    if (body && body.error) box.textContent = body.error;
+  } catch (e) { /* 表示だけの機能なので握る */ }
+}
+
 async function show(i) {
   state.index = i;
   const file = state.files[i];
   document.getElementById('filename').textContent = file.name;
+  document.getElementById('imgerror').textContent = '';
   document.getElementById('image').src = '/api/image/' + encodeURIComponent(file.name);
   document.getElementById('image').classList.remove('zoom');
   document.getElementById('saved').textContent = '';
   clearMarks();
+
+  // 前の名刺の値を消してから読み込む。消さないと、OCRを待っている間に
+  // 前の名刺の値が入ったままになり、そのまま保存できてしまう（実テストで発生）。
+  for (const f of state.fields) {
+    const input = document.getElementById('f_' + f.key);
+    if (input) input.value = '';
+  }
+  document.getElementById('next').disabled = true;
+  document.getElementById('skip').disabled = true;
 
   // 枚数・進捗・一覧はOCRの結果に依らないので、待たずに先に出す。
   // 以前はOCRのあとに描いていたため、数秒間ヘッダが「読み込み中…」のままだった。
@@ -515,6 +555,8 @@ async function show(i) {
   const url = '/api/label/' + encodeURIComponent(file.name) + '?draft=' + useDraft;
   const data = await (await fetch(url)).json();
   if (state.index !== i) return;   // 待っている間に別の名刺へ移った
+  document.getElementById('next').disabled = false;
+  document.getElementById('skip').disabled = false;
 
   for (const f of state.fields) {
     document.getElementById('f_' + f.key).value = data.values[f.key] || '';
