@@ -16,7 +16,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 if not exist "poc\real-cards" (
-    echo [エラー] 名刺のフォルダがありません: %CD%\poc\real-cards
+    echo [エラー] 名刺のフォルダがありません: "%CD%\poc\real-cards"
     echo   先に「4 名刺を仕分ける」を実行してください。
     echo.
     pause

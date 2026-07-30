@@ -19,7 +19,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 if exist "poc\practice\scan_001.jpg" (
-    echo すでに練習用サンプルがあります: %CD%\poc\practice
+    echo すでに練習用サンプルがあります: "%CD%\poc\practice"
     echo.
     choice /c YN /m "作り直しますか（入力済みのラベルは消えます）"
     if errorlevel 2 goto :done

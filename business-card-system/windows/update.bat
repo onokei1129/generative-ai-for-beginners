@@ -36,14 +36,14 @@ if errorlevel 1 (
 
 cd /d "%BCWIN%\..\.."
 if errorlevel 1 (
-    echo [エラー] フォルダへ移動できませんでした: %BCWIN%\..\..
+    echo [エラー] フォルダへ移動できませんでした: "%BCWIN%\..\.."
     pause
     exit /b 1
 )
 
 git rev-parse --show-toplevel >nul 2>&1
 if errorlevel 1 (
-    echo [エラー] ここは git の作業フォルダではありません: %CD%
+    echo [エラー] ここは git の作業フォルダではありません: "%CD%"
     echo   windows フォルダを移動していませんか。
     echo.
     pause
@@ -68,7 +68,7 @@ rem "There is no tracking information for the current branch." で止まる。
 rem その場合は origin から明示的に取得し、次回以降のために追跡先も設定する。
 git rev-parse --abbrev-ref --symbolic-full-name @{u} >nul 2>&1
 if errorlevel 1 (
-    echo 追跡先が未設定のため、origin/%BRANCH% から取得します。
+    echo 追跡先が未設定のため、origin/"%BRANCH%" から取得します。
     echo.
     git pull origin "%BRANCH%"
     if not errorlevel 1 git branch --set-upstream-to=origin/%BRANCH% >nul 2>&1

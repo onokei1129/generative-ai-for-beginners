@@ -61,6 +61,17 @@ COMPANY_KEYWORDS = (
     "学校法人",
     "特定非営利活動法人",
     "協同組合",
+    # 官公庁・士業など。実データの `沖縄県 東京事務所` が、法人格の語を含まず
+    # メールのドメイン（pref.okinawa.lg.jp）とも一致しないため空になっていた。
+    # `法律事務所` `設計事務所` にも効く。
+    "事務所",
+    "役所",
+    "県庁",
+    "市役所",
+    "町役場",
+    "村役場",
+    "商工会議所",
+    "組合",
     "Inc.",
     "Inc",
     "Corp.",
@@ -561,6 +572,10 @@ def _looks_like_person_name(line: str) -> bool:
     # 2つ以上のときだけ住所とみなす（番地のある行は上の数字の判定で弾いている）。
     if sum(hint in text for hint in ("都", "道", "府", "県", "市", "区", "町", "村")) >= 2:
         return False
+    # 都道府県の語を含む長い行は組織名か住所（`沖縄県東京事務所`）。
+    # 姓に含まれることはあっても、5文字を超えることはまず無い。
+    if len(text) >= 5 and any(hint in text for hint in ("都", "道", "府", "県")):
+        return False
     # 々（踊り字）を入れておくこと。`佐々木` `野々村` は珍しくない姓で、
     # 入れないと氏名として認識されない（実測で `主任 佐々木 健` の氏名が空になった）。
     if re.fullmatch(r"[一-龥々〆ヶヵぁ-んァ-ヴー・]{2,12}", text):
@@ -849,14 +864,37 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
 
     # 氏名
     # ふりがな（ひらがな）の直後の行は氏名である可能性が高いので優先的に採用する。
+    #
+    # ただし直後もひらがなだけなら、それは氏名ではなくふりがなの続き。
+    # 名刺は姓と名を大きく離して印字することがあり、そのぶん離れた
+    # ふりがなが別々の行として読まれる（実データで発生）。
+    #
+    #     印字  とみた　　おさむ      読み  とみた
+    #           冨田　　　修                おさむ
+    #                                       冨田
+    #                                       修
+    #
+    # 直さないと、`おさむ` を氏名と判断して 姓『お』名『さむ』になり、
+    # 漢字の氏名は使われないまま捨てられる。
     name_index: int | None = None
+    reading_index: int | None = None
+    reading_tail: int | None = None
     for index, line in enumerate(cleaned):
         if index in used or not _is_hiragana_only(line):
             continue
         following = index + 1
-        if following < len(cleaned) and following not in used and _looks_like_person_name(cleaned[following]):
-            name_index = following
-            break
+        if following >= len(cleaned) or following in used:
+            continue
+        if _is_hiragana_only(cleaned[following]):
+            continue  # ふりがなの続き。氏名ではない
+        if not _looks_like_person_name(cleaned[following]):
+            continue
+        name_index = following
+        reading_index = index
+        previous = index - 1
+        if previous >= 0 and previous not in used and _is_hiragana_only(cleaned[previous]):
+            reading_index, reading_tail = previous, index
+        break
 
     if name_index is None:
         for index, line in enumerate(cleaned):
@@ -879,14 +917,63 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         confidence["last_name"] = confidence["first_name"] = 0.7
         used.add(name_index)
 
+        # 姓と名が離れて印字され、別の行として読まれた場合（`冨田` / `修`）。
+        # 次の行が短い漢字だけの行なら名として拾う。1文字の名（`修` `健`）が
+        # あるため、氏名の判定（2文字以上）ではなく字種で見る。
+        following = name_index + 1
+        if (
+            not first
+            and following < len(cleaned)
+            and following not in used
+            # 3文字までに限る。4文字だと氏名がまるごと入った行（`伊藤直樹`）を
+            # 名として取ってしまう（実測で発生）。
+            and re.fullmatch(r"[一-龥々ァ-ヴー]{1,3}", cleaned[following])
+            and not any(
+                word in cleaned[following]
+                for word in COMPANY_KEYWORDS + TITLE_KEYWORDS + DEPARTMENT_KEYWORDS
+            )
+        ):
+            fields["first_name"] = cleaned[following]
+            confidence["first_name"] = 0.6
+            used.add(following)
+
     # ふりがな（ひらがなだけの行）
     #
     # カタカナだけの行はふりがなにしない。外国名の名刺はカタカナで氏名を
     # 印字するため（`パトリシオ　バスケス`）、ふりがな扱いにすると氏名が空になる。
-    for index, line in enumerate(cleaned):
-        if index in used:
-            continue
-        if _is_hiragana_only(line) and 2 <= len(re.sub(r"\s+", "", line)) <= 16:
+    if reading_index is not None:
+        head = split_person_name(spaced_lines[reading_index])
+        if reading_tail is not None:
+            # 姓と名のふりがなが別の行として読まれた場合
+            fields["last_name_kana"] = re.sub(r"\s+", "", cleaned[reading_index])
+            fields["first_name_kana"] = re.sub(r"\s+", "", cleaned[reading_tail])
+            used.add(reading_tail)
+        else:
+            fields["last_name_kana"], fields["first_name_kana"] = head
+        confidence["last_name_kana"] = 0.7
+        used.add(reading_index)
+    else:
+        for index, line in enumerate(cleaned):
+            if index in used:
+                continue
+            if not _is_hiragana_only(line) or not (2 <= len(re.sub(r"\s+", "", line)) <= 16):
+                continue
+            # ふりがなは漢字より必ず長くなる（`山田太郎` → `やまだたろう`）。
+            # 氏名の行と同じか短いひらがなは、ふりがなではなく**かなの名**。
+            #     `伊藤` + `しの`  → 姓『伊藤』 名『しの』
+            # 直さないと、名が空になったうえに姓が『伊』『藤』に割れる。
+            name_length = len(re.sub(r"\s+", "", cleaned[name_index])) if name_index is not None else 0
+            reading_length = len(re.sub(r"\s+", "", line))
+            if (
+                name_index is not None
+                and index > name_index
+                and not fields["first_name"]
+                and reading_length <= name_length
+            ):
+                fields["first_name"] = re.sub(r"\s+", "", line)
+                confidence["first_name"] = 0.6
+                used.add(index)
+                break
             last, first = split_person_name(spaced_lines[index])
             fields["last_name_kana"], fields["first_name_kana"] = last, first
             confidence["last_name_kana"] = 0.7

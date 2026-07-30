@@ -12,7 +12,7 @@ rem OneDrive でデスクトップが同期されている場合はそちらを使う
 set "DESKTOP=%USERPROFILE%\Desktop"
 if exist "%OneDrive%\Desktop" set "DESKTOP=%OneDrive%\Desktop"
 if not exist "%DESKTOP%" (
-    echo [エラー] デスクトップのフォルダが見つかりません: %DESKTOP%
+    echo [エラー] デスクトップのフォルダが見つかりません: "%DESKTOP%"
     pause
     exit /b 1
 )
@@ -61,8 +61,8 @@ exit /b 0
 :make
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%FOLDER%\%~1.lnk'); $s.TargetPath='%HERE%\%~2'; $s.WorkingDirectory='%HERE%'; $s.IconLocation='%SystemRoot%\System32\imageres.dll,76'; $s.Save()"
 if errorlevel 1 (
-    echo   [失敗] %~1
+    echo   [失敗] "%~1"
 ) else (
-    echo   作成: %~1
+    echo   作成: "%~1"
 )
 exit /b 0
