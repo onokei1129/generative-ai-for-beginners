@@ -250,11 +250,69 @@ def render_decorated(person: dict[str, str]) -> Image.Image:
     return image
 
 
+def render_spread(person: dict[str, str]) -> Image.Image:
+    """姓と名を大きく離し、ふりがなをそれぞれの上に置くレイアウト。
+
+    実データ（官公庁の名刺2枚）でこの体裁に当たり、氏名とふりがなが
+    総崩れになった。離れて印字された分がOCRでは**別々の行**として読まれる。
+
+        印字  とみた　　おさむ      読み  とみた / おさむ / 冨田 / 修
+              冨田　　　修
+
+    QRコードとロゴも入れる。実データではこれらが `回回` `© ` のような
+    文字として読まれ、住所や会社名の前後に付いていた。
+
+    合成サンプルに無い体裁は、実名刺を見るまで気づけない。気づいたものは
+    ここに足して、次からは自動で検知できるようにする。
+    """
+    image, draw = _base_card(bg="#ffffff")
+
+    # 社名は左、ロゴ（丸）は右端。実データもこの並びで、ロゴは `©` のような
+    # 文字として読まれる。社名に重ねると社名まで読めなくなり、サンプルとして
+    # 厳しすぎるため離して置く。
+    draw.text((70, 52), person["company_name"], font=_font(FONT_GOTHIC, 38), fill="#111111")
+    draw.ellipse([900, 40, 980, 120], fill="#d93a2b")
+    draw.ellipse([924, 64, 956, 96], fill="#ffffff")
+
+    # 部署・役職は左、氏名は右。姓と名は大きく離す
+    draw.text((70, 210), person["department_name"], font=_font(FONT_GOTHIC, 26), fill="#222222")
+    draw.text((70, 254), person["title"], font=_font(FONT_GOTHIC, 26), fill="#222222")
+
+    draw.text((560, 186), person["last_name_kana"], font=_font(FONT_GOTHIC, 22), fill="#555555")
+    draw.text((790, 186), person["first_name_kana"], font=_font(FONT_GOTHIC, 22), fill="#555555")
+    draw.text((548, 224), person["last_name"], font=_font(FONT_GOTHIC, 54), fill="#111111")
+    draw.text((790, 224), person["first_name"], font=_font(FONT_GOTHIC, 54), fill="#111111")
+
+    # QRコード風の市松模様
+    for row in range(7):
+        for column in range(7):
+            if (row * 3 + column * 5) % 4 < 2:
+                x, y = 74 + column * 22, 396 + row * 22
+                draw.rectangle([x, y, x + 20, y + 20], fill="#111111")
+
+    y = 396
+    draw.text((260, y), f"〒{person['postal_code']} {person['address']}",
+              font=_font(FONT_GOTHIC, 21), fill="#222222")
+    y += 34
+    draw.text((260, y), f"T E L : {person['tel']}", font=_font(FONT_GOTHIC, 21), fill="#222222")
+    y += 34
+    if person["fax"]:
+        draw.text((260, y), f"F A X : {person['fax']}", font=_font(FONT_GOTHIC, 21), fill="#222222")
+        y += 34
+    if person["mobile"]:
+        draw.text((70, 320), f"携帯 {person['mobile']}", font=_font(FONT_GOTHIC, 21), fill="#222222")
+    draw.text((260, y), f"E-mail : {person['email']}", font=_font(FONT_GOTHIC, 21), fill="#222222")
+    if person["url"]:
+        draw.text((640, 464), person["url"], font=_font(FONT_GOTHIC, 21), fill="#222222")
+    return image
+
+
 LAYOUTS = {
     "standard": render_standard,
     "bilingual": render_bilingual,
     "vertical": render_vertical,
     "decorated": render_decorated,
+    "spread": render_spread,
 }
 
 

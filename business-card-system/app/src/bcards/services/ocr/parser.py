@@ -409,7 +409,9 @@ def find_labels(line: str) -> list[tuple[int, str]]:
 
 # OCRが拾う短いノイズ（`©` `_s` `Ob` `eC` `Ai` `AP` `LOBE`）。実データでは
 # ロゴ・QRコード・飾り罫が英数字1〜4文字として読まれ、会社名や住所の前後に付いていた。
-NOISE_TOKEN_RE = re.compile(r"^[A-Za-z0-9©®=_\-–—,.'\"|/\\+*~^`:;!?()\[\]{}<>]{1,4}$")
+NOISE_TOKEN_RE = re.compile(
+    r"^[A-Za-z0-9©®=_\-–—,.'\"|/\\+*~^`:;!?()\[\]{}<>。、・…‥「」『』【】〈〉〜※＊]{1,4}$"
+)
 
 # QRコードや飾りの四角は、四角い字として読まれる（実データでは住所の先頭に
 # `回回` が入っていた）。同じ字が並ぶ短い塊はノイズとして扱う。
@@ -970,8 +972,21 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if _looks_like_person_name(line):
                 name_index = index
                 break
+
+    # 行そのままでは氏名にならなかった場合にだけ、行の一部を見る。
+    # 先に行そのままで探しきること。ロゴの読み崩れ（`トイ ヽ っ` の `トイ`）が
+    # 本来の氏名の行より前にあると、そちらを氏名にしてしまう（実測で発生）。
+    if name_index is None:
+        for index, line in enumerate(cleaned):
+            if index in used or _is_hiragana_only(line):
+                continue
             segment = japanese_segment(spaced_lines[index])
-            if segment and _looks_like_person_name(segment) and not _is_hiragana_only(segment):
+            if not segment or _is_hiragana_only(segment):
+                continue
+            # 2文字の断片は氏名と見なさない。ロゴの読み崩れが当たりやすい
+            if len(re.sub(r"\s+", "", segment)) < 3:
+                continue
+            if _looks_like_person_name(segment):
                 name_index = index
                 name_from_segment = segment
                 break
