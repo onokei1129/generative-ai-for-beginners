@@ -411,6 +411,11 @@ def find_labels(line: str) -> list[tuple[int, str]]:
 # ロゴ・QRコード・飾り罫が英数字1〜4文字として読まれ、会社名や住所の前後に付いていた。
 NOISE_TOKEN_RE = re.compile(r"^[A-Za-z0-9©®=_\-–—,.'\"|/\\+*~^`:;!?()\[\]{}<>]{1,4}$")
 
+# QRコードや飾りの四角は、四角い字として読まれる（実データでは住所の先頭に
+# `回回` が入っていた）。同じ字が並ぶ短い塊はノイズとして扱う。
+# 地名にも使う字なので、2文字以上の繰り返しに限る（`回` 1文字は落とさない）。
+SQUARE_NOISE_RE = re.compile(r"^([回口ロ日目田■□▪▫●○◆◇])\1{1,3}$")
+
 
 def trim_ocr_noise(text: str) -> str:
     """日本語の項目の前後に付いた短い英数字・記号を落とす。
@@ -420,10 +425,13 @@ def trim_ocr_noise(text: str) -> str:
     """
     if not _has_japanese(text):
         return text
+    def noise(token: str) -> bool:
+        return bool(NOISE_TOKEN_RE.match(token) or SQUARE_NOISE_RE.match(token))
+
     tokens = [token for token in re.split(r"\s+", text.strip()) if token]
-    while tokens and NOISE_TOKEN_RE.match(tokens[0]):
+    while tokens and noise(tokens[0]):
         tokens.pop(0)
-    while tokens and NOISE_TOKEN_RE.match(tokens[-1]):
+    while tokens and noise(tokens[-1]):
         tokens.pop()
     return " ".join(tokens)
 

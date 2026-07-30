@@ -207,7 +207,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 "prefilled": [],
             })
 
-        values, error = _ocr_draft(path)
+        values, error, ocr_text = _ocr_draft(path)
         _warm_next(name)
         if error:
             return JSONResponse({
@@ -215,6 +215,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 "source": f"OCRを使えませんでした: {error}",
                 "kind": "error",
                 "prefilled": [],
+                "ocr_text": "",
             })
         filled = [k for k, v in values.items() if v]
         return JSONResponse({
@@ -222,10 +223,16 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             "source": "OCRの下書きです。黄色の欄は未確認です。画像と見比べて直してください。",
             "kind": "draft",
             "prefilled": filled,
+            "ocr_text": ocr_text,
         })
 
-    def _ocr_draft(path: Path) -> tuple[dict[str, str], str | None]:
-        """OCRで下書きを作る。結果はファイルごとにキャッシュする。"""
+    def _ocr_draft(path: Path) -> tuple[dict[str, str], str | None, str]:
+        """OCRで下書きを作る。結果はファイルごとにキャッシュする。
+
+        戻り値の3つ目は**OCRが読んだ文字そのもの**。項目が空のとき、
+        読めていないのか取り出せていないのかは、これを見ないと切り分けられない。
+        画面に出しておくことで、報告の往復を減らす。
+        """
         while True:
             with _cache_lock:
                 hit = _ocr_cache.get(path.name)
@@ -254,8 +261,10 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                     raise RuntimeError("画像を1枚も取り出せませんでした")
 
                 step = "OCR"
-                _output, parsed = recognize_card(cards[0].ocr_image)
-                result = ({key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}, None)
+                output, parsed = recognize_card(cards[0].ocr_image)
+                values = {key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}
+                text = output.text if output is not None else ""
+                result = (values, None, text)
             except Exception as exc:
                 # 画面には要約しか出せないので、原因を追えるようにコンソールへ全文を出す
                 print(f"\n[{path.name}] {step}で失敗しました", file=sys.stderr)
@@ -264,7 +273,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 # 失敗はキャッシュしない。一時的な失敗（メモリ不足、他プロセスとの
                 # 競合など）を覚え込むと、原因を直しても画面を開き直すまで
                 # 失敗したままになる。次に開いたときにやり直せるようにする。
-                return {key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）"
+                return {key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）", ""
 
             with _cache_lock:
                 _ocr_cache[path.name] = result
@@ -379,6 +388,11 @@ PAGE = """
                       max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
                       margin: auto; z-index: 100; cursor: zoom-out; box-shadow: 0 8px 40px rgba(0,0,0,.4); }
   .filename { font-size: 13px; color: #555; margin: 0 0 8px; word-break: break-all; }
+  .ocrbox { margin-top: 10px; font-size: 13px; }
+  .ocrbox summary { cursor: pointer; color: #555; }
+  .ocrbox pre { background: #f6f7f9; border: 1px solid #e0e3e8; border-radius: 4px;
+                padding: 8px; margin: 6px 0 0; max-height: 260px; overflow: auto;
+                white-space: pre-wrap; word-break: break-all; font-size: 12px; }
   .imgerror:empty { display: none; }
   .imgerror { font-size: 13px; padding: 8px 10px; border-radius: 4px; margin: 8px 0;
               background: #fff4e5; border: 1px solid #ffd8a8; color: #8a5300; }
@@ -434,6 +448,10 @@ PAGE = """
       <img id="image" alt="名刺画像" onclick="this.classList.toggle('zoom')"
            onerror="showImageError()">
       <div id="imgerror" class="imgerror"></div>
+      <details id="ocrbox" class="ocrbox">
+        <summary>OCRが読んだ文字を見る（項目が空のときの手がかり）</summary>
+        <pre id="ocrtext"></pre>
+      </details>
       <p class="kbd">画像をクリックすると拡大します。</p>
       <!-- 「名刺ではない」は画像を見た時点で判断するので、画像のすぐ下に置く。
            入力欄の下（14項目ぶん下）だと画面外で気づけない。 -->
@@ -527,6 +545,7 @@ async function show(i) {
   const file = state.files[i];
   document.getElementById('filename').textContent = file.name;
   document.getElementById('imgerror').textContent = '';
+  document.getElementById('ocrtext').textContent = '';
   document.getElementById('image').src = '/api/image/' + encodeURIComponent(file.name);
   document.getElementById('image').classList.remove('zoom');
   document.getElementById('saved').textContent = '';
@@ -591,6 +610,8 @@ async function show(i) {
   for (const key of state.unverified) mark(key, true);
 
   if (state.timer) clearInterval(state.timer);
+  document.getElementById('ocrtext').textContent =
+      data.ocr_text || '（OCRの結果はありません）';
   src.textContent = data.source;
   src.className = 'source ' + (data.kind === 'draft' || data.kind === 'error' ? 'warn' : 'plain');
 
