@@ -501,6 +501,12 @@ async function show(i) {
   document.getElementById('saved').textContent = '';
   clearMarks();
 
+  // 枚数・進捗・一覧はOCRの結果に依らないので、待たずに先に出す。
+  // 以前はOCRのあとに描いていたため、数秒間ヘッダが「読み込み中…」のままだった。
+  document.getElementById('prev').disabled = i === 0;
+  renderProgress();
+  renderFiles();
+
   const useDraft = document.getElementById('draft').checked ? '1' : '0';
   const src = document.getElementById('source');
   src.textContent = useDraft === '1' ? 'OCRで下書きしています…' : '';
@@ -520,7 +526,6 @@ async function show(i) {
   src.textContent = data.source;
   src.className = 'source ' + (data.kind === 'draft' || data.kind === 'error' ? 'warn' : 'plain');
 
-  document.getElementById('prev').disabled = i === 0;
   renderProgress();
   renderFiles();
   renderUnverified();
