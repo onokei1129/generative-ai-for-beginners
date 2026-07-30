@@ -170,7 +170,10 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             from bcards.services.images import load_pages
 
             try:
-                pages = load_pages(path.read_bytes(), path.name)
+                # 1枚目しか使わないので1ページだけ読む。全ページ読むと、
+                # 読み取り機がまとめて出す複数ページPDFで数百MB〜1GBを使い、
+                # 以降の名刺の画像が出なくなる（実テストで発生）。
+                pages = load_pages(path.read_bytes(), path.name, limit=1)
                 if not pages:
                     raise ValueError("ページがありません")
                 buffer = io.BytesIO()
@@ -256,7 +259,10 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 from bcards.services.ocr import recognize_card
 
                 step = "画像の読み込みと補正"
-                cards = process_file(path.read_bytes(), path.name)
+                # 使うのは cards[0] だけ。1ページに絞らないと、複数ページPDFで
+                # ページごとに補正まで走り、メモリと時間を無駄に使う
+                # （実測：20ページで 1.17GB / 23秒 → 1ページなら 78MB / 1.2秒）。
+                cards = process_file(path.read_bytes(), path.name, page_limit=1)
                 if not cards:
                     raise RuntimeError("画像を1枚も取り出せませんでした")
 
@@ -288,7 +294,6 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
 
     def _warm_next(name: str) -> None:
         """次の名刺のOCRを裏で先に済ませておく（1枚あたり数秒かかるため）。"""
-        files = [p for p in image_files() if not label_path(p).exists()]
         names = [p.name for p in image_files()]
         if name not in names:
             return
@@ -529,15 +534,39 @@ function fieldHtml(key) {
 }
 
 // 画像が出せないときは、壊れたアイコンではなく理由を出す。
+//
+// 「この1枚だけの問題」と決めつけないこと。サーバーが落ちていると以降の名刺も
+// すべて画像が出ないが、実テストではその場合も「この1枚だけ」と表示していたため、
+// 原因を1枚目のファイルだと見誤ることになった。両者を区別して出す。
 async function showImageError() {
   const box = document.getElementById('imgerror');
   const file = state.files[state.index];
-  box.textContent = '画像を表示できません（この1枚だけの問題です。入力は続けられます）';
+  box.textContent = '画像を表示できません。原因を調べています…';
+
+  let reason = null;
   try {
     const res = await fetch('/api/image/' + encodeURIComponent(file.name));
     const body = await res.json();
-    if (body && body.error) box.textContent = body.error;
-  } catch (e) { /* 表示だけの機能なので握る */ }
+    if (body && body.error) reason = body.error;
+  } catch (e) { /* サーバーが応答していない可能性。下で確かめる */ }
+
+  if (reason) {
+    box.textContent = reason + '（この1枚だけの問題です。入力は続けられます）';
+    return;
+  }
+
+  try {
+    const alive = await fetch('/api/files', { cache: 'no-store' });
+    if (alive.ok) {
+      box.textContent = '画像を表示できません（この1枚だけの問題です。入力は続けられます）';
+      return;
+    }
+  } catch (e) { /* 落ちている */ }
+
+  box.innerHTML = '<b>サーバーが応答していません。</b>'
+    + 'このあとの名刺もすべて画像が出ません。'
+    + '「ラベル付けを始める」の黒い画面を閉じて、もう一度開いてください。'
+    + '（黒い画面の最後の行が原因の手がかりです）';
 }
 
 async function show(i) {

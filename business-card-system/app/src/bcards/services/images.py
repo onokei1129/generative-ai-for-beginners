@@ -83,8 +83,17 @@ def extension_of(filename: str) -> str:
     return name[dot:] if dot >= 0 else ""
 
 
-def load_pages(data: bytes, filename: str) -> list[LoadedPage]:
-    """アップロードされたファイルをページ単位の画像に展開する。"""
+def load_pages(data: bytes, filename: str, *, limit: int | None = None) -> list[LoadedPage]:
+    """アップロードされたファイルをページ単位の画像に展開する。
+
+    `limit` を渡すと、先頭からその枚数だけ展開して残りは読まない。
+
+    ページの展開は**1ページあたり15MB前後**のメモリを使う（名刺1枚を
+    200dpiで描くと 1050×640×3 バイト、A4なら約11MB）。1枚目しか使わない
+    呼び出しで全ページを展開すると、複数ページのPDF（読み取り機が
+    まとめて出す形）で数百MB〜1GBを消費する。実測では20ページのPDF
+    （229KB）で `process_file` が 1.17GB を使っていた。
+    """
     ext = extension_of(filename)
     if ext not in SUPPORTED_EXTENSIONS:
         raise UnsupportedFileError(
@@ -95,7 +104,7 @@ def load_pages(data: bytes, filename: str) -> list[LoadedPage]:
     if ext == ".pdf":
         if not PDF_SUPPORTED:
             raise UnsupportedFileError("PDFの読み込みに必要なライブラリが利用できません。")
-        return _load_pdf(data, mime)
+        return _load_pdf(data, mime, limit)
 
     if ext in (".heic", ".heif") and not HEIC_SUPPORTED:
         raise UnsupportedFileError("HEICの読み込みに必要なライブラリが利用できません。")
@@ -103,7 +112,8 @@ def load_pages(data: bytes, filename: str) -> list[LoadedPage]:
     image = Image.open(io.BytesIO(data))
     pages: list[LoadedPage] = []
     if ext in (".tif", ".tiff") and getattr(image, "n_frames", 1) > 1:
-        for index in range(image.n_frames):  # 複数ページTIFF
+        count = image.n_frames if limit is None else min(image.n_frames, limit)
+        for index in range(count):  # 複数ページTIFF
             image.seek(index)
             pages.append(LoadedPage(_to_rgb(image.copy()), index + 1, mime))
     else:
@@ -111,11 +121,12 @@ def load_pages(data: bytes, filename: str) -> list[LoadedPage]:
     return pages
 
 
-def _load_pdf(data: bytes, mime: str) -> list[LoadedPage]:
+def _load_pdf(data: bytes, mime: str, limit: int | None = None) -> list[LoadedPage]:
     pdf = pypdfium2.PdfDocument(data)
     pages: list[LoadedPage] = []
     try:
-        for index in range(len(pdf)):
+        count = len(pdf) if limit is None else min(len(pdf), limit)
+        for index in range(count):
             page = pdf[index]
             # 名刺のOCRに耐える解像度（およそ200dpi相当）で描画する
             bitmap = page.render(scale=200 / 72)
@@ -307,10 +318,16 @@ def quality_report(image: Image.Image) -> dict[str, Any]:
     return warnings
 
 
-def process_file(data: bytes, filename: str, *, correct: bool = True) -> list[ProcessedCard]:
-    """アップロードファイル1件を、名刺1枚ごとの補正済み画像に変換する。"""
+def process_file(
+    data: bytes, filename: str, *, correct: bool = True, page_limit: int | None = None
+) -> list[ProcessedCard]:
+    """アップロードファイル1件を、名刺1枚ごとの補正済み画像に変換する。
+
+    `page_limit` を渡すと、先頭からその枚数のページだけ処理する。1枚目しか
+    使わない呼び出しでは必ず渡すこと（`load_pages` の説明を参照）。
+    """
     cards: list[ProcessedCard] = []
-    for page in load_pages(data, filename):
+    for page in load_pages(data, filename, limit=page_limit):
         quads = detect_card_quads(page.image) if correct else []
         if not quads:
             cards.append(_finish_card(page.image, page, None, correct, detected=False))
