@@ -465,7 +465,7 @@ PAGE = """
   </div>
 </main>
 <script>
-let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set() };
+let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set(), timer: null };
 
 async function boot() {
   const meta = await (await fetch('/api/files')).json();
@@ -538,8 +538,10 @@ async function show(i) {
     const input = document.getElementById('f_' + f.key);
     if (input) input.value = '';
   }
+  // 待たせるのは「保存して次へ」だけ。スキップと「前へ」はOCRの結果に
+  // 関係がないので、いつでも押せるようにしておく（OCRが返ってこないときに
+  // 先へ進めなくなり、実テストで手が止まった）。
   document.getElementById('next').disabled = true;
-  document.getElementById('skip').disabled = true;
 
   // 枚数・進捗・一覧はOCRの結果に依らないので、待たずに先に出す。
   // 以前はOCRのあとに描いていたため、数秒間ヘッダが「読み込み中…」のままだった。
@@ -552,11 +554,34 @@ async function show(i) {
   src.textContent = useDraft === '1' ? 'OCRで下書きしています…' : '';
   src.className = 'source plain';
 
+  // 経過を出す。止まっているのか動いているのか分からないと手が止まる。
+  // 20秒を超えたら、待たずに進めることを伝える。
+  if (state.timer) clearInterval(state.timer);
+  if (useDraft === '1') {
+    const started = Date.now();
+    state.timer = setInterval(() => {
+      if (state.index !== i) { clearInterval(state.timer); return; }
+      const seconds = Math.round((Date.now() - started) / 1000);
+      src.textContent = seconds >= 20
+        ? `OCRで下書きしています…（${seconds}秒）　時間がかかっています。「スキップ」で次へ進めます`
+        : `OCRで下書きしています…（${seconds}秒）`;
+    }, 1000);
+  }
+
   const url = '/api/label/' + encodeURIComponent(file.name) + '?draft=' + useDraft;
-  const data = await (await fetch(url)).json();
+  let data;
+  try {
+    data = await (await fetch(url)).json();
+  } catch (e) {
+    // 取れなくても手を止めない。空欄のまま入力できるようにする
+    if (state.index !== i) return;
+    document.getElementById('next').disabled = false;
+    src.textContent = 'OCRの結果を取得できませんでした。空欄から入力してください。';
+    src.className = 'source warn';
+    return;
+  }
   if (state.index !== i) return;   // 待っている間に別の名刺へ移った
   document.getElementById('next').disabled = false;
-  document.getElementById('skip').disabled = false;
 
   for (const f of state.fields) {
     document.getElementById('f_' + f.key).value = data.values[f.key] || '';
@@ -565,6 +590,7 @@ async function show(i) {
   state.unverified = new Set(data.prefilled || []);
   for (const key of state.unverified) mark(key, true);
 
+  if (state.timer) clearInterval(state.timer);
   src.textContent = data.source;
   src.className = 'source ' + (data.kind === 'draft' || data.kind === 'error' ? 'warn' : 'plain');
 
