@@ -182,6 +182,27 @@ DEPARTMENT_KEYWORDS = (
 
 ADDRESS_HINTS = ("都", "道", "府", "県", "市", "区", "町", "村", "丁目", "番地", "-")
 
+
+def has_company_keyword(line: str) -> bool:
+    """法人格の語を含むかを、語の境界を見て判定する。
+
+    英字の略号は別の語の一部に当たる。`S.A.` は住所の `U.S.A.` に当たり、
+    住所の行が社名として登録されていた。
+
+        `123 Main St, Chicago, U.S.A.` → 会社名 `123 Main St, Chicago, U.S.A.`
+
+    英字の語は、直前が英字またはドットのときは数えない
+    （`Acme S.A.` は数える。`U.S.A.` は数えない）。
+    """
+    for keyword in COMPANY_KEYWORDS:
+        position = line.find(keyword)
+        while position >= 0:
+            before = line[position - 1] if position else ""
+            if not (keyword[0].isascii() and (before.isalpha() or before == ".")):
+                return True
+            position = line.find(keyword, position + 1)
+    return False
+
 TEL_LABELS = ("tel", "電話", "phone", "ｔｅｌ", "代表")
 FAX_LABELS = ("fax", "ファックス", "ｆａｘ")
 # `HP` は handphone。韓国・台湾・東南アジアの名刺で携帯の意味で使われる。
@@ -669,7 +690,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
 
     # 会社名
     for index, line in enumerate(cleaned):
-        if any(keyword in line for keyword in COMPANY_KEYWORDS):
+        if has_company_keyword(line):
             fields["company_name"] = line
             confidence["company_name"] = 0.9
             used.add(index)

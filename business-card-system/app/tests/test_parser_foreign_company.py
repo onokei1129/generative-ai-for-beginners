@@ -53,6 +53,26 @@ class TestForeignLegalForms:
         assert company("John Smith", "Sales Manager") == ""
 
     @pytest.mark.parametrize(
+        "line",
+        [
+            "123 Main St, Chicago, U.S.A.",
+            "1-1-1 Chiyoda, Tokyo, JAPAN",
+        ],
+    )
+    def test_an_address_is_not_a_company(self, line: str):
+        """住所の行を社名にしないこと。
+
+        `U.S.A.` の中の `S.A.` を法人格として数え、住所が社名になっていた。
+        英字の略号は、直前が英字またはドットなら別の語の一部と見なす。
+        """
+        assert company("John Smith", line, "john@example.com") == ""
+
+    def test_the_abbreviation_still_counts_on_its_own(self):
+        """語として置かれた略号は従来どおり数えること。"""
+        assert company("Acme S.A.") == "Acme S.A."
+        assert company("Example PLC") == "Example PLC"
+
+    @pytest.mark.parametrize(
         ("left", "right"),
         [
             ("주식회사 오모로봇", "오모로봇"),
