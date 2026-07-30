@@ -246,6 +246,24 @@ ADDRESS_LABEL_RE = re.compile(
 # 「代表」に続くとき、電話のラベルではなく役職の一部だと分かる語。
 NOT_A_TEL_LABEL_RE = re.compile(r"(?:取締役|取締|理事|社員|執行役|者)")
 
+# 役職の語のあとに続いたとき、氏名ではなく役職の続きだと分かる語尾。
+# `主任研究員` を役職『主任』＋氏名『研究員』に分けてしまうのを防ぐ。
+TITLE_TAIL_WORDS = (
+    "員",
+    "長",
+    "補佐",
+    "代理",
+    "心得",
+    "待遇",
+    "職",
+    "官",
+    "士",
+    "係",
+    "主任",
+    "担当",
+    "格",
+)
+
 
 def normalize(text: str) -> str:
     """全角英数字・記号を半角へ寄せる。"""
@@ -318,8 +336,14 @@ def split_department_and_title(line: str) -> tuple[str, str]:
         if position < 0:
             continue
         if position == 0:
-            # 行全体が役職のときだけ「部署なし」とみなす
-            return ("", line) if line == keyword else (line, "")
+            # 役職の語で始まる行。後ろに部署の語があれば部署名
+            # （`Sales Department` の `Sales` を役職にしない）。
+            # 無ければ役職の続き（`課長補佐` `部長代理`）なので部署にしない。
+            # 実測では `課長補佐` が部署として登録され、役職が空になっていた。
+            tail = line[len(keyword) :]
+            if line == keyword or not any(word in tail for word in DEPARTMENT_KEYWORDS):
+                return "", line
+            return line, ""
         head, tail = line[:position].strip(), line[position:].strip()
         if head and any(word in head for word in DEPARTMENT_KEYWORDS):
             return head, tail
@@ -372,6 +396,23 @@ def strip_phone_parts(text: str) -> str:
     for label in sorted(labels, key=len, reverse=True):
         without_numbers = re.sub(re.escape(label), " ", without_numbers, flags=re.IGNORECASE)
     return re.sub(r"[\s:：/|｜（）()]+", " ", without_numbers).strip()
+
+
+def spaced_suffix(spaced: str, count: int) -> str:
+    """空白を残した行から、末尾 count 文字（空白を数えない）を取り出す。
+
+    氏名の分割には空白を残した行が要る（`ユン ソクン` → `ユン` / `ソクン`）。
+    役職と同じ行から氏名を取り出すとき、空白を除いた側で位置を決めたあと、
+    対応する部分を空白付きの行から取り直すために使う。
+    """
+    taken = 0
+    for index in range(len(spaced) - 1, -1, -1):
+        if spaced[index].isspace():
+            continue
+        taken += 1
+        if taken == count:
+            return spaced[index:].strip()
+    return spaced.strip()
 
 
 def strip_address_label(text: str) -> str:
@@ -515,9 +556,14 @@ def _looks_like_person_name(line: str) -> bool:
         return False
     if re.search(r"\d", text):
         return False
-    if any(hint in text for hint in ("都", "道", "府", "県", "市", "区", "町", "村")):
+    # 住所の語を含む姓は珍しくない（`中村` `木村` `村上` `市川` `町田`）。
+    # 1つ含むだけで弾くと、これらの氏名が空になる。住所は複数の語を含むので
+    # 2つ以上のときだけ住所とみなす（番地のある行は上の数字の判定で弾いている）。
+    if sum(hint in text for hint in ("都", "道", "府", "県", "市", "区", "町", "村")) >= 2:
         return False
-    if re.fullmatch(r"[一-龥ぁ-んァ-ヶー・]{2,12}", text):
+    # 々（踊り字）を入れておくこと。`佐々木` `野々村` は珍しくない姓で、
+    # 入れないと氏名として認識されない（実測で `主任 佐々木 健` の氏名が空になった）。
+    if re.fullmatch(r"[一-龥々〆ヶヵぁ-んァ-ヴー・]{2,12}", text):
         return True
     latin = normalize(line).strip()
     if not re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,2}", latin):
@@ -760,6 +806,12 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             break
 
     # 役職（部署の行から取れなかった場合）
+    #
+    # 役職と氏名を1行に印字する名刺がある（`代表取締役 ユン ソクン`）。
+    # 行を丸ごと役職にすると、役職が `代表取締役ユンソクン` になり、
+    # そのうえ氏名が空になる（実データで発生）。役職のあとの残りが氏名らしければ、
+    # 役職はその語だけにして、残りは氏名の候補として渡す。
+    title_name: tuple[str, str] | None = None
     if not fields["title"]:
         for index, line in enumerate(cleaned):
             if index in used and index not in phone_used:
@@ -770,11 +822,28 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if not candidate:
                 continue
             for keyword in TITLE_KEYWORDS:
-                if keyword in candidate:
+                if keyword not in candidate:
+                    continue
+                position = candidate.find(keyword)
+                head = candidate[:position].strip()
+                tail = candidate[position + len(keyword) :].strip()
+                if (
+                    not head
+                    and len(tail) >= 3
+                    and not any(tail.endswith(word) for word in TITLE_TAIL_WORDS)
+                    and _looks_like_person_name(tail)
+                ):
+                    # 「課長補佐」「主任研究員」のような役職の続きと区別する。
+                    # 氏名として通すのは3文字以上で、役職の語尾で終わらないものに限る
+                    fields["title"] = keyword
+                    # 空白を数えない字数で位置を決める（`John Smith` は10文字）
+                    letters = len(re.sub(r"\s+", "", tail))
+                    title_name = (tail, spaced_suffix(spaced_lines[index], letters))
+                else:
                     fields["title"] = pick_title(candidate, keyword)
-                    confidence["title"] = 0.8
-                    used.add(index)
-                    break
+                confidence["title"] = 0.8
+                used.add(index)
+                break
             if fields["title"]:
                 break
 
@@ -796,6 +865,12 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if _looks_like_person_name(line):
                 name_index = index
                 break
+
+    if name_index is None and title_name is not None:
+        # 役職と同じ行に印字されていた氏名
+        last, first = split_person_name(title_name[1])
+        fields["last_name"], fields["first_name"] = last, first
+        confidence["last_name"] = confidence["first_name"] = 0.6
 
     if name_index is not None:
         # 空白を残した行で分ける。「冨田　修」「佐々木 健」を取り違えないため
