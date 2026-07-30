@@ -159,6 +159,39 @@ def join_spaced_letters(text: str) -> str:
     return text
 
 
+def pick_title(line: str, keyword: str) -> str:
+    """役職の行から登録する文字列を選ぶ。
+
+    名刺は和英を1行に併記することが多い。実データでは
+
+        `エグゼクティブ・プロデューサー / Executive Producer` → `プロデューサー`
+
+    のように、複合語の後ろだけを取って前半を捨てていた。
+
+    区切り（/｜｜など）があれば日本語側を採り、その中では語だけに
+    切り詰めず、行そのもの（役職名の全体）を残す。
+    """
+    for separator in ("/", "|", "／", "｜", "・/"):
+        if separator not in line:
+            continue
+        segments = [seg.strip() for seg in line.split(separator) if seg.strip()]
+        japanese = [seg for seg in segments if _has_japanese(seg)]
+        if japanese:
+            # 日本語側に役職の語が含まれているものを選ぶ
+            for seg in japanese:
+                if keyword in seg:
+                    return seg
+            return japanese[0]
+
+    if line == keyword:
+        return line
+    # 「シニアエンジニア」「エグゼクティブ・プロデューサー」のように、
+    # 役職の語に修飾が付いた形は全体が役職名。行が短ければそのまま残す。
+    if len(line) <= len(keyword) + 12:
+        return line
+    return keyword
+
+
 def split_department_and_title(line: str) -> tuple[str, str]:
     """1行に並んだ部署と役職を分ける。分けられなければ (行, "") を返す。
 
@@ -280,6 +313,22 @@ def _is_kana_only(text: str) -> bool:
     return bool(stripped) and bool(re.fullmatch(r"[ぁ-んァ-ヶー]+", stripped))
 
 
+def _is_hiragana_only(text: str) -> bool:
+    """ふりがなの行かを判定する。
+
+    ふりがなはひらがなで印字される。カタカナだけの行を「ふりがな」と見ると、
+    外国名の名刺（`パトリシオ　バスケス`）で氏名が空になり、ふりがな欄に
+    氏名が入る。実データで発生した。
+    """
+    stripped = re.sub(r"\s+", "", text)
+    return bool(stripped) and bool(re.fullmatch(r"[ぁ-んー]+", stripped))
+
+
+def _is_katakana_only(text: str) -> bool:
+    stripped = re.sub(r"\s+", "", text)
+    return bool(stripped) and bool(re.fullmatch(r"[ァ-ヶー・]+", stripped))
+
+
 def _has_japanese(text: str) -> bool:
     return bool(re.search(r"[ぁ-んァ-ヶ一-龥]", text))
 
@@ -294,15 +343,31 @@ def _looks_like_person_name(line: str) -> bool:
         return False
     if any(hint in text for hint in ("都", "道", "府", "県", "市", "区", "町", "村")):
         return False
-    return bool(re.fullmatch(r"[一-龥ぁ-んァ-ヶー]{2,12}", text)) or bool(
-        re.fullmatch(r"[A-Za-z][A-Za-z.\-]*(?:\s+[A-Za-z][A-Za-z.\-]*){1,2}", normalize(line))
-    )
+    if re.fullmatch(r"[一-龥ぁ-んァ-ヶー・]{2,12}", text):
+        return True
+    latin = normalize(line).strip()
+    if not re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,2}", latin):
+        return False
+    # 全部大文字はロゴや社名の綴り（`AONE GAMES`）。人名は通常そう書かない。
+    # 実データでロゴが氏名として登録されていた。
+    return latin != latin.upper()
 
 
 def split_person_name(full: str) -> tuple[str, str]:
     """姓と名に分割する。空白があればそこで、なければ日本語姓の一般的な長さで分ける。"""
     text = normalize(full)
     parts = [p for p in re.split(r"[\s　]+", text) if p]
+    if len(parts) >= 3 and _is_katakana_only(text):
+        # カタカナの氏名は、OCRが語の途中にも空白を入れる。実データでは
+        # `パトリシオ　バスケス` が `パト リシオ バスケス` と読まれ、
+        # 先頭の空白で切って `パト` / `リシオ バスケス` になっていた。
+        # どこが語の切れ目かは字面では決まらないので、長さの釣り合いが
+        # いちばん良い位置で分ける（姓と名は極端に長さが違わない）。
+        best = min(
+            range(1, len(parts)),
+            key=lambda at: abs(len("".join(parts[:at])) - len("".join(parts[at:]))),
+        )
+        return "".join(parts[:best]), "".join(parts[best:])
     if len(parts) >= 2:
         return parts[0], " ".join(parts[1:])
     if len(text) >= 4 and _has_japanese(text):
@@ -422,6 +487,30 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 used.add(index)
                 break
 
+    # 英字の住所。日本の住所の手がかり（都道府県市区町村）がまったく無いため、
+    # 上の判定では拾えなかった。実データの
+    #   `Santa Beatriz 111 of 1008, Providencia. Santiago de Chile`
+    # が空になっていた。
+    #
+    # 住所が他から取れなかったときだけ動かす。番地があるので数字を含み、
+    # 複数語からなる、いちばん長い行を選ぶ。氏名や社名は数字を含まないので
+    # 巻き込まない。
+    if not fields["address"]:
+        candidates = []
+        for index, line in enumerate(cleaned):
+            if index in used or "@" in line or "http" in line.lower():
+                continue
+            if not re.search(r"\d", line):
+                continue
+            if len(line.split()) < 3:
+                continue
+            candidates.append((len(line), index, line))
+        if candidates:
+            _, index, line = max(candidates)
+            fields["address"] = line
+            confidence["address"] = 0.4
+            used.add(index)
+
     # 会社名
     for index, line in enumerate(cleaned):
         if any(keyword in line for keyword in COMPANY_KEYWORDS):
@@ -429,6 +518,25 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             confidence["company_name"] = 0.9
             used.add(index)
             break
+
+    # 法人格の語が無い社名（海外企業やロゴだけの表記）はメールのドメインで見つける。
+    # 実データの `AONE GAMES` は `patricio@aonegames.com` と一致するが、
+    # `株式会社` も `Inc.` も含まないため取れていなかった。
+    if not fields["company_name"] and fields["email"]:
+        domain = fields["email"].rsplit("@", 1)[-1]
+        # co.jp / com などの一般部分を外して、会社を表す部分だけ残す
+        host = re.sub(r"\.(?:co|or|ne|ac|go|com|net|org|jp|io|dev|app)$", "", domain)
+        host = re.sub(r"\.(?:co|or|ne|ac|go|com|net|org|jp)$", "", host)
+        key = re.sub(r"[^a-z0-9]", "", host.lower())
+        if len(key) >= 4:
+            for index, line in enumerate(cleaned):
+                if index in used:
+                    continue
+                if re.sub(r"[^a-z0-9]", "", line.lower()) == key:
+                    fields["company_name"] = line
+                    confidence["company_name"] = 0.6
+                    used.add(index)
+                    break
 
     # 部署
     for index, line in enumerate(cleaned):
@@ -455,7 +563,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 continue
             for keyword in TITLE_KEYWORDS:
                 if keyword in line:
-                    fields["title"] = keyword if line != keyword and len(line) > len(keyword) + 6 else line
+                    fields["title"] = pick_title(line, keyword)
                     confidence["title"] = 0.8
                     used.add(index)
                     break
@@ -463,10 +571,10 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 break
 
     # 氏名
-    # ふりがなの直後の行は氏名である可能性が高いので優先的に採用する。
+    # ふりがな（ひらがな）の直後の行は氏名である可能性が高いので優先的に採用する。
     name_index: int | None = None
     for index, line in enumerate(cleaned):
-        if index in used or not _is_kana_only(line):
+        if index in used or not _is_hiragana_only(line):
             continue
         following = index + 1
         if following < len(cleaned) and following not in used and _looks_like_person_name(cleaned[following]):
@@ -475,7 +583,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
 
     if name_index is None:
         for index, line in enumerate(cleaned):
-            if index in used or _is_kana_only(line):
+            if index in used or _is_hiragana_only(line):
                 continue
             if _looks_like_person_name(line):
                 name_index = index
@@ -488,11 +596,14 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         confidence["last_name"] = confidence["first_name"] = 0.7
         used.add(name_index)
 
-    # ふりがな（かなだけの行）
+    # ふりがな（ひらがなだけの行）
+    #
+    # カタカナだけの行はふりがなにしない。外国名の名刺はカタカナで氏名を
+    # 印字するため（`パトリシオ　バスケス`）、ふりがな扱いにすると氏名が空になる。
     for index, line in enumerate(cleaned):
         if index in used:
             continue
-        if _is_kana_only(line) and 2 <= len(re.sub(r"\s+", "", line)) <= 16:
+        if _is_hiragana_only(line) and 2 <= len(re.sub(r"\s+", "", line)) <= 16:
             last, first = split_person_name(spaced_lines[index])
             fields["last_name_kana"], fields["first_name_kana"] = last, first
             confidence["last_name_kana"] = 0.7
