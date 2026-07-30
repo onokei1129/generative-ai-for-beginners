@@ -12,9 +12,20 @@ from typing import Any
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 URL_RE = re.compile(r"(?:https?://|www\.)[\w\-./?%&=~+#:]+", re.IGNORECASE)
-POSTAL_RE = re.compile(r"〒?\s*(\d{3})\s*[-ー－]\s*(\d{4})")
+# 郵便番号。3桁-4桁だが、電話番号の一部（`070-9385`-4004）に当たってはいけない。
+#
+# 実データ（韓国の方の名刺）で `HP 070-9385-4004` の前半を郵便番号として取り、
+# 残った `-4004` を住所にしていた。電話番号と見分けるため、前後を見る。
+#
+#   後ろ … 数字や区切りが続くならその番号の途中。郵便番号ではない。
+#   前  … 数字が接しているならその番号の途中。ただし 〒 の読み違え
+#          （`7100-0001`）だけは例外として通す。
+POSTAL_MARKS = "〒〠亍干テT7"
+POSTAL_RE = re.compile(
+    rf"〒?\s*(?:(?<![\d\-ー－])|(?<=[{POSTAL_MARKS}]))(\d{{3}})\s*[-ー－]\s*(\d{{4}})(?![\d\-ー－])"
+)
 # 〒 は読み違えられやすい。郵便番号の直前に限って読み捨てる。
-POSTAL_MARK_RE = re.compile(r"[〒〠亍干テT7]\s*$")
+POSTAL_MARK_RE = re.compile(rf"[{POSTAL_MARKS}]\s*$")
 # 電話番号。国番号つき（海外名刺）と国内表記の2通りを見る。
 #
 # 以前は国番号つきを `+81` だけ見ていたため、海外名刺の番号を1件も拾えなかった。
@@ -135,9 +146,25 @@ ADDRESS_HINTS = ("都", "道", "府", "県", "市", "区", "町", "村", "丁目
 
 TEL_LABELS = ("tel", "電話", "phone", "ｔｅｌ", "代表")
 FAX_LABELS = ("fax", "ファックス", "ｆａｘ")
-MOBILE_LABELS = ("mobile", "携帯", "cell", "ｍｏｂｉｌｅ")
+# `HP` は handphone。韓国・台湾・東南アジアの名刺で携帯の意味で使われる。
+# 実データ（韓国の方の名刺）で `HP 070-9385-4004` を携帯と見分けられていなかった。
+MOBILE_LABELS = ("mobile", "携帯", "cell", "ｍｏｂｉｌｅ", "hp", "h.p")
 
-MOBILE_PREFIXES = ("090", "080", "070", "050")
+# 携帯の先頭3桁。050 はIP電話（固定）なので入れない。
+# 実データで `Tel 050-3110-2873` を携帯として扱い、先に入っていた携帯に
+# 押し出されて電話が空になっていた。
+MOBILE_PREFIXES = ("090", "080", "070")
+
+# 住所のラベル。`Add 〒580-0021 大阪府…` のように住所と同じ行に印字される。
+# 英字の語は後ろに文字が続くものを除く（`Addison Road` を `ison Road` に
+# しないため）。
+ADDRESS_LABEL_RE = re.compile(
+    r"^\s*(?:(?:address|adress|addr|add)(?![a-z])|住所|所在地)\s*[:：.．]?\s*",
+    re.IGNORECASE,
+)
+
+# 「代表」に続くとき、電話のラベルではなく役職の一部だと分かる語。
+NOT_A_TEL_LABEL_RE = re.compile(r"(?:取締役|取締|理事|社員|執行役|者)")
 
 
 def normalize(text: str) -> str:
@@ -219,6 +246,69 @@ def split_department_and_title(line: str) -> tuple[str, str]:
         # 部署の手がかりが無いなら、役職の一部（「シニアエンジニア」など）の可能性がある
         return line, ""
     return line, ""
+
+
+def find_labels(line: str) -> list[tuple[int, str]]:
+    """行の中の電話ラベルの位置と種別を、現れる順に返す。
+
+    英字のラベルは語の先頭に限る。`hp`（handphone）のような短い語を
+    単純な部分一致で探すと、別の語の一部（`graphpad` の `hp`）に当たる。
+    後ろは縛らない。`telephone` の `tel`、`cellular` の `cell` を
+    取り逃がさないため。
+    """
+    lowered = line.lower()
+    found: list[tuple[int, str]] = []
+    for kind, labels in (("fax", FAX_LABELS), ("mobile", MOBILE_LABELS), ("tel", TEL_LABELS)):
+        for label in labels:
+            if label.isascii():
+                pattern = rf"(?<![a-z0-9]){re.escape(label)}"
+            else:
+                pattern = re.escape(label)
+            for match in re.finditer(pattern, lowered):
+                # 「代表」は代表電話のラベルだが、「代表取締役」の一部でもある。
+                # 役職の一部なら電話のラベルとして数えない。
+                if label == "代表" and NOT_A_TEL_LABEL_RE.match(line, match.end()):
+                    continue
+                found.append((match.start(), kind))
+    found.sort()
+    return found
+
+
+def strip_phone_parts(text: str) -> str:
+    """行から電話番号とそのラベルを取り除く。
+
+    `代表取締役 090-1234-5678` のように役職と番号を1行に印字する名刺がある。
+    番号を採った行を丸ごと使用済みにすると役職が空になるため、番号を外した
+    残りを役職の候補として見る。
+
+    「代表」は代表電話のラベルだが役職（代表取締役）の一部にもなるので消さない。
+    """
+    without_numbers = PHONE_RE.sub(" ", text)
+    labels = [
+        label
+        for label in TEL_LABELS + FAX_LABELS + MOBILE_LABELS
+        if label != "代表"
+    ]
+    for label in sorted(labels, key=len, reverse=True):
+        without_numbers = re.sub(re.escape(label), " ", without_numbers, flags=re.IGNORECASE)
+    return re.sub(r"[\s:：/|｜（）()]+", " ", without_numbers).strip()
+
+
+def strip_address_label(text: str) -> str:
+    """住所の行頭に残ったラベル（`Add` `住所:`）を落とす。"""
+    return ADDRESS_LABEL_RE.sub("", text).strip()
+
+
+# 〒 のあとの数字が郵便番号として読めなかった残骸。実測では
+# `〒530-0001 大阪府…` が `〒5390-0091 大阪府…` と読まれ、桁数が合わないため
+# 郵便番号は取れず、住所が `〒5390-0091 大阪府…` になっていた。
+# 郵便番号は空のままでよい（誤った番号を入れるより、空欄のほうが直しやすい）が、
+# 住所に混ぜてはいけない。記号は 〒 に限る。`7-1-1 Chiyoda` の番地を削らないため。
+POSTAL_JUNK_RE = re.compile(r"^[〒〠]\s*\d{1,8}(?:\s*[-ー－]\s*\d{1,8})?\s*")
+
+
+def strip_postal_prefix(text: str) -> str:
+    return POSTAL_JUNK_RE.sub("", text).strip()
 
 
 def for_web_match(text: str) -> str:
@@ -409,6 +499,10 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     }
     confidence: dict[str, float] = {}
     used: set[int] = set()
+    # 電話番号だけのために消費した行。部署・役職はこの行からも探す。
+    # `代表取締役 090-1234-5678` のように役職と番号を1行に印字する名刺があり、
+    # 番号を採った時点で行ごと使用済みにすると役職が空になっていた。
+    phone_used: set[int] = set()
 
     # メール・URL
     for index, line in enumerate(cleaned):
@@ -430,34 +524,36 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     # 「TEL 03-1234-5678  FAX 03-1234-5679」のように1行に複数載るため、
     # 各番号の直前にあるラベルを見て種別を判定する。
     for index, line in enumerate(cleaned):
-        lowered = line.lower()
-        label_positions: list[tuple[int, str]] = []
-        for kind, labels in (("fax", FAX_LABELS), ("mobile", MOBILE_LABELS), ("tel", TEL_LABELS)):
-            for label in labels:
-                start = 0
-                while True:
-                    position = lowered.find(label, start)
-                    if position < 0:
-                        break
-                    label_positions.append((position, kind))
-                    start = position + 1
-        label_positions.sort()
+        label_positions = find_labels(line)
+        matches = list(PHONE_RE.finditer(line))
 
-        for match in PHONE_RE.finditer(line):
+        for match in matches:
             number = match.group(0).strip(" \t-ー－.")
             digits = domestic_digits(number)
             if len(digits) < 9:
                 continue
-            preceding = [kind for position, kind in label_positions if position < match.start()]
-            kind = preceding[-1] if preceding else None
-            if kind is None:
+            labelled = [(position, kind) for position, kind in label_positions if position < match.start()]
+            if not labelled:
                 kind = "mobile" if digits[:3] in MOBILE_PREFIXES else "tel"
-            elif kind == "tel" and digits[:3] in MOBILE_PREFIXES:
-                kind = "mobile"
+                score = 0.6
+            else:
+                position, kind = labelled[-1]
+                score = 0.85
+                # ラベルとこの番号の間に別の番号が挟まっているなら、そのラベルは
+                # 前の番号のもの（`TEL 03-…／090-…` のような並び）。この場合だけ
+                # 先頭3桁で見直す。ラベルが直に付いている番号は、ラベルを信じる
+                # （`Tel 050-…` を携帯にしないため）。
+                borrowed = any(
+                    other.start() > position and other.end() <= match.start() for other in matches
+                )
+                if borrowed and kind == "tel" and digits[:3] in MOBILE_PREFIXES:
+                    kind = "mobile"
+                    score = 0.7
             if not fields[kind]:
                 fields[kind] = number
-                confidence[kind] = 0.85 if preceding else 0.6
+                confidence[kind] = score
             used.add(index)
+            phone_used.add(index)
 
     # 郵便番号・住所
     for index, line in enumerate(cleaned):
@@ -471,7 +567,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             # 郵便番号の直前に接している場合だけ落とすので、英字表記の
             # 「7-1-1 Chiyoda, 100-0001」のような住所は削らない。
             head = POSTAL_MARK_RE.sub("", line[: match.start()])
-            remainder = (head + line[match.end() :]).strip()
+            remainder = strip_address_label((head + line[match.end() :]).strip())
             if remainder and not fields["address"]:
                 fields["address"] = remainder
                 confidence["address"] = 0.7
@@ -482,8 +578,21 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if index in used:
                 continue
             if len(line) >= 6 and sum(hint in line for hint in ADDRESS_HINTS) >= 2:
-                fields["address"] = line
+                fields["address"] = strip_postal_prefix(strip_address_label(line))
                 confidence["address"] = 0.6
+                used.add(index)
+                break
+
+    # 住所のラベルが付いた行。郵便番号が無く、日本の住所の手がかりも無い場合でも、
+    # 名刺が「ここが住所」と書いているのだから、それに従う。
+    if not fields["address"]:
+        for index, line in enumerate(cleaned):
+            if index in used or not ADDRESS_LABEL_RE.match(line):
+                continue
+            remainder = strip_address_label(line)
+            if len(remainder) >= 4:
+                fields["address"] = remainder
+                confidence["address"] = 0.7
                 used.add(index)
                 break
 
@@ -500,6 +609,11 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         for index, line in enumerate(cleaned):
             if index in used or "@" in line or "http" in line.lower():
                 continue
+            # ドメインらしい語（`kaido-foods.example`）を含む行は住所ではない。
+            # 実測で、読み崩れたURLの行が住所として入っていた。英字の住所にある
+            # `Providencia. Santiago` は空白が入るのでここには当たらない。
+            if re.search(r"[A-Za-z0-9]\.[A-Za-z]{2,}", line):
+                continue
             if not re.search(r"\d", line):
                 continue
             if len(line.split()) < 3:
@@ -507,7 +621,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             candidates.append((len(line), index, line))
         if candidates:
             _, index, line = max(candidates)
-            fields["address"] = line
+            fields["address"] = strip_address_label(line)
             confidence["address"] = 0.4
             used.add(index)
 
@@ -557,13 +671,16 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     # 役職（部署の行から取れなかった場合）
     if not fields["title"]:
         for index, line in enumerate(cleaned):
-            if index in used:
+            if index in used and index not in phone_used:
                 # 部署として採った行から役職を拾い直さない。
                 # 「Sales Department」の `Sales` を役職にしてしまう。
                 continue
+            candidate = strip_phone_parts(line) if index in phone_used else line
+            if not candidate:
+                continue
             for keyword in TITLE_KEYWORDS:
-                if keyword in line:
-                    fields["title"] = pick_title(line, keyword)
+                if keyword in candidate:
+                    fields["title"] = pick_title(candidate, keyword)
                     confidence["title"] = 0.8
                     used.add(index)
                     break
