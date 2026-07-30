@@ -81,6 +81,31 @@ HINTS = {
 }
 
 
+def _version() -> str:
+    """この画面がどの版かを返す。
+
+    「最新版に更新する」を実行したつもりで取得できていない、という取り違えが
+    実際に起きた。画面に版を出して、その場で確かめられるようにする。
+    """
+    import subprocess
+
+    root = Path(__file__).resolve().parents[3]
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "log", "-1", "--format=%h %cd", "--date=format:%m/%d %H:%M"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    # git が使えない環境では、このファイルの更新時刻で代用する
+    import datetime
+
+    stamp = datetime.datetime.fromtimestamp(Path(__file__).stat().st_mtime)
+    return stamp.strftime("%m/%d %H:%M")
+
+
 def build_app(directory: Path, prefill: bool) -> FastAPI:
     app = FastAPI(title="正解ラベル入力", docs_url=None, redoc_url=None)
 
@@ -119,6 +144,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             })
         return JSONResponse({
             "directory": str(directory),
+            "version": _version(),
             "fields": [
                 {"key": key, "label": LABELS[key], "hint": HINTS.get(key, "")}
                 for key in FIELD_KEYS
@@ -354,7 +380,14 @@ PAGE = """
   .toggle input { width: auto; }
   .field .hint { font-size: 11px; color: #888; margin-top: 2px; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  /* 入力欄が14項目あるため、操作ボタンは下端に貼り付けて常に見えるようにする。
+     以前は最下部にあり、スクロールしないと見えなかった。 */
+  .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center;
+             position: sticky; bottom: 0; background: #fff; padding: 10px 0;
+             border-top: 1px solid #e3e5e8; z-index: 5; }
+  .notcard-row { margin: 12px 0 0; }
+  .notcard-row button { font-size: 12px; color: #8a4b00; border-color: #e0c49a; background: #fff8ef; }
+  .notcard-row button:hover { background: #f6e7d2; }
   button { padding: 9px 14px; font-size: 14px; border-radius: 5px; border: 1px solid #c8ccd4;
            background: #fff; cursor: pointer; font-family: inherit; }
   button.primary { background: #1f5fa9; color: #fff; border-color: #1f5fa9; font-weight: 600; }
@@ -376,6 +409,7 @@ PAGE = """
   <span class="progress-text" id="progress">読み込み中…</span>
   <div class="bar"><div id="bar"></div></div>
   <label class="toggle"><input type="checkbox" id="draft"> OCRで下書きする</label>
+  <span class="progress-text" id="version" title="この画面の版。更新したのに変わらなければ、取得できていません"></span>
 </header>
 <main>
   <div>
@@ -383,6 +417,11 @@ PAGE = """
       <p class="filename" id="filename">—</p>
       <img id="image" alt="名刺画像" onclick="this.classList.toggle('zoom')">
       <p class="kbd">画像をクリックすると拡大します。</p>
+      <!-- 「名刺ではない」は画像を見た時点で判断するので、画像のすぐ下に置く。
+           入力欄の下（14項目ぶん下）だと画面外で気づけない。 -->
+      <p class="notcard-row">
+        <button type="button" id="notcard">これは名刺ではない（一覧から外す）</button>
+      </p>
     </div>
   </div>
   <div>
@@ -393,7 +432,6 @@ PAGE = """
         <button type="button" id="prev">← 前へ</button>
         <button type="button" class="primary" id="next">保存して次へ →</button>
         <button type="button" id="skip">スキップ</button>
-        <button type="button" id="notcard">名刺ではない</button>
         <span class="saved" id="saved"></span>
         <span class="small muted" id="unverified"></span>
       </div>
@@ -416,6 +454,7 @@ async function boot() {
   state.fields = meta.fields;
   state.files = meta.files;
   state.prefill = meta.prefill;
+  document.getElementById('version').textContent = '版 ' + (meta.version || '不明');
   const draftBox = document.getElementById('draft');
   draftBox.checked = meta.prefill;
   draftBox.onchange = () => show(state.index);

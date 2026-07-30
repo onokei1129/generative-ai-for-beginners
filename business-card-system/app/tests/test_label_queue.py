@@ -142,6 +142,29 @@ class TestNotACard:
             "receipt.txt",
         ]
 
+    def test_button_sits_next_to_the_image(self, cards: Path, monkeypatch):
+        """「名刺ではない」を入力欄より前に置くこと。
+
+        入力欄は14項目あり、その下に置くとスクロールしないと見えない。
+        実際に「ボタンが無い」という報告になった。判断は画像を見た時点で
+        できるので、画像のすぐ下に置く。
+        """
+        _counting_ocr(monkeypatch)
+        html = TestClient(build_app(cards, prefill=False)).get("/").text
+
+        image_panel = html.index('class="panel imgwrap"')
+        button = html.index('id="notcard"')
+        form = html.index('id="form"')
+
+        assert image_panel < button < form
+
+    def test_version_is_shown(self, cards: Path, monkeypatch):
+        """画面に版を出すこと。更新できているかをその場で確かめるため。"""
+        _counting_ocr(monkeypatch)
+        client = TestClient(build_app(cards, prefill=False))
+
+        assert client.get("/api/files").json()["version"]
+
     def test_missing_file_is_reported(self, cards: Path, monkeypatch):
         _counting_ocr(monkeypatch)
         client = TestClient(build_app(cards, prefill=False))
