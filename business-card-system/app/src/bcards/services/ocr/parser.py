@@ -214,8 +214,31 @@ def has_company_keyword(line: str) -> bool:
             position = line.find(keyword, position + 1)
     return False
 
+# 左右2段組みの名刺で、1行に混ざった段を分ける区切り。
+#
+# 名刺は左に社名・ロゴ、右に連絡先を置く体裁が多い。OCRは同じ高さにある文字を
+# 1行にまとめて返すため、左段の飾り・ロゴと右段の本文が1行に混ざってしまう。
+# 実データではこれが原因で、氏名・社名・部署・役職・ふりがなが総崩れになっていた。
+#
+#     `de Fh SHB eA        宮田 修`    ロゴの読み崩れ ＋ 氏名
+#     `A                   とみた      おさむ`
+#     `Sangeon Lee         T +82.2.6421.7777`
+#     `Team Member         E eonlee@example.co.kr`
+#     `mobile: 090-…       る 。`
+#
+# 段の間は必ず広く空くので、空白2つ以上を段の区切りとして分ける。
+# 語の間の空白1つ（`沖縄県 東京事務所` `T E L:03-…` `佐々木 健`）は分けない。
+COLUMN_GAP_RE = re.compile(r"[ \t　]{2,}")
+
 TEL_LABELS = ("tel", "電話", "phone", "ｔｅｌ", "代表")
 FAX_LABELS = ("fax", "ファックス", "ｆａｘ")
+# 1文字のラベル。海外の名刺で連絡先の種別を頭文字だけで示す体裁が多い。
+# 実データ（韓国の名刺）では `T +82.2.…` `F +82.2.…` `C +82.10.…` と並んでいて、
+# ラベルが読めないため FAX と携帯が電話に押し出されて空になっていた。
+#
+# 誤って当たらないよう、前が英数字でなく、直後に番号が来る場合に限る。
+SINGLE_LETTER_LABELS = {"t": "tel", "f": "fax", "c": "mobile", "m": "mobile"}
+SINGLE_LETTER_LABEL_RE = re.compile(r"(?:^|(?<=[^A-Za-z0-9]))([TFCMtfcm])\s*(?=[+(]|\d)")
 # `HP` は handphone。韓国・台湾・東南アジアの名刺で携帯の意味で使われる。
 # 実データ（韓国の方の名刺）で `HP 070-9385-4004` を携帯と見分けられていなかった。
 MOBILE_LABELS = ("mobile", "携帯", "cell", "ｍｏｂｉｌｅ", "hp", "h.p")
@@ -397,6 +420,8 @@ def find_labels(line: str) -> list[tuple[int, str]]:
     """
     lowered = line.lower()
     found: list[tuple[int, str]] = []
+    for match in SINGLE_LETTER_LABEL_RE.finditer(line):
+        found.append((match.start(1), SINGLE_LETTER_LABELS[match.group(1).lower()]))
     for kind, labels in (("fax", FAX_LABELS), ("mobile", MOBILE_LABELS), ("tel", TEL_LABELS)):
         for label in labels:
             if label.isascii():
@@ -442,6 +467,16 @@ def trim_ocr_noise(text: str) -> str:
     while tokens and noise(tokens[-1]):
         tokens.pop()
     return " ".join(tokens)
+
+
+def split_columns(line: str) -> list[str]:
+    """左右2段組みの行を、段ごとに分ける（`COLUMN_GAP_RE` の説明を参照）。
+
+    段が1つしか無い行はそのまま返す。
+    """
+    parts = [part.strip() for part in COLUMN_GAP_RE.split(line.strip())]
+    parts = [part for part in parts if part]
+    return parts if len(parts) > 1 else [line]
 
 
 def japanese_segment(text: str) -> str:
@@ -706,11 +741,12 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     # spaced: 空白を残したまま正規化した行。氏名・ふりがなの分割に使う。
     # cleaned: さらに字間の空白を除いた行。ラベル照合や語の判定に使う。
     pairs = []
-    for line in lines:
-        spaced = join_spaced_letters(normalize(line)).strip()
-        compact = strip_inner_spaces(normalize(line))
-        if compact:
-            pairs.append((compact, spaced))
+    for raw in lines:
+        for line in split_columns(raw):
+            spaced = join_spaced_letters(normalize(line)).strip()
+            compact = strip_inner_spaces(normalize(line))
+            if compact:
+                pairs.append((compact, spaced))
     cleaned = [c for c, _ in pairs]
     spaced_lines = [s for _, s in pairs]
 
@@ -872,19 +908,31 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     # `株式会社` も `Inc.` も含まないため取れていなかった。
     if not fields["company_name"] and fields["email"]:
         domain = fields["email"].rsplit("@", 1)[-1]
-        # co.jp / com などの一般部分を外して、会社を表す部分だけ残す
-        host = re.sub(r"\.(?:co|or|ne|ac|go|com|net|org|jp|io|dev|app)$", "", domain)
+        # co.jp / com などの一般部分を外して、会社を表す部分だけ残す。
+        # 国別ドメインは国ごとに違う（`.kr` `.tw` `.cl`）ので、2文字の末尾を
+        # まとめて外す。実データの `eonlee@nexongames.co.kr` は `.kr` を
+        # 知らないため `NEXON GAMES` と照合できず、社名が空になっていた。
+        host = re.sub(r"\.[a-z]{2}$", "", domain)
+        host = re.sub(r"\.(?:co|or|ne|ac|go|com|net|org|jp|io|dev|app)$", "", host)
         host = re.sub(r"\.(?:co|or|ne|ac|go|com|net|org|jp)$", "", host)
         key = re.sub(r"[^a-z0-9]", "", host.lower())
         if len(key) >= 4:
+            # ドメインは社名を縮めることがある（`edgecre` ← `Edge Creators`）ので、
+            # 先頭が一致する行も同じ会社と見る。ただし読み崩れた断片にも当たる
+            # （`時NEXO` がドメイン `nexongames` の先頭に一致した）ため、
+            # 当たった行のうち**いちばん長いもの**を採る。
+            matches: list[tuple[int, int, str]] = []
             for index, line in enumerate(cleaned):
                 if index in used:
                     continue
-                if re.sub(r"[^a-z0-9]", "", line.lower()) == key:
-                    fields["company_name"] = line
-                    confidence["company_name"] = 0.6
-                    used.add(index)
-                    break
+                candidate = re.sub(r"[^a-z0-9]", "", line.lower())
+                if len(candidate) >= 4 and (candidate.startswith(key) or key.startswith(candidate)):
+                    matches.append((len(candidate), index, line))
+            if matches:
+                _, index, line = max(matches)
+                fields["company_name"] = line
+                confidence["company_name"] = 0.6
+                used.add(index)
 
     # 部署
     for index, line in enumerate(cleaned):
@@ -982,12 +1030,24 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     # 行そのままでは判定できないので、日本語の部分だけを取り出して見る。
     name_from_segment: str | None = None
     if name_index is None:
+        # 日本語の氏名を英字の行より先に採る。日本語の名刺では氏名は日本語で
+        # 印字されるので、英字だけの2語（`Edge Creators`）は屋号・ブランドの
+        # ほうが多い。実データでは社名を氏名として登録し（姓 `Edge` / 名
+        # `Creators`）、本来の氏名『坂本』が空になっていた。
+        # 日本語の候補が無いときだけ英字を採るので、英語の名刺は変わらない。
+        ascii_name: int | None = None
         for index, line in enumerate(cleaned):
             if index in used or _is_hiragana_only(line):
                 continue
-            if _looks_like_person_name(line):
+            if not _looks_like_person_name(line):
+                continue
+            if _has_japanese(line):
                 name_index = index
                 break
+            if ascii_name is None:
+                ascii_name = index
+        if name_index is None:
+            name_index = ascii_name
 
     # 行そのままでは氏名にならなかった場合にだけ、行の一部を見る。
     # 先に行そのままで探しきること。ロゴの読み崩れ（`トイ ヽ っ` の `トイ`）が
@@ -1085,6 +1145,23 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 fields["first_name"] = re.sub(r"\s+", "", line)
                 confidence["first_name"] = 0.6
                 used.add(index)
+                break
+            # 姓と名のふりがなが、離れて印字されたぶん別々の行として読まれた場合
+            # （`とみた` / `おさむ`）。氏名の行が直後に無くても対応する
+            # ——実データでは、間にロゴの読み崩れと部署が挟まっていた。
+            # 直さないと `とみた` を1行のふりがなと見て せい『とみ』めい『た』に割れる。
+            following = index + 1
+            if (
+                following < len(cleaned)
+                and following not in used
+                and _is_hiragana_only(cleaned[following])
+                and 2 <= len(cleaned[following]) <= 16
+            ):
+                fields["last_name_kana"] = re.sub(r"\s+", "", line)
+                fields["first_name_kana"] = re.sub(r"\s+", "", cleaned[following])
+                confidence["last_name_kana"] = 0.7
+                used.add(index)
+                used.add(following)
                 break
             last, first = split_person_name(spaced_lines[index])
             fields["last_name_kana"], fields["first_name_kana"] = last, first
