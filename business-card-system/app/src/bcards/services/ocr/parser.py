@@ -214,6 +214,27 @@ MOBILE_LABELS = ("mobile", "携帯", "cell", "ｍｏｂｉｌｅ", "hp", "h.p")
 # 押し出されて電話が空になっていた。
 MOBILE_PREFIXES = ("090", "080", "070")
 
+# 英字の行を氏名と間違えやすい語。実測では和英併記の名刺で `Head Office` を
+# 氏名として登録し（姓 `Head` / 名 `Office`）、本来の氏名が空になっていた
+# （合成サンプル16枚のうち4枚）。住所や建物の語であって人名ではない。
+NOT_A_NAME_WORDS = (
+    "office",
+    "building",
+    "bldg",
+    "floor",
+    "tower",
+    "street",
+    "road",
+    "avenue",
+    "suite",
+    "room",
+    "branch",
+    "factory",
+    "laboratory",
+    "center",
+    "centre",
+)
+
 # 住所のラベル。`Add 〒580-0021 大阪府…` のように住所と同じ行に印字される。
 # 英字の語は後ろに文字が続くものを除く（`Addison Road` を `ison Road` に
 # しないため）。
@@ -501,6 +522,9 @@ def _looks_like_person_name(line: str) -> bool:
     latin = normalize(line).strip()
     if not re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,2}", latin):
         return False
+    lowered = latin.lower()
+    if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
+        return False
     # 全部大文字はロゴや社名の綴り（`AONE GAMES`）。人名は通常そう書かない。
     # 実データでロゴが氏名として登録されていた。
     return latin != latin.upper()
@@ -510,10 +534,14 @@ def split_person_name(full: str) -> tuple[str, str]:
     """姓と名に分割する。空白があればそこで、なければ日本語姓の一般的な長さで分ける。"""
     text = normalize(full)
     parts = [p for p in re.split(r"[\s　]+", text) if p]
-    if len(parts) >= 3 and _is_katakana_only(text):
-        # カタカナの氏名は、OCRが語の途中にも空白を入れる。実データでは
-        # `パトリシオ　バスケス` が `パト リシオ バスケス` と読まれ、
-        # 先頭の空白で切って `パト` / `リシオ バスケス` になっていた。
+    if len(parts) >= 3 and _is_kana_only(text):
+        # かなの氏名・ふりがなは、OCRが語の途中にも空白を入れる。実測では
+        #
+        #   `やまだ たろう`      → `や まだ た ろう`   → `や` / `まだ た ろう`
+        #   `すずき いちろう`    → `すず き いち ろう` → `すず` / `き いち ろう`
+        #   `パトリシオ バスケス` → `パト リシオ バスケス` → `パト` / `リシオ バスケス`
+        #
+        # のように先頭の空白で切っていた（合成サンプル16枚のうち9枚でふりがなが不一致）。
         # どこが語の切れ目かは字面では決まらないので、長さの釣り合いが
         # いちばん良い位置で分ける（姓と名は極端に長さが違わない）。
         best = min(
