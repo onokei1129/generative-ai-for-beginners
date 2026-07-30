@@ -46,6 +46,9 @@ echo.
 echo 終了するときは、この黒い画面で Ctrl-C を押すか、ウィンドウを閉じてください。
 echo 途中でやめても大丈夫です。入力した分は保存され、「7 進み具合を見る」で残りが分かります。
 echo.
+echo 領収書などが混ざっていたら「名刺ではない」を押してください。
+echo   一覧から外れます（ファイルは消さず not-cards フォルダへ移します）。
+echo.
 
 .venv\Scripts\python poc\label.py .\poc\real-cards
 

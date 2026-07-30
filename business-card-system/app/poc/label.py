@@ -29,6 +29,7 @@ OCRの下書きをそのまま正解にすると、測定値が実際より良�
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import sys
 import threading
@@ -83,8 +84,14 @@ HINTS = {
 def build_app(directory: Path, prefill: bool) -> FastAPI:
     app = FastAPI(title="正解ラベル入力", docs_url=None, redoc_url=None)
 
-    # OCRは1枚あたり数秒かかるため、結果を覚えておき、次の分は裏で先に処理する
+    # OCRは1枚あたり数秒かかるため、結果を覚えておき、次の分は裏で先に処理する。
+    #
+    # _running は「いま処理中のファイル」。これが無いと、先読みが終わる前に
+    # 利用者がその名刺へ進んだとき、同じ画像を2回OCRしてしまう
+    # （実測：3枚に対してOCRが4回走っていた）。CPUを二重に使うだけでなく、
+    # 表示が出るまでの待ちも長くなる。
     _ocr_cache: dict[str, tuple[dict[str, str], str | None]] = {}
+    _running: dict[str, threading.Event] = {}
     _cache_lock = threading.Lock()
 
     def image_files() -> list[Path]:
@@ -180,39 +187,56 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
 
     def _ocr_draft(path: Path) -> tuple[dict[str, str], str | None]:
         """OCRで下書きを作る。結果はファイルごとにキャッシュする。"""
-        with _cache_lock:
-            hit = _ocr_cache.get(path.name)
-        if hit is not None:
-            return hit
+        while True:
+            with _cache_lock:
+                hit = _ocr_cache.get(path.name)
+                if hit is not None:
+                    return hit
+                running = _running.get(path.name)
+                if running is None:
+                    # 自分が処理する。他は待つ
+                    _running[path.name] = threading.Event()
+                    break
+            # 他が処理中。終わるまで待ってからキャッシュを見に戻る。
+            # 待ち手が落ちても止まらないよう上限を置く（超えたら自分で処理し直す）。
+            running.wait(timeout=180)
 
         # どの工程で落ちたかを残す。工程名が無いと、画像の読み込みなのか
         # OCRなのか切り分けられず、原因の報告だけで何往復もすることになる。
         step = "準備"
         try:
-            from bcards.services.images import process_file
-            from bcards.services.ocr import recognize_card
+            try:
+                from bcards.services.images import process_file
+                from bcards.services.ocr import recognize_card
 
-            step = "画像の読み込みと補正"
-            cards = process_file(path.read_bytes(), path.name)
-            if not cards:
-                raise RuntimeError("画像を1枚も取り出せませんでした")
+                step = "画像の読み込みと補正"
+                cards = process_file(path.read_bytes(), path.name)
+                if not cards:
+                    raise RuntimeError("画像を1枚も取り出せませんでした")
 
-            step = "OCR"
-            _output, parsed = recognize_card(cards[0].ocr_image)
-            result = ({key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}, None)
-        except Exception as exc:
-            # 画面には要約しか出せないので、原因を追えるようにコンソールへ全文を出す
-            print(f"\n[{path.name}] {step}で失敗しました", file=sys.stderr)
-            traceback.print_exc()
-            detail = str(exc) or exc.__class__.__name__
-            # 失敗はキャッシュしない。一時的な失敗（メモリ不足、他プロセスとの
-            # 競合など）を覚え込むと、原因を直しても画面を開き直すまで
-            # 失敗したままになる。次に開いたときにやり直せるようにする。
-            return {key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）"
+                step = "OCR"
+                _output, parsed = recognize_card(cards[0].ocr_image)
+                result = ({key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}, None)
+            except Exception as exc:
+                # 画面には要約しか出せないので、原因を追えるようにコンソールへ全文を出す
+                print(f"\n[{path.name}] {step}で失敗しました", file=sys.stderr)
+                traceback.print_exc()
+                detail = str(exc) or exc.__class__.__name__
+                # 失敗はキャッシュしない。一時的な失敗（メモリ不足、他プロセスとの
+                # 競合など）を覚え込むと、原因を直しても画面を開き直すまで
+                # 失敗したままになる。次に開いたときにやり直せるようにする。
+                return {key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）"
 
-        with _cache_lock:
-            _ocr_cache[path.name] = result
-        return result
+            with _cache_lock:
+                _ocr_cache[path.name] = result
+            return result
+        finally:
+            # 成功・失敗どちらでも待ち手を解放する。ここを漏らすと、
+            # 待っている側が上限（180秒）まで固まる。
+            with _cache_lock:
+                finished = _running.pop(path.name, None)
+            if finished is not None:
+                finished.set()
 
     def _warm_next(name: str) -> None:
         """次の名刺のOCRを裏で先に済ませておく（1枚あたり数秒かかるため）。"""
@@ -254,6 +278,37 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         if path.exists():
             path.unlink()
         return JSONResponse({"ok": True})
+
+    @app.post("/api/not-a-card/{name}")
+    def api_not_a_card(name: str) -> JSONResponse:
+        """名刺でないものを一覧から外す。
+
+        仕分けは名刺と判定したファイルをこのフォルダへ**コピー**するため、
+        取りこぼした領収書などは、仕分けをやり直しても残り続ける。
+        入力する人が自分で外せないと、毎回その1枚から始まることになる。
+
+        消さずに not-cards/ へ移す。仕分けの精度を測り直すときの材料になるため。
+        """
+        source = directory / name
+        if not source.is_file() or source.parent.resolve() != directory.resolve():
+            return JSONResponse({"error": "見つかりません"}, status_code=404)
+
+        destination = directory / "not-cards"
+        destination.mkdir(exist_ok=True)
+        moved = []
+        # 画像だけでなく、ラベルやOCRテキストなど同じ名前の付随ファイルもまとめて移す
+        for sibling in sorted(directory.glob(f"{glob.escape(source.stem)}.*")):
+            if not sibling.is_file():
+                continue
+            target = destination / sibling.name
+            if target.exists():
+                target.unlink()
+            sibling.rename(target)
+            moved.append(sibling.name)
+
+        with _cache_lock:
+            _ocr_cache.pop(name, None)
+        return JSONResponse({"ok": True, "moved": moved, "to": str(destination)})
 
     return app
 
@@ -338,6 +393,7 @@ PAGE = """
         <button type="button" id="prev">← 前へ</button>
         <button type="button" class="primary" id="next">保存して次へ →</button>
         <button type="button" id="skip">スキップ</button>
+        <button type="button" id="notcard">名刺ではない</button>
         <span class="saved" id="saved"></span>
         <span class="small muted" id="unverified"></span>
       </div>
@@ -497,6 +553,23 @@ document.getElementById('next').onclick = saveAndNext;
 document.getElementById('prev').onclick = () => show(Math.max(0, state.index - 1));
 document.getElementById('skip').onclick = () => {
   if (state.index < state.files.length - 1) show(state.index + 1);
+};
+// 仕分けが取りこぼした領収書などを一覧から外す。消さずに not-cards/ へ移す。
+document.getElementById('notcard').onclick = async () => {
+  const file = state.files[state.index];
+  if (!confirm(file.name + ' を「名刺ではない」として一覧から外します。\\n\\n'
+             + 'ファイルは消さず、not-cards フォルダへ移します。')) return;
+  const res = await fetch('/api/not-a-card/' + encodeURIComponent(file.name), {method: 'POST'});
+  if (!res.ok) { alert('外せませんでした。'); return; }
+  const at = state.index;
+  const meta = await (await fetch('/api/files')).json();
+  state.files = meta.files;
+  if (!state.files.length) {
+    document.getElementById('progress').textContent = '画像が残っていません';
+    return;
+  }
+  await show(Math.min(at, state.files.length - 1));
+  document.getElementById('saved').textContent = '一覧から外しました';
 };
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); saveAndNext(); }
