@@ -153,7 +153,7 @@ class TesseractOcrProvider:
         return [" ".join(words).strip() for _, words in sorted(buckets.items()) if words]
 
 
-def group_boxes_into_lines(boxes: list[tuple[float, float, str]]) -> list[str]:
+def group_boxes_into_lines(boxes: list[tuple[float, float, float, str]]) -> list[str]:
     """文字領域を行にまとめる（PaddleOCR・EasyOCR 共通）。
 
     どちらも「領域ごとの文字列」を返すため、そのまま並べると1行の中の語が
@@ -161,24 +161,28 @@ def group_boxes_into_lines(boxes: list[tuple[float, float, str]]) -> list[str]:
     ラベルと番号の関係など）、y座標の近いものを同じ行に寄せてから
     左から右へ並べる。
 
-    boxes: (中心y, 左端x, 文字列)
+    寄せる幅は**その領域の文字の高さ**で決める。名刺全体の間隔の中央値で
+    決めていたときは、行間の狭い名刺で別の行まで巻き込んでいた。実測では
+    郵便番号の行と役職の行が1行になり、郵便番号を抜いた残り（`代表社員`）が
+    住所として登録されていた（16枚中3枚）。
+
+    boxes: (中心y, 左端x, 高さ, 文字列)
     """
     if not boxes:
         return []
     ordered = sorted(boxes, key=lambda box: (box[0], box[1]))
-    heights = [abs(ordered[i][0] - ordered[i - 1][0]) for i in range(1, len(ordered))]
-    # 行の高さは名刺の大きさで変わるため、間隔の中央値から閾値を決める
-    gaps = sorted(gap for gap in heights if gap > 0)
-    tolerance = (gaps[len(gaps) // 2] if gaps else 0) or 1
-    lines: list[list[tuple[float, float, str]]] = [[ordered[0]]]
+    lines: list[list[tuple[float, float, float, str]]] = [[ordered[0]]]
     for box in ordered[1:]:
-        if abs(box[0] - lines[-1][-1][0]) <= tolerance * 0.6:
+        previous = lines[-1][-1]
+        # 高さの小さいほうを基準にする（大小が混ざる行で寄せすぎないため）
+        tolerance = min(box[2], previous[2]) * 0.5 or 1.0
+        if abs(box[0] - previous[0]) <= tolerance:
             lines[-1].append(box)
         else:
             lines.append([box])
     result = []
     for line in lines:
-        text = " ".join(item[2] for item in sorted(line, key=lambda item: item[1])).strip()
+        text = " ".join(item[3] for item in sorted(line, key=lambda item: item[1])).strip()
         if text:
             result.append(text)
     return result
@@ -225,7 +229,7 @@ class PaddleOcrProvider:
         array = numpy.asarray(image.convert("RGB"))
         results = PaddleOcrProvider._engine.predict(array)
 
-        boxes: list[tuple[float, float, str]] = []
+        boxes: list[tuple[float, float, float, str]] = []
         scores: list[float] = []
         for page in results or []:
             texts = page.get("rec_texts") or []
@@ -238,9 +242,10 @@ class PaddleOcrProvider:
                     points = polygons[index]
                     ys = [float(point[1]) for point in points]
                     xs = [float(point[0]) for point in points]
-                    boxes.append((sum(ys) / len(ys), min(xs), str(text)))
+                    boxes.append((sum(ys) / len(ys), min(xs), max(ys) - min(ys), str(text)))
                 else:
-                    boxes.append((float(index), 0.0, str(text)))
+                    # 座標が無い場合は順番だけを頼りに1行ずつ扱う
+                    boxes.append((float(index), 0.0, 0.0, str(text)))
                 if index < len(confidences):
                     scores.append(float(confidences[index]))
 
@@ -290,14 +295,14 @@ class EasyOcrProvider:
         array = numpy.asarray(image.convert("RGB"))
         results = EasyOcrProvider._engine.readtext(array)
 
-        boxes: list[tuple[float, float, str]] = []
+        boxes: list[tuple[float, float, float, str]] = []
         scores: list[float] = []
         for points, text, score in results:
             if not str(text).strip():
                 continue
             ys = [float(point[1]) for point in points]
             xs = [float(point[0]) for point in points]
-            boxes.append((sum(ys) / len(ys), min(xs), str(text)))
+            boxes.append((sum(ys) / len(ys), min(xs), max(ys) - min(ys), str(text)))
             scores.append(float(score))
 
         lines = group_boxes_into_lines(boxes)

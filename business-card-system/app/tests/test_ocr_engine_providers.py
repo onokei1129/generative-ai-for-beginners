@@ -36,17 +36,17 @@ class TestGroupBoxesIntoLines:
     def test_boxes_on_the_same_row_become_one_line(self):
         """同じ行の領域を1行にまとめ、左から右へ並べること。"""
         boxes = [
-            (100.0, 300.0, "03-1234-5678"),
-            (100.0, 10.0, "TEL"),
+            (100.0, 300.0, 20.0, "03-1234-5678"),
+            (100.0, 10.0, 20.0, "TEL"),
         ]
 
         assert group_boxes_into_lines(boxes) == ["TEL 03-1234-5678"]
 
     def test_rows_are_ordered_top_to_bottom(self):
         boxes = [
-            (300.0, 10.0, "山田 太郎"),
-            (100.0, 10.0, "株式会社サンプル商事"),
-            (200.0, 10.0, "営業部 部長"),
+            (300.0, 10.0, 30.0, "山田 太郎"),
+            (100.0, 10.0, 20.0, "株式会社サンプル商事"),
+            (200.0, 10.0, 20.0, "営業部 部長"),
         ]
 
         assert group_boxes_into_lines(boxes) == [
@@ -58,18 +58,32 @@ class TestGroupBoxesIntoLines:
     def test_a_small_vertical_shift_stays_on_one_line(self):
         """同じ行でも領域ごとに数ピクセルずれる。分けないこと。"""
         boxes = [
-            (100.0, 10.0, "TEL"),
-            (103.0, 60.0, "03-1234-5678"),
-            (400.0, 10.0, "山田 太郎"),
+            (100.0, 10.0, 20.0, "TEL"),
+            (103.0, 60.0, 20.0, "03-1234-5678"),
+            (400.0, 10.0, 30.0, "山田 太郎"),
         ]
 
         assert group_boxes_into_lines(boxes) == ["TEL 03-1234-5678", "山田 太郎"]
+
+    def test_a_narrow_line_gap_is_not_merged(self):
+        """行間の狭い名刺で、別の行を巻き込まないこと。
+
+        実測では郵便番号の行と役職の行が1行になり、郵便番号を抜いた残り
+        （`代表社員`）が住所として登録されていた（16枚中3枚）。
+        寄せる幅は名刺全体の間隔ではなく、その領域の文字の高さで決める。
+        """
+        boxes = [
+            (100.0, 10.0, 18.0, "〒460-0008"),
+            (118.0, 10.0, 18.0, "代表社員"),
+        ]
+
+        assert group_boxes_into_lines(boxes) == ["〒460-0008", "代表社員"]
 
     def test_empty_input(self):
         assert group_boxes_into_lines([]) == []
 
     def test_blank_texts_are_dropped(self):
-        assert group_boxes_into_lines([(10.0, 10.0, "   ")]) == []
+        assert group_boxes_into_lines([(10.0, 10.0, 20.0, "   ")]) == []
 
 
 class TestProviderRegistry:
