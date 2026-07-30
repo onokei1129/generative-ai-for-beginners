@@ -50,9 +50,13 @@ class Settings:
     device_cookie: str = "bcards_device"
     secure_cookie: bool = _env_bool("BCARDS_SECURE_COOKIE", False)
 
-    # OCR プロバイダ: mock / tesseract / azure
+    # OCR プロバイダ: mock / tesseract / paddle / easyocr / azure
     ocr_provider: str = _env("BCARDS_OCR_PROVIDER", "tesseract")
     ocr_languages: str = _env("BCARDS_OCR_LANGUAGES", "jpn+jpn_vert+eng")
+    # PaddleOCR / EasyOCR を使う場合のみ（任意インストール。app/README.md 参照）。
+    # 言語の指定方法がプロバイダごとに違うため別の設定にしている。
+    ocr_paddle_language: str = _env("BCARDS_OCR_PADDLE_LANGUAGE", "japan")
+    ocr_easyocr_languages: str = _env("BCARDS_OCR_EASYOCR_LANGUAGES", "ja,en")
     # tesseract が使うOpenMPスレッド数。ワーカーを複数動かす場合、既定のまま
     # （＝CPU数）にすると各プロセスがCPUを奪い合って極端に遅くなる（app/README.md 参照）。
     ocr_thread_limit: int = int(_env("BCARDS_OCR_THREAD_LIMIT", "1"))

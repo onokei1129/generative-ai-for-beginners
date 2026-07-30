@@ -135,6 +135,40 @@ class RulePipeline:
         return PipelineResult(fields=parsed["fields"], seconds=elapsed, ocr_text=output.text)
 
 
+class EnginePipeline:
+    """tesseract 以外のローカルOCR（PaddleOCR / EasyOCR）＋ルールベース抽出。
+
+    比較の条件を揃えるため、前処理と項目分離は構成Dと同じにして、
+    **読み取りエンジンだけ**を差し替える（論点C）。
+
+    プロバイダは `get_provider()` を使わずに直接作る。あちらは利用できない
+    ときに mock で代替する作りで、それでは擬似OCRの数字を「PaddleOCRの精度」
+    として報告してしまう。ここでは作れなければ例外にして未計測と記録する。
+    """
+
+    def __init__(self, label: str, provider_name: str) -> None:
+        self.label = label
+        self.provider_name = provider_name
+        self.provider: Any = None
+
+    def _ensure_provider(self) -> Any:
+        if self.provider is None:
+            from bcards.services.ocr.providers import EasyOcrProvider, PaddleOcrProvider
+
+            factories = {"paddle": PaddleOcrProvider, "easyocr": EasyOcrProvider}
+            self.provider = factories[self.provider_name]()
+        return self.provider
+
+    def run(self, sample: Sample) -> PipelineResult:
+        provider = self._ensure_provider()
+        started = time.perf_counter()
+        prepared = preprocess_current(sample.image)
+        output = provider.recognize(prepared)
+        parsed = parse_fields(output.lines or output.text.splitlines())
+        elapsed = time.perf_counter() - started
+        return PipelineResult(fields=parsed["fields"], seconds=elapsed, ocr_text=output.text)
+
+
 class LlmPipeline:
     """tesseract + LLMによる項目分離。"""
 
@@ -368,6 +402,10 @@ def main() -> None:
     ]
     llm_pipeline = LlmPipeline("E 改善後+LLM抽出", model=args.llm_model, effort=args.llm_effort)
     pipelines.append(llm_pipeline)
+    # F・G は読み取りエンジンの比較（構成Dと前処理・項目分離を揃えている）。
+    # 依存が大きいため任意インストール。入っていなければ「未計測」と出る。
+    pipelines.append(EnginePipeline("F 改善後+PaddleOCR", "paddle"))
+    pipelines.append(EnginePipeline("G 改善後+EasyOCR", "easyocr"))
 
     if args.only:
         wanted = {token.strip().upper() for token in args.only.split(",") if token.strip()}

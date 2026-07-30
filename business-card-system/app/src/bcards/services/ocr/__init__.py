@@ -8,7 +8,13 @@ from ...config import settings
 from .base import OcrOutput, OcrProvider
 from .llm_extractor import get_llm_extractor
 from .parser import parse_fields
-from .providers import AzureDocumentIntelligenceProvider, MockOcrProvider, TesseractOcrProvider
+from .providers import (
+    AzureDocumentIntelligenceProvider,
+    EasyOcrProvider,
+    MockOcrProvider,
+    PaddleOcrProvider,
+    TesseractOcrProvider,
+)
 
 __all__ = [
     "OcrOutput",
@@ -22,6 +28,8 @@ __all__ = [
 _PROVIDERS = {
     "mock": MockOcrProvider,
     "tesseract": TesseractOcrProvider,
+    "paddle": PaddleOcrProvider,
+    "easyocr": EasyOcrProvider,
     "azure": AzureDocumentIntelligenceProvider,
 }
 

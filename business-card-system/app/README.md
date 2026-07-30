@@ -124,11 +124,31 @@ apt-get install -y tesseract-ocr tesseract-ocr-jpn tesseract-ocr-jpn-vert
 
 tesseract が無い環境では `BCARDS_OCR_PROVIDER=mock` を指定すると、擬似OCRで取込フローだけを確認できる。
 
+#### 別のOCRエンジンで精度を比べる（論点C）
+
+外部へ画像を送らないローカルOCRを2つ、任意インストールで選べる。
+**依存が大きいので既定では入れていない。**
+
+| エンジン | インストール | 設定 | 目安 |
+| --- | --- | --- | --- |
+| PaddleOCR | `pip install -r requirements-paddle.txt` | `BCARDS_OCR_PROVIDER=paddle` | 約1.4GB。傾き・レイアウト検出を内蔵 |
+| EasyOCR | `pip install -r requirements-easyocr.txt` | `BCARDS_OCR_PROVIDER=easyocr` | PyTorch を伴う |
+
+どちらも**初回実行時にモデルの重みを取得する**ため、そのときだけ外部への通信が
+必要（PaddleOCR は HuggingFace / ModelScope / BOS、EasyOCR は GitHub）。
+取得後はオフラインで動き、**名刺の画像を外部へ送ることはない**。
+
+精度の比較は同じ手順で測れる（前処理と項目分離は構成Dと揃えてある）。
+
+```bash
+python -m poc.runner --only D,F,G    # tesseract / PaddleOCR / EasyOCR
+```
+
 項目分離（OCRテキストを氏名・会社名などに分ける処理）は2方式ある。
 
 | 設定 | 方式 | 備考 |
 | --- | --- | --- |
-| `BCARDS_FIELD_EXTRACTOR=rule` | ルールベース（正規表現・辞書） | 追加費用なし。合成サンプルでの正答率 44.8% |
+| `BCARDS_FIELD_EXTRACTOR=rule` | ルールベース（正規表現・辞書） | 追加費用なし。合成サンプルでの正答率 63.8% |
 | `BCARDS_FIELD_EXTRACTOR=llm` | Claude API（画像＋OCRテキスト → 構造化出力） | `ANTHROPIC_API_KEY` が必要 |
 | `BCARDS_FIELD_EXTRACTOR=auto`（既定） | 認証情報があればLLM、無ければルール | LLM側が失敗した場合もルールへ自動フォールバック |
 
@@ -161,7 +181,7 @@ tesseract は既定でCPU数ぶんのOpenMPスレッドを使う。ワーカー�
 | スレッド数無制限 | 10分経っても完了せず（打ち切り） |
 | `OMP_THREAD_LIMIT=1`（既定） | 2.1秒 |
 
-OCRの精度には影響しない（PoCの正答率 44.8% は設定前後で同一）。
+OCRの精度には影響しない（PoCの正答率は設定前後で同一）。
 
 また、OCR実行中はDBトランザクションを閉じている。閉じないとPostgreSQL側に
 `idle in transaction` の接続が滞留するため。処理の途中でワーカーが落ちた場合、
@@ -329,8 +349,10 @@ SQLite・PostgreSQL のいずれでも 76 件すべて通ることを確認し�
 | `BCARDS_STORAGE_USAGE_CACHE_SECONDS` | `300` | 使用量の集計をキャッシュする秒数。`0` で毎回集計（後述） |
 | `BCARDS_SECRET_KEY` | `dev-secret-key-change-me` | セッション署名鍵（**本番では必ず変更**） |
 | `BCARDS_SECURE_COOKIE` | `0` | HTTPS 環境では `1` |
-| `BCARDS_OCR_PROVIDER` | `tesseract` | `mock` / `tesseract` / `azure` |
+| `BCARDS_OCR_PROVIDER` | `tesseract` | `mock` / `tesseract` / `paddle` / `easyocr` / `azure` |
 | `BCARDS_OCR_LANGUAGES` | `jpn+jpn_vert+eng` | tesseract の言語 |
+| `BCARDS_OCR_PADDLE_LANGUAGE` | `japan` | PaddleOCR の言語（任意インストール時） |
+| `BCARDS_OCR_EASYOCR_LANGUAGES` | `ja,en` | EasyOCR の言語（任意インストール時） |
 | `BCARDS_OCR_THREAD_LIMIT` | `1` | tesseract の OpenMP スレッド数。**変更非推奨**（上記参照） |
 | `BCARDS_OCR_TIMEOUT_SECONDS` | `120` | 1回のOCRの上限秒数。超えたらそのファイルはエラー |
 | `BCARDS_FIELD_EXTRACTOR` | `auto` | `rule` / `llm` / `auto` |
@@ -452,7 +474,7 @@ app/
 │   ├── routers/           auth / home / cards / imports / exports / admin
 │   ├── services/
 │   │   ├── images.py      形式変換・名刺検出・台形補正・回転・明るさ・品質警告・分割
-│   │   ├── ocr/           プロバイダ（mock/tesseract/azure）と項目分離パーサ
+│   │   ├── ocr/           プロバイダ（mock/tesseract/paddle/easyocr/azure）と項目分離パーサ
 │   │   ├── importer.py    取込パイプライン（状態遷移・表裏判定・再処理）
 │   │   ├── queue.py       取込キュー（排他取得・滞留回収・ジョブ状態の導出）
 │   │   ├── worker.py      ワーカー（アプリ内スレッド／別プロセス）
