@@ -102,5 +102,14 @@ if errorlevel 1 (
 echo.
 echo ショートカットを作り直します。
 echo.
-call "%BCWIN%\create-desktop-shortcuts.bat"
+rem /quiet を付ける。付けないと更新のたびにエクスプローラーの窓が増える。
+call "%BCWIN%\create-desktop-shortcuts.bat" /quiet
+
+echo.
+echo ============================================
+echo  更新が終わりました。
+echo  デスクトップの「名刺システム」フォルダから実行してください。
+echo ============================================
+echo.
+pause
 exit /b 0
