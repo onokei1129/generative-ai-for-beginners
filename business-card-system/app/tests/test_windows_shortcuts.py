@@ -145,6 +145,34 @@ class TestTheResultIsVerified:
         assert 'if /i "%PLAIN%"=="%DESKTOP%" goto :verify' in text
 
 
+class TestWhichCopyAndWhichVersionIsShown:
+    """どの複製の、どの版を動かしているのかを最初に出すこと。
+
+    実テストで、画面の文言が以前のままであることに双方が長く気づけなかった。
+    複製が2つあると、更新したほうと押しているほうが食い違う。
+    """
+
+    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE])
+    def test_the_commit_is_shown(self, path: Path):
+        text = source(path)
+
+        assert "rev-parse --short HEAD" in text
+        assert "版:" in text
+
+    def test_the_folder_is_shown(self):
+        """どの複製から実行したのかを出す。"""
+        assert 'call :say "場所: %HERE%"' in source(SHORTCUTS)
+
+    def test_it_comes_before_any_work(self):
+        text = source(SHORTCUTS)
+
+        assert text.index('call :say "版:') < text.index("call :make_all")
+
+    def test_a_missing_git_is_not_an_error(self):
+        """git が無い環境でも作成そのものは続けること。"""
+        assert 'if not defined REV set "REV=不明"' in source(SHORTCUTS)
+
+
 class TestTheCountIsTakenAfterAPause:
     """作った直後ではなく、少し待ってから数えること。
 

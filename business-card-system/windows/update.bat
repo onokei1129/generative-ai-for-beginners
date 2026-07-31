@@ -99,6 +99,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem どの版になったのかを出す。実テストで、押しているショートカットが
+rem 別の複製を指していて、更新しても文言が変わらないことがあった。
+set "REV="
+for /f "delims=" %%v in ('git rev-parse --short HEAD 2^>nul') do set "REV=%%v"
+echo.
+echo 版: %REV%
 echo.
 echo ショートカットを作り直します。
 echo.
