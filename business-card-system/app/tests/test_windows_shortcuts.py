@@ -32,6 +32,7 @@ SHORTCUTS = WINDOWS / "create-desktop-shortcuts.bat"
 UPDATE = WINDOWS / "update.bat"
 CARD_FOLDER = WINDOWS / "open-card-folder.bat"
 DOCTOR = WINDOWS / "doctor.bat"
+MENU = WINDOWS / "menu.bat"
 
 
 def source(path: Path) -> str:
@@ -61,7 +62,7 @@ class TestTheShortcutsLandOnTheDesktopItself:
         names = [name for name, _ in shortcut_targets()]
 
         assert names
-        assert all(name.startswith("名刺 ") for name in names)
+        assert all(name.startswith("名刺") for name in names)
 
     def test_they_are_written_to_the_target_directory(self):
         assert r"CreateShortcut('%TARGET%\%~1.lnk')" in source(SHORTCUTS)
@@ -120,8 +121,8 @@ class TestTheResultIsVerified:
     def test_the_files_are_counted(self):
         text = source(SHORTCUTS)
 
-        assert 'for %%f in ("%~1\\名刺 *.lnk") do set /a MADE+=1' in text
-        assert 'for %%f in ("%~1\\名刺 *.bat") do set /a MADE+=1' in text
+        assert 'for %%f in ("%~1\\名刺システム.lnk") do set /a MADE+=1' in text
+        assert 'for %%f in ("%~1\\名刺システム.bat") do set /a MADE+=1' in text
 
     def test_zero_is_an_error(self):
         text = source(SHORTCUTS)
@@ -129,8 +130,8 @@ class TestTheResultIsVerified:
         assert 'if "%MADE%"=="0" goto :none_made' in text
         assert "ショートカットが1つも残りませんでした" in text
 
-    def test_the_count_is_reported(self):
-        assert "%MADE% 個" in source(SHORTCUTS)
+    def test_what_was_placed_is_reported(self):
+        assert 'call :say "デスクトップに「名刺システム」を置きました。"' in source(SHORTCUTS)
 
     def test_the_check_runs_before_the_quiet_exit(self):
         """更新から静かに呼ばれたときも、0個なら気づけること。"""
@@ -459,60 +460,131 @@ class TestFinishedWorkClosesItsWindow:
         assert "ウィンドウを閉じてください" in text
 
 
-class TestEveryShortcutPointsAtARealFile:
-    """作ったショートカットの飛び先が実在すること。
+class TestOnlyOneIconIsPlaced:
+    """デスクトップに置くのは1つだけ。
 
-    飛び先を打ち間違えても作成そのものは成功するため、押すまで気づけない。
+    やることの数だけ並べていた（7〜8個）。実テストで「デスクトップが雑然と
+    してしまった」という報告になった。フォルダに入れると今度は画面から
+    見えなくなる（それも実テストで報告があった）ので、1つだけ直接置く。
     """
 
+    def test_exactly_one_shortcut_is_made(self):
+        assert shortcut_targets() == [("名刺システム", "menu.bat")]
+
+    def test_its_target_exists(self):
+        _, bat = shortcut_targets()[0]
+
+        assert (WINDOWS / bat).is_file()
+
+    def test_the_previous_row_of_icons_is_removed(self):
+        """以前の版が並べた `名刺 …` を消してから作ること。"""
+        text = source(SHORTCUTS)
+
+        assert 'del /q "%TARGET%\\名刺 *.lnk"' in text
+        assert 'del /q "%TARGET%\\名刺 *.bat"' in text
+
+    def test_its_own_earlier_copy_is_removed(self):
+        text = source(SHORTCUTS)
+
+        assert 'del /q "%TARGET%\\名刺システム.lnk"' in text
+        assert 'del /q "%TARGET%\\名刺システム.bat"' in text
+
+
+class TestTheMenuOffersEveryStep:
+    """1つにまとめた代わりに、やることは番号で選べること。"""
+
     def targets(self) -> list[tuple[str, str]]:
-        return shortcut_targets()
+        """`call "%HERE%\bat"` の並びを読む。"""
+        return re.findall(r'call "%HERE%\\([a-z0-9-]+\.bat)"', source(MENU))
 
-    def test_the_list_is_short(self):
-        """押す数を増やさないこと。まとめられるものはまとめる方針。"""
-        assert 5 <= len(self.targets()) <= 8
-
-    def test_each_target_exists(self):
-        missing = [(label, bat) for label, bat in self.targets() if not (WINDOWS / bat).is_file()]
+    def test_each_step_points_at_a_real_file(self):
+        missing = [bat for bat in self.targets() if not (WINDOWS / bat).is_file()]
 
         assert missing == []
 
     @pytest.mark.parametrize(
-        "label",
+        "bat",
         [
-            "名刺 1 準備する（更新とセットアップ）",
-            "名刺 2 名刺を仕分ける",
-            "名刺 3 ラベル入力",
-            "名刺 4 精度を測る",
-            "名刺 この1枚を調べる",
-            "名刺 動かないとき（診断）",
+            "update.bat",
+            "classify-scans.bat",
+            "label-real-cards.bat",
+            "measure-accuracy.bat",
+            "run-app.bat",
+            "explain-one.bat",
+            "doctor.bat",
         ],
     )
-    def test_the_documented_shortcuts_are_present(self, label: str):
-        assert label in [name for name, _ in self.targets()]
+    def test_the_documented_steps_are_reachable(self, bat: str):
+        assert bat in self.targets()
 
     def test_the_numbers_run_from_one_without_gaps(self):
-        """番号を飛ばさないこと。押す順が分からなくなる。"""
-        numbers = [name[3] for name, _ in self.targets() if name[3:4].isdigit()]
+        numbers = re.findall(r'if "%CHOICE%"=="(\d)" goto :do_', source(MENU))
 
         assert numbers == [str(n) for n in range(1, len(numbers) + 1)]
 
-    def test_the_merged_steps_are_gone(self):
-        """まとめた側の入口を二重に置かないこと。"""
-        names = [name for name, _ in self.targets()]
+    def test_zero_closes_it(self):
+        assert 'if "%CHOICE%"=="0" exit /b 0' in source(MENU)
 
-        assert not any("セットアップ" == name for name in names)
-        assert not any("仕分け結果" in name for name in names)
-        assert not any("進み具合" in name for name in names)
-        assert not any("練習" in name for name in names)
+    def test_an_unknown_answer_does_not_close_it(self):
+        """打ち間違えて閉じてしまわないこと。"""
+        text = source(MENU)
+
+        assert "1 から 7 か 0 を入れてください。" in text
+        assert text.rstrip().endswith("goto :menu")
+
+    def test_it_returns_to_the_menu_after_each_step(self):
+        """呼びっぱなしにしない（call で戻る）。"""
+        text = source(MENU)
+        steps = text.split("\n:do_1\n", 1)[1]
+
+        assert steps.count("goto :menu") == len(self.targets())
+
+    def test_the_merged_steps_have_no_separate_entry(self):
+        """まとめた側の入口を二重に置かないこと。"""
+        targets = self.targets()
+
+        assert "setup.bat" not in targets
+        assert "open-card-folder.bat" not in targets
+        assert "check-progress.bat" not in targets
+        assert "label-practice.bat" not in targets
+
+
+class TestTheMenuSurvivesAnUpdate:
+    """「1 準備する」は git pull を行い、この入口自身も書き換えうる。
+
+    cmd.exe はバッチを実行しながら少しずつ読むため、実行中に書き換わると
+    途中から壊れる。一時フォルダへ写してそちらから動かす（update.bat と同じ）。
+    """
+
+    def test_it_copies_itself_first(self):
+        text = source(MENU)
+
+        assert 'copy /y "%~f0" "%TEMP%\\bcards-menu.bat"' in text
+        assert '"%TEMP%\\bcards-menu.bat" /run "%~dp0."' in text
+
+    def test_the_original_folder_is_passed_along(self):
+        """写しから動くので、元のフォルダの場所を引数で渡すこと。"""
+        text = source(MENU)
+
+        assert 'set "SRC=%~2"' in text
+        assert 'set "HERE=%SRC%"' in text
+
+    def test_a_failed_copy_still_shows_the_menu(self):
+        assert "goto :prep_here" in source(MENU)
+
+    def test_which_copy_and_version_is_shown(self):
+        text = source(MENU)
+
+        assert "echo  場所: %HERE%" in text
+        assert "rev-parse --short HEAD" in text
 
 
 class TestTheBatchFilesStayReadableOnWindows:
-    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE, CARD_FOLDER])
+    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE, CARD_FOLDER, MENU])
     def test_the_encoding_is_cp932(self, path: Path):
         path.read_text(encoding="cp932")  # 読めなければ例外
 
-    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE, CARD_FOLDER])
+    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE, CARD_FOLDER, MENU])
     def test_the_line_endings_are_crlf(self, path: Path):
         raw = path.read_bytes()
 

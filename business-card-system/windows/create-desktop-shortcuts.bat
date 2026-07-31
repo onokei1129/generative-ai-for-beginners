@@ -134,16 +134,18 @@ call :count "%DESKTOP%"
 if "%MADE%"=="0" goto :none_made
 
 :done
-call :say "デスクトップに %MADE% 個できました。"
+call :say "デスクトップに「名刺システム」を置きました。"
 echo.
 echo ============================================
 echo.
-echo  画面に「名刺 1 準備する」から始まるアイコンが並びます。
+echo  デスクトップのアイコンは「名刺システム」1つだけです。
+echo  開くと、やることを番号で選べます。
+echo.
 echo  見当たらないときは、デスクトップで F5 を押してください。
 echo  それでも出ないときは、デスクトップを右クリック
 echo  →「表示」→「デスクトップ アイコンの表示」を確認してください。
 echo.
-echo  1 から順に押してください。3 と 4 は何度往復しても構いません。
+echo  はじめてのときは 1 から順に。3 と 4 は何度往復しても構いません。
 echo.
 echo  記録: "%LOG%"
 echo ============================================
@@ -194,8 +196,8 @@ rem 残っている数を数える。.lnk と .bat のどちらでも数える。
 rem --------------------------------------------------------------------
 :count
 set "MADE=0"
-for %%f in ("%~1\名刺 *.lnk") do set /a MADE+=1
-for %%f in ("%~1\名刺 *.bat") do set /a MADE+=1
+for %%f in ("%~1\名刺システム.lnk") do set /a MADE+=1
+for %%f in ("%~1\名刺システム.bat") do set /a MADE+=1
 exit /b 0
 
 rem --------------------------------------------------------------------
@@ -208,6 +210,8 @@ rem 自分が前に作った分だけ消す。`名刺 ` で始まるものに限るので、
 rem 利用者が置いた他のショートカットには触れない。
 if exist "%TARGET%\名刺 *.lnk" del /q "%TARGET%\名刺 *.lnk"
 if exist "%TARGET%\名刺 *.bat" del /q "%TARGET%\名刺 *.bat"
+if exist "%TARGET%\名刺システム.lnk" del /q "%TARGET%\名刺システム.lnk"
+if exist "%TARGET%\名刺システム.bat" del /q "%TARGET%\名刺システム.bat"
 
 rem 以前の版はデスクトップに「名刺システム」フォルダを作り、その中へ
 rem 入れていた。画面から見えず分かりにくかったため直接置く形に変えた。
@@ -216,19 +220,11 @@ rem （rd は空のときだけ消えるので、中身が残っていれば触らない）。
 if exist "%TARGET%\名刺システム\*.lnk" del /q "%TARGET%\名刺システム\*.lnk"
 if exist "%TARGET%\名刺システム" rd "%TARGET%\名刺システム" 2>nul
 
-rem 押す順に番号を振る。まとめられるものはまとめてある。
-rem   1 = 更新 ＋ セットアップ  （更新のあとは必ずセットアップが要る）
-rem   2 = 仕分け ＋ 結果を開く  （仕分けたら必ず結果を確認する）
-rem   4 = 進み具合 ＋ 精度測定  （測る前に進み具合を出す作りになっている）
-rem 練習用はショートカットから外した。windows フォルダの
-rem make-practice-samples.bat / label-practice.bat を直接実行できる。
-call :make "名刺 1 準備する（更新とセットアップ）" "update.bat"
-call :make "名刺 2 名刺を仕分ける"                 "classify-scans.bat"
-call :make "名刺 3 ラベル入力"                     "label-real-cards.bat"
-call :make "名刺 4 精度を測る"                     "measure-accuracy.bat"
-call :make "名刺 アプリを起動"                     "run-app.bat"
-call :make "名刺 この1枚を調べる"                  "explain-one.bat"
-call :make "名刺 動かないとき（診断）"             "doctor.bat"
+rem デスクトップに置くのは1つだけ。やることは menu.bat の中で番号で選ぶ。
+rem 以前はやることの数だけ並べていた（7～8個）。実テストで「デスクトップが
+rem 雑然としてしまった」という報告になった。フォルダに入れると今度は画面から
+rem 見えなくなる（それも実テストで報告があった）ので、1つだけ直接置く。
+call :make "名刺システム" "menu.bat"
 exit /b 0
 
 :make
