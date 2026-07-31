@@ -31,6 +31,7 @@ WINDOWS = Path(__file__).resolve().parents[2] / "windows"
 SHORTCUTS = WINDOWS / "create-desktop-shortcuts.bat"
 UPDATE = WINDOWS / "update.bat"
 CARD_FOLDER = WINDOWS / "open-card-folder.bat"
+DOCTOR = WINDOWS / "doctor.bat"
 
 
 def source(path: Path) -> str:
@@ -171,6 +172,44 @@ class TestWhichCopyAndWhichVersionIsShown:
     def test_a_missing_git_is_not_an_error(self):
         """git が無い環境でも作成そのものは続けること。"""
         assert 'if not defined REV set "REV=不明"' in source(SHORTCUTS)
+
+
+class TestTheDiagnosisNamesTheCopy:
+    """診断は、どの複製を動かしているかを突き合わせられること。
+
+    実テストで、更新したフォルダと、デスクトップのショートカットが指す
+    フォルダが食い違い、直したはずの不具合が直らない状態が続いた。
+    画面の文言だけでは双方とも気づけない。
+    """
+
+    def test_the_folder_version_and_branch_are_shown(self):
+        text = source(DOCTOR)
+
+        assert "echo 場所:" in text
+        assert "rev-parse --short HEAD" in text
+        assert "rev-parse --abbrev-ref HEAD" in text
+
+    def test_being_behind_origin_is_reported(self):
+        text = source(DOCTOR)
+
+        assert "rev-list --count HEAD..origin/%BRANCH%" in text
+        assert "未取得:" in text
+
+    def test_the_shortcut_targets_are_listed(self):
+        """飛び先が上の「場所」と違えば、複製の食い違いと分かる。"""
+        text = source(DOCTOR)
+
+        assert "CreateShortcut($_.FullName).TargetPath" in text
+
+    def test_the_old_folder_is_looked_at_too(self):
+        """以前の版が作った「名刺システム」の中も見る。"""
+        assert "%DESKTOP%\\名刺システム" in source(DOCTOR)
+
+    def test_it_runs_before_the_setup_check(self):
+        """セットアップ前でも、どの複製かは分かること。"""
+        text = source(DOCTOR)
+
+        assert text.index("echo 場所:") < text.index('if not exist ".venv\\Scripts\\python.exe"')
 
 
 class TestTheCountIsTakenAfterAPause:
