@@ -3,8 +3,9 @@
 実テストからの3つの報告に対応した形を守るためのテスト。
 
 1. 「押すたびにエクスプローラーの窓が増える」
-   ショートカットを作り直すたびにフォルダを開いていた。更新から呼ぶときは
-   `/quiet`、自分で作り直すときも初回だけ開く。
+   更新のたびにフォルダを開いていた。更新から呼ぶときは `/quiet` で開かない。
+   自分でこのバッチを押したときは必ず開く——「初回だけ」にしたところ、
+   2回目以降は何も起きないように見え、別の報告になった。
 
 2. 「最低でも同じウィンドウが2枚開いている」
    `real-cards` と その中の `unknown` を別々に開いていた。`/select` で
@@ -50,22 +51,29 @@ class TestTheUpdateDoesNotPileUpWindows:
         assert text.index("if defined QUIET exit /b 0") < text.index('explorer "%FOLDER%"')
 
 
-class TestTheFolderOpensOnlyOnTheFirstRun:
-    """作り直すたびに開くと窓が溜まる。初回だけ開く。"""
+class TestRunningItDirectlyShowsAResult:
+    """自分でこのバッチを押したときは必ずフォルダを開くこと。
 
-    def test_the_first_run_is_detected(self):
+    窓が溜まって困るのは「1 準備する」から呼ばれる側（`/quiet`）だけ。
+    一度「初回だけ開く」にしたところ、2回目以降は何も起きないように見え、
+    「クリックしても何も開始しない」という報告になった。
+    """
+
+    def test_the_folder_is_opened_every_time(self):
         text = source(SHORTCUTS)
 
-        assert 'if not exist "%FOLDER%" set "FIRST=1"' in text
+        assert 'explorer "%FOLDER%"' in text
+        assert "if defined FIRST" not in text
 
-    def test_the_check_comes_before_the_folder_is_made(self):
-        """先に mkdir すると、初回でも「既にある」と見えてしまう。"""
+    def test_the_open_comes_after_the_quiet_exit(self):
+        """`/quiet` で呼ばれたときだけ開かない、という順序を保つこと。"""
         text = source(SHORTCUTS)
 
-        assert text.index('set "FIRST=1"') < text.index('mkdir "%FOLDER%"')
+        assert text.index("if defined QUIET exit /b 0") < text.index('explorer "%FOLDER%"')
 
-    def test_the_folder_is_opened_only_when_first(self):
-        assert 'if defined FIRST explorer "%FOLDER%"' in source(SHORTCUTS)
+    def test_it_says_what_it_is_doing(self):
+        """開く前に一言出す。無言だと動いたのか分からない。"""
+        assert "作ったフォルダを開きます。" in source(SHORTCUTS)
 
 
 class TestTheSortResultOpensOneWindow:

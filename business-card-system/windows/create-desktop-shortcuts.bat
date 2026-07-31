@@ -24,11 +24,6 @@ if not exist "%DESKTOP%" (
 )
 
 set "FOLDER=%DESKTOP%\名刺システム"
-
-rem フォルダを開くのは**初回だけ**。作り直すたびに開くと窓が溜まる。
-rem 2回目以降は場所を文字で出すだけにする（デスクトップにあるので迷わない）。
-set "FIRST="
-if not exist "%FOLDER%" set "FIRST=1"
 if not exist "%FOLDER%" mkdir "%FOLDER%"
 
 rem 番号が変わったときに古いショートカットが残ると紛らわしいので、
@@ -67,7 +62,13 @@ echo.
 
 rem 呼び出し元が案内を出す場合は、ここでは開かない・止めない
 if defined QUIET exit /b 0
-if defined FIRST explorer "%FOLDER%"
+
+rem 自分でこのバッチを押したときは必ず開く。窓が溜まって困るのは
+rem 「1 準備する」から呼ばれる側（/quiet）で、そちらは開かない。
+rem 一度「初回だけ開く」にしたところ、押しても何も起きないように見えた。
+echo 作ったフォルダを開きます。
+explorer "%FOLDER%"
+echo.
 pause
 exit /b 0
 
