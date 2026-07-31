@@ -37,43 +37,51 @@ def source(path: Path) -> str:
     return path.read_text(encoding="cp932")
 
 
-class TestTheUpdateDoesNotPileUpWindows:
-    def test_the_update_calls_the_shortcut_batch_quietly(self):
-        assert re.search(r'call "%BCWIN%\\create-desktop-shortcuts\.bat" /quiet', source(UPDATE))
-
-    def test_the_shortcut_batch_understands_quiet(self):
-        assert 'if /i "%~1"=="/quiet" set "QUIET=1"' in source(SHORTCUTS)
-
-    def test_the_folder_is_not_opened_when_quiet(self):
-        """`explorer` より前で抜けること。順序が逆だと窓が開いてしまう。"""
-        text = source(SHORTCUTS)
-
-        assert text.index("if defined QUIET exit /b 0") < text.index('explorer "%FOLDER%"')
+def shortcut_targets() -> list[tuple[str, str]]:
+    """`call :make "名前" "バッチ"` の並びを読む。"""
+    return re.findall(r'call :make\s+"([^"]+)"\s+"([^"]+)"', source(SHORTCUTS))
 
 
-class TestRunningItDirectlyShowsAResult:
-    """自分でこのバッチを押したときは必ずフォルダを開くこと。
+class TestTheShortcutsLandOnTheDesktopItself:
+    """フォルダの中ではなく、デスクトップに直接置くこと。
 
-    窓が溜まって困るのは「1 準備する」から呼ばれる側（`/quiet`）だけ。
-    一度「初回だけ開く」にしたところ、2回目以降は何も起きないように見え、
-    「クリックしても何も開始しない」という報告になった。
+    以前は「名刺システム」フォルダを作ってその中へ入れていた。画面には
+    フォルダが1個見えるだけで、実テストで「デスクトップに作られない」
+    という報告になった。画面に並ぶアイコンとして置く。
     """
 
-    def test_the_folder_is_opened_every_time(self):
+    def test_no_subfolder_is_created(self):
         text = source(SHORTCUTS)
 
-        assert 'explorer "%FOLDER%"' in text
-        assert "if defined FIRST" not in text
+        assert 'mkdir "%FOLDER%"' not in text
 
-    def test_the_open_comes_after_the_quiet_exit(self):
-        """`/quiet` で呼ばれたときだけ開かない、という順序を保つこと。"""
+    def test_every_shortcut_is_prefixed(self):
+        """`名刺 ` で始めて、他のアイコンと混ざらないようにする。"""
+        names = [name for name, _ in shortcut_targets()]
+
+        assert names
+        assert all(name.startswith("名刺 ") for name in names)
+
+    def test_they_are_written_to_the_target_directory(self):
+        assert r"CreateShortcut('%TARGET%\%~1.lnk')" in source(SHORTCUTS)
+
+
+class TestOnlyOurOwnShortcutsAreDeleted:
+    """作り直すときに、利用者が置いた他のショートカットを消さないこと。"""
+
+    def test_the_delete_is_limited_to_our_prefix(self):
         text = source(SHORTCUTS)
 
-        assert text.index("if defined QUIET exit /b 0") < text.index('explorer "%FOLDER%"')
+        assert 'del /q "%TARGET%\名刺 *.lnk"' in text
+        assert r'del /q "%TARGET%\*.lnk"' not in text
 
-    def test_it_says_what_it_is_doing(self):
-        """開く前に一言出す。無言だと動いたのか分からない。"""
-        assert "作ったフォルダを開きます。" in source(SHORTCUTS)
+    def test_the_old_folder_is_tidied_up(self):
+        """以前の版が作ったフォルダを片付ける。中身が残っていれば触らない。"""
+        text = source(SHORTCUTS)
+
+        assert r'del /q "%TARGET%\名刺システム\*.lnk"' in text
+        assert 'rd "%TARGET%\名刺システム" 2>nul' in text
+        assert "rd /s" not in text
 
 
 class TestTheDesktopIsResolvedByWindows:
@@ -111,7 +119,7 @@ class TestTheResultIsVerified:
     def test_the_files_are_counted(self):
         text = source(SHORTCUTS)
 
-        assert 'for %%f in ("%FOLDER%\\*.lnk") do set /a MADE+=1' in text
+        assert 'for %%f in ("%DESKTOP%\\名刺 *.lnk") do set /a MADE+=1' in text
 
     def test_zero_is_an_error(self):
         text = source(SHORTCUTS)
@@ -127,6 +135,13 @@ class TestTheResultIsVerified:
         text = source(SHORTCUTS)
 
         assert text.index('if "%MADE%"=="0"') < text.index("if defined QUIET exit /b 0")
+
+    def test_a_second_location_is_tried_when_they_differ(self):
+        """場所の取得を誤っていても画面に出るよう、素の場所にも置く。"""
+        text = source(SHORTCUTS)
+
+        assert 'set "PLAIN=%USERPROFILE%\\Desktop"' in text
+        assert 'if /i "%PLAIN%"=="%DESKTOP%" goto :count' in text
 
 
 class TestTheSortResultOpensOneWindow:
@@ -222,7 +237,7 @@ class TestEveryShortcutPointsAtARealFile:
     """
 
     def targets(self) -> list[tuple[str, str]]:
-        return re.findall(r'call :make\s+"([^"]+)"\s+"([^"]+)"', source(SHORTCUTS))
+        return shortcut_targets()
 
     def test_the_list_is_short(self):
         """押す数を増やさないこと。まとめられるものはまとめる方針。"""
@@ -236,12 +251,12 @@ class TestEveryShortcutPointsAtARealFile:
     @pytest.mark.parametrize(
         "label",
         [
-            "1 準備する（更新とセットアップ）",
-            "2 名刺を仕分ける",
-            "3 ラベル入力",
-            "4 精度を測る",
-            "この1枚を調べる",
-            "動かないとき（診断）",
+            "名刺 1 準備する（更新とセットアップ）",
+            "名刺 2 名刺を仕分ける",
+            "名刺 3 ラベル入力",
+            "名刺 4 精度を測る",
+            "名刺 この1枚を調べる",
+            "名刺 動かないとき（診断）",
         ],
     )
     def test_the_documented_shortcuts_are_present(self, label: str):
@@ -249,7 +264,7 @@ class TestEveryShortcutPointsAtARealFile:
 
     def test_the_numbers_run_from_one_without_gaps(self):
         """番号を飛ばさないこと。押す順が分からなくなる。"""
-        numbers = [name[0] for name, _ in self.targets() if name[0].isdigit()]
+        numbers = [name[3] for name, _ in self.targets() if name[3:4].isdigit()]
 
         assert numbers == [str(n) for n in range(1, len(numbers) + 1)]
 
