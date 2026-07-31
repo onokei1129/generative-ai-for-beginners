@@ -106,7 +106,7 @@ class TestTheDesktopIsResolvedByWindows:
 
     def test_the_path_is_shown(self):
         """どこに作ったかを出す。見つからないときの切り分けに要る。"""
-        assert "echo デスクトップ: %DESKTOP%" in source(SHORTCUTS)
+        assert 'call :say "デスクトップ: %DESKTOP%"' in source(SHORTCUTS)
 
 
 class TestTheResultIsVerified:
@@ -119,7 +119,8 @@ class TestTheResultIsVerified:
     def test_the_files_are_counted(self):
         text = source(SHORTCUTS)
 
-        assert 'for %%f in ("%DESKTOP%\\名刺 *.lnk") do set /a MADE+=1' in text
+        assert 'for %%f in ("%~1\\名刺 *.lnk") do set /a MADE+=1' in text
+        assert 'for %%f in ("%~1\\名刺 *.bat") do set /a MADE+=1' in text
 
     def test_zero_is_an_error(self):
         text = source(SHORTCUTS)
@@ -141,7 +142,125 @@ class TestTheResultIsVerified:
         text = source(SHORTCUTS)
 
         assert 'set "PLAIN=%USERPROFILE%\\Desktop"' in text
-        assert 'if /i "%PLAIN%"=="%DESKTOP%" goto :count' in text
+        assert 'if /i "%PLAIN%"=="%DESKTOP%" goto :verify' in text
+
+
+class TestTheCountIsTakenAfterAPause:
+    """作った直後ではなく、少し待ってから数えること。
+
+    iCloud Drive はデスクトップに置いた `.lnk` を同期の対象として扱わず、
+    作った直後に取り除くことがある。その場で数えると 7 個あるように見えて、
+    数秒後には消えている。実テストで「作成」と出るのに画面に現れない状態に
+    なった。
+    """
+
+    def test_it_waits_before_counting(self):
+        text = source(SHORTCUTS)
+        before = text.split(":verify", 1)[1].split("call :count", 1)[0]
+
+        assert "ping -n" in before
+
+    def test_the_wait_does_not_use_timeout(self):
+        """`timeout` は入力が渡されない呼ばれ方だと即座に失敗する。"""
+        assert "timeout /t" not in source(SHORTCUTS)
+
+
+class TestBatchFilesAreTheFallback:
+    """`.lnk` が残らないときは、同じ名前のバッチで作り直すこと。
+
+    バッチはただのファイルなので同期ソフトに取り除かれない。飛び先を
+    呼ぶだけなので、押したときの動きは `.lnk` と変わらない。
+    """
+
+    def test_the_fallback_is_only_used_when_nothing_survived(self):
+        text = source(SHORTCUTS)
+        after = text.split('if not "%MADE%"=="0" goto :done', 1)[1]
+
+        assert 'set "KIND=bat"' in after.split(":done", 1)[0]
+
+    def test_the_fallback_writes_a_launcher(self):
+        text = source(SHORTCUTS)
+
+        assert '>"%TARGET%\\%~1.bat" echo @echo off' in text
+        assert '>>"%TARGET%\\%~1.bat" echo call "%HERE%\\%~2"' in text
+
+    def test_the_launcher_moves_to_the_windows_folder_first(self):
+        """飛び先のバッチは相対パスで他のファイルを呼ぶ。"""
+        assert '>>"%TARGET%\\%~1.bat" echo cd /d "%HERE%"' in source(SHORTCUTS)
+
+    def test_the_old_launchers_are_deleted_too(self):
+        assert 'del /q "%TARGET%\\名刺 *.bat"' in source(SHORTCUTS)
+
+    def test_the_shortcut_is_still_the_first_choice(self):
+        """既定は `.lnk`。切り替えるのは残らなかったときだけ。"""
+        text = source(SHORTCUTS)
+
+        assert text.index('set "KIND="') < text.index('set "KIND=bat"')
+        assert 'if /i "%KIND%"=="bat" goto :make_bat' in text
+
+
+class TestWhatHappenedIsRecorded:
+    """うまくいかないときに、後から追える形で残すこと。
+
+    画面は閉じてしまうと読めない。実テストでは「変わらない」という報告に
+    対して手掛かりが無く、何度も往復することになった。
+    """
+
+    def test_the_log_sits_next_to_the_batch(self):
+        assert 'set "LOG=%HERE%\\ショートカット作成ログ.txt"' in source(SHORTCUTS)
+
+    def test_messages_go_to_both_the_screen_and_the_log(self):
+        text = source(SHORTCUTS)
+        say = text.split("\n:say\n", 1)[1].split("exit /b 0", 1)[0]
+
+        assert "echo %~1" in say
+        assert '>>"%LOG%" echo %~1' in say
+
+    def test_the_desktop_path_is_recorded(self):
+        assert 'call :say "デスクトップ: %DESKTOP%"' in source(SHORTCUTS)
+
+    def test_the_log_is_not_committed(self):
+        ignored = (WINDOWS / ".gitignore").read_text(encoding="utf-8")
+
+        assert "ショートカット作成ログ.txt" in ignored
+
+
+class TestThePlaceIsOpenedWhenPressedDirectly:
+    """置いた場所そのものを開く。
+
+    画面に出ないのか、そもそも作られていないのかを、利用者が1回で
+    見分けられるようにする。更新から呼ばれるときは開かない（窓が増える）。
+    """
+
+    def test_the_desktop_folder_is_opened(self):
+        assert 'explorer "%DESKTOP%"' in source(SHORTCUTS)
+
+    def test_it_is_not_opened_in_quiet_mode(self):
+        text = source(SHORTCUTS)
+        done = text.split("\n:done\n", 1)[1].split("\n:none_made", 1)[0]
+
+        assert done.index("if defined QUIET exit /b 0") < done.index('explorer "%DESKTOP%"')
+
+    def test_hiding_the_desktop_icons_is_mentioned(self):
+        """アイコンの表示が切られている場合もある。"""
+        assert "デスクトップ アイコンの表示" in source(SHORTCUTS)
+
+
+class TestTheRegistryIsTheSecondSource:
+    """`GetFolderPath` が空を返したときの控え。"""
+
+    def test_the_shell_folders_key_is_read(self):
+        text = source(SHORTCUTS)
+
+        assert "Explorer\\Shell Folders" in text
+        assert "/v Desktop" in text
+
+    def test_it_is_tried_before_guessing(self):
+        text = source(SHORTCUTS)
+
+        assert text.index("if not defined DESKTOP call :from_registry") < text.index(
+            'if not defined DESKTOP set "DESKTOP=%USERPROFILE%\\Desktop"'
+        )
 
 
 class TestTheSortResultOpensOneWindow:

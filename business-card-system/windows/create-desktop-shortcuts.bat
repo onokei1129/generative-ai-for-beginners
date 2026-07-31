@@ -2,10 +2,17 @@
 setlocal
 set "HERE=%~dp0"
 if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
+set "LOG=%HERE%\ショートカット作成ログ.txt"
 
 rem /quiet を付けて呼ぶと一時停止しない（「1 準備する」から呼ぶとき）。
 set "QUIET="
 if /i "%~1"=="/quiet" set "QUIET=1"
+
+rem 作り方。既定はショートカット（.lnk）。同期ソフトに消される場合だけ
+rem バッチ（.bat）へ切り替える。:verify を参照。
+set "KIND="
+
+>"%LOG%" echo === デスクトップにショートカットを作ります ===
 
 echo ============================================
 echo  デスクトップにショートカットを作ります
@@ -22,57 +29,80 @@ rem 設定（フォルダーの移動先）を見るので、同期ソフトの種類に依存しない。
 rem --------------------------------------------------------------------
 set "DESKTOP="
 for /f "usebackq delims=" %%d in (`powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')"`) do set "DESKTOP=%%d"
+if not defined DESKTOP call :from_registry
 if not defined DESKTOP set "DESKTOP=%USERPROFILE%\Desktop"
 if not exist "%DESKTOP%" set "DESKTOP=%USERPROFILE%\Desktop"
 if not exist "%DESKTOP%" goto :no_desktop
 
-echo デスクトップ: %DESKTOP%
+call :say "デスクトップ: %DESKTOP%"
 call :make_all "%DESKTOP%"
 
 rem 場所の取得を誤っていても画面に出るよう、素の場所にも置いておく。
 rem （同じ場所なら二重に作らない）
 set "PLAIN=%USERPROFILE%\Desktop"
-if /i "%PLAIN%"=="%DESKTOP%" goto :count
-if not exist "%PLAIN%" goto :count
-echo 念のためこちらにも: %PLAIN%
+if /i "%PLAIN%"=="%DESKTOP%" goto :verify
+if not exist "%PLAIN%" goto :verify
+call :say "念のためこちらにも: %PLAIN%"
 call :make_all "%PLAIN%"
 
-:count
-set "MADE=0"
-for %%f in ("%DESKTOP%\名刺 *.lnk") do set /a MADE+=1
+rem --------------------------------------------------------------------
+rem 作った直後ではなく、少し待ってから数える。
+rem
+rem iCloud Drive はショートカット（.lnk）を同期の対象として扱わず、
+rem デスクトップに置いた直後に取り除くことがある。作成そのものは成功する
+rem ため、その場で数えると 7 個あるように見えて、数秒後には消えている。
+rem 消えていたら、同じ名前・同じ飛び先のバッチ（.bat）で作り直す。
+rem バッチはただのファイルなので同期ソフトに取り除かれない。
+rem --------------------------------------------------------------------
+:verify
+ping -n 5 127.0.0.1 >nul 2>&1
+call :count "%DESKTOP%"
+if not "%MADE%"=="0" goto :done
+
+call :say "ショートカットが残りませんでした。同期ソフトの制限とみて、バッチ形式で作り直します。"
+set "KIND=bat"
+call :make_all "%DESKTOP%"
+if /i "%PLAIN%"=="%DESKTOP%" goto :recount
+if not exist "%PLAIN%" goto :recount
+call :make_all "%PLAIN%"
+
+:recount
+ping -n 3 127.0.0.1 >nul 2>&1
+call :count "%DESKTOP%"
 if "%MADE%"=="0" goto :none_made
 
+:done
+call :say "デスクトップに %MADE% 個できました。"
 echo.
 echo ============================================
-echo  デスクトップに %MADE% 個できました。
 echo.
 echo  画面に「名刺 1 準備する」から始まるアイコンが並びます。
 echo  見当たらないときは、デスクトップで F5 を押してください。
+echo  それでも出ないときは、デスクトップを右クリック
+echo  →「表示」→「デスクトップ アイコンの表示」を確認してください。
 echo.
 echo  1 から順に押してください。3 と 4 は何度往復しても構いません。
 echo.
-echo  仕分けが違っていたとき:
-echo    その画像を「名刺 この1枚を調べる」へドラッグ＆ドロップすると、
-echo    判定の根拠とOCRが読んだ文字が出ます。
-echo.
-echo  次からは「名刺 1 準備する」を押すだけで、最新版の取得・
-echo  ショートカットの作り直し・セットアップまで終わります。
+echo  記録: "%LOG%"
 echo ============================================
 echo.
 if defined QUIET exit /b 0
+rem 画面に出ないときの切り分けのため、置いた場所そのものを開く。
+explorer "%DESKTOP%"
 pause
 exit /b 0
 
 :none_made
+call :say "[エラー] ショートカットが1つも残りませんでした。"
 echo.
 echo ============================================
-echo  [エラー] ショートカットが1つも残りませんでした。
-echo    場所: "%DESKTOP%"
-echo.
-echo  上の「デスクトップ:」の場所をエクスプローラで直接開いて、
-echo  その行をそのまま共有してください。
+echo  上の「デスクトップ:」の場所をエクスプローラーで直接開いて、
+echo  その行と、次の記録をそのまま共有してください。
+echo    "%LOG%"
 echo ============================================
 echo.
+if defined QUIET exit /b 1
+explorer "%DESKTOP%"
 pause
 exit /b 1
 
@@ -83,6 +113,30 @@ exit /b 1
 
 
 rem --------------------------------------------------------------------
+rem 画面と記録の両方に出す。うまくいかないときに後から追えるようにする。
+rem --------------------------------------------------------------------
+:say
+echo %~1
+>>"%LOG%" echo %~1
+exit /b 0
+
+rem --------------------------------------------------------------------
+rem GetFolderPath が空を返したときの控え。レジストリにも同じ値がある。
+rem --------------------------------------------------------------------
+:from_registry
+for /f "usebackq tokens=2,*" %%a in (`reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Desktop 2^>nul`) do set "DESKTOP=%%b"
+exit /b 0
+
+rem --------------------------------------------------------------------
+rem 残っている数を数える。.lnk と .bat のどちらでも数える。
+rem --------------------------------------------------------------------
+:count
+set "MADE=0"
+for %%f in ("%~1\名刺 *.lnk") do set /a MADE+=1
+for %%f in ("%~1\名刺 *.bat") do set /a MADE+=1
+exit /b 0
+
+rem --------------------------------------------------------------------
 rem 指定した場所へ一式を作る
 rem --------------------------------------------------------------------
 :make_all
@@ -91,6 +145,7 @@ set "TARGET=%~1"
 rem 自分が前に作った分だけ消す。`名刺 ` で始まるものに限るので、
 rem 利用者が置いた他のショートカットには触れない。
 if exist "%TARGET%\名刺 *.lnk" del /q "%TARGET%\名刺 *.lnk"
+if exist "%TARGET%\名刺 *.bat" del /q "%TARGET%\名刺 *.bat"
 
 rem 以前の版はデスクトップに「名刺システム」フォルダを作り、その中へ
 rem 入れていた。画面から見えず分かりにくかったため直接置く形に変えた。
@@ -115,10 +170,22 @@ call :make "名刺 動かないとき（診断）"             "doctor.bat"
 exit /b 0
 
 :make
+if /i "%KIND%"=="bat" goto :make_bat
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%TARGET%\%~1.lnk'); $s.TargetPath='%HERE%\%~2'; $s.WorkingDirectory='%HERE%'; $s.IconLocation='%SystemRoot%\System32\imageres.dll,76'; $s.Save()"
-if errorlevel 1 (
-    echo   [失敗] "%~1"
-) else (
-    echo   作成: "%~1"
-)
+if errorlevel 1 goto :make_failed
+call :say "  作成: %~1"
+exit /b 0
+
+rem 同期ソフトが .lnk を受け付けないときの形。飛び先を呼ぶだけの
+rem バッチを置く。見た目の名前と動きは .lnk と同じ。
+:make_bat
+>"%TARGET%\%~1.bat" echo @echo off
+>>"%TARGET%\%~1.bat" echo cd /d "%HERE%"
+>>"%TARGET%\%~1.bat" echo call "%HERE%\%~2"
+if errorlevel 1 goto :make_failed
+call :say "  作成: %~1"
+exit /b 0
+
+:make_failed
+call :say "  [失敗] %~1"
 exit /b 0
