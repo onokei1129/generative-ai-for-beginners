@@ -76,6 +76,59 @@ class TestRunningItDirectlyShowsAResult:
         assert "作ったフォルダを開きます。" in source(SHORTCUTS)
 
 
+class TestTheDesktopIsResolvedByWindows:
+    """デスクトップの場所を推測しないこと。
+
+    OneDrive や iCloud Drive で同期していると、`%USERPROFILE%\\Desktop` は
+    画面に出ているフォルダとは別のことがある。実テストで、「作成」と出て
+    いるのにデスクトップに現れない状態になった。
+    """
+
+    def test_windows_is_asked_for_the_path(self):
+        assert "[Environment]::GetFolderPath('Desktop')" in source(SHORTCUTS)
+
+    def test_it_no_longer_guesses_from_onedrive(self):
+        """同期ソフトごとに場当たりで足さないこと。"""
+        assert 'set "DESKTOP=%OneDrive%\\Desktop"' not in source(SHORTCUTS)
+
+    def test_there_is_a_fallback_when_the_lookup_fails(self):
+        text = source(SHORTCUTS)
+
+        assert 'if not defined DESKTOP set "DESKTOP=%USERPROFILE%\\Desktop"' in text
+
+    def test_the_path_is_shown(self):
+        """どこに作ったかを出す。見つからないときの切り分けに要る。"""
+        assert "echo デスクトップ: %DESKTOP%" in source(SHORTCUTS)
+
+
+class TestTheResultIsVerified:
+    """「作成」と出ただけで終わらせないこと。
+
+    `:make` は PowerShell の戻り値しか見ていないため、同期フォルダの都合で
+    ファイルが残らなくても成功に見える。
+    """
+
+    def test_the_files_are_counted(self):
+        text = source(SHORTCUTS)
+
+        assert 'for %%f in ("%FOLDER%\\*.lnk") do set /a MADE+=1' in text
+
+    def test_zero_is_an_error(self):
+        text = source(SHORTCUTS)
+
+        assert 'if "%MADE%"=="0" goto :none_made' in text
+        assert "ショートカットが1つも残りませんでした" in text
+
+    def test_the_count_is_reported(self):
+        assert "%MADE% 個" in source(SHORTCUTS)
+
+    def test_the_check_runs_before_the_quiet_exit(self):
+        """更新から静かに呼ばれたときも、0個なら気づけること。"""
+        text = source(SHORTCUTS)
+
+        assert text.index('if "%MADE%"=="0"') < text.index("if defined QUIET exit /b 0")
+
+
 class TestTheSortResultOpensOneWindow:
     """似た見た目の窓を2枚並べないこと。
 

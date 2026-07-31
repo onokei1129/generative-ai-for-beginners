@@ -14,14 +14,29 @@ echo  デスクトップにショートカットを作ります
 echo ============================================
 echo.
 
-rem OneDrive でデスクトップが同期されている場合はそちらを使う
-set "DESKTOP=%USERPROFILE%\Desktop"
-if exist "%OneDrive%\Desktop" set "DESKTOP=%OneDrive%\Desktop"
-if not exist "%DESKTOP%" (
-    echo [エラー] デスクトップのフォルダが見つかりません: "%DESKTOP%"
-    pause
-    exit /b 1
-)
+rem デスクトップの場所は Windows 本体に聞く。
+rem
+rem OneDrive や iCloud Drive でデスクトップを同期していると、
+rem %USERPROFILE%\Desktop は**画面に出ているフォルダとは別**のことがある。
+rem 実テストで、「作成」と出ているのにデスクトップに現れない、という状態に
+rem なった（左ペインに iCloud Drive\Desktop があった）。
+rem GetFolderPath は Windows の設定（フォルダーの移動先）を見るので、
+rem どの同期ソフトを使っていても実際の場所が返る。
+set "DESKTOP="
+for /f "usebackq delims=" %%d in (`powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')"`) do set "DESKTOP=%%d"
+if not defined DESKTOP set "DESKTOP=%USERPROFILE%\Desktop"
+if not exist "%DESKTOP%" set "DESKTOP=%USERPROFILE%\Desktop"
+if not exist "%DESKTOP%" goto :no_desktop
+echo デスクトップ: %DESKTOP%
+echo.
+goto :have_desktop
+
+:no_desktop
+echo [エラー] デスクトップのフォルダが見つかりません: "%DESKTOP%"
+pause
+exit /b 1
+
+:have_desktop
 
 set "FOLDER=%DESKTOP%\名刺システム"
 if not exist "%FOLDER%" mkdir "%FOLDER%"
@@ -45,9 +60,15 @@ call :make "アプリを起動"                     "run-app.bat"
 call :make "この1枚を調べる"                  "explain-one.bat"
 call :make "動かないとき（診断）"             "doctor.bat"
 
+rem 実際にファイルが残ったか数える。`:make` は PowerShell の戻り値しか
+rem 見ていないため、「作成」と出ても同期フォルダの都合で残らないことがある。
+set "MADE=0"
+for %%f in ("%FOLDER%\*.lnk") do set /a MADE+=1
+if "%MADE%"=="0" goto :none_made
+
 echo.
 echo ============================================
-echo  作成しました: %FOLDER%
+echo  作成しました: %FOLDER%  ^(%MADE% 個^)
 echo.
 echo  1 から順に押してください。3 と 4 は何度往復しても構いません。
 echo.
@@ -62,6 +83,23 @@ echo.
 
 rem 呼び出し元が案内を出す場合は、ここでは開かない・止めない
 if defined QUIET exit /b 0
+goto :open_folder
+
+:none_made
+echo.
+echo ============================================
+echo  [エラー] ショートカットが1つも残りませんでした。
+echo    場所: "%FOLDER%"
+echo.
+echo  デスクトップを同期している場合（OneDrive / iCloud Drive など）、
+echo  上に出ている「デスクトップ:」の場所を直接開いて確認してください。
+echo  そこに入っていれば、同期の設定側の問題です。
+echo ============================================
+echo.
+pause
+exit /b 1
+
+:open_folder
 
 rem 自分でこのバッチを押したときは必ず開く。窓が溜まって困るのは
 rem 「1 準備する」から呼ばれる側（/quiet）で、そちらは開かない。
