@@ -548,6 +548,50 @@ def strip_postal_prefix(text: str) -> str:
     return POSTAL_JUNK_RE.sub("", text).strip()
 
 
+# 住所らしさの最低限。読み崩れた断片を住所に入れないための歯止め。
+#
+# 実データ（8枚目）では住所が `〒4 らの - の９の` になっていた。`〒150-0022`
+# の行が読み崩れたもので、数字も空白区切りの語も条件を満たすため、英字住所の
+# 最終手段に拾われていた。住所には地名が要る——3文字以上のラテン語が2つ
+# （`Nambusunhwan-ro` `Gangnam-gu`）か、漢字が2文字以上（`東京都渋谷区`）。
+ADDRESS_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+KANJI_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def looks_like_address(text: str) -> bool:
+    if len(ADDRESS_WORD_RE.findall(text)) >= 2:
+        return True
+    return len(KANJI_RE.findall(text)) >= 2
+
+
+def wrapped_blocks(lines: list[str], used: set[int]) -> list[tuple[int, int, str]]:
+    """途中で折り返された住所を1つにまとめて返す。
+
+    実データ（7枚目）の住所は3行に分かれて印字されていた。
+
+        2621, Nambusunhwan-ro,
+        Gangnam-gu, Seoul, Korea,
+        06267
+
+    1行ずつ見ると、1行目は語数が足りず、2行目は数字が無く、3行目は語数が
+    足りないため、どれも住所として拾えず空になっていた。行末の読点は
+    「次の行へ続く」という印なので、そこでつなぐ。
+    """
+    blocks: list[tuple[int, int, str]] = []
+    for start in range(len(lines)):
+        if start in used:
+            continue
+        end = start
+        parts = [lines[start]]
+        while parts[-1].rstrip().endswith((",", "、", "，")) and end + 1 < len(lines):
+            if end + 1 in used:
+                break
+            end += 1
+            parts.append(lines[end])
+        blocks.append((start, end, " ".join(part.strip() for part in parts)))
+    return blocks
+
+
 def for_web_match(text: str) -> str:
     """メール・URLを探すための整形。
 
@@ -876,8 +920,8 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     # 巻き込まない。
     if not fields["address"]:
         candidates = []
-        for index, line in enumerate(cleaned):
-            if index in used or "@" in line or "http" in line.lower():
+        for start, end, line in wrapped_blocks(cleaned, used):
+            if "@" in line or "http" in line.lower():
                 continue
             # ドメインらしい語（`kaido-foods.example`）を含む行は住所ではない。
             # 実測で、読み崩れたURLの行が住所として入っていた。英字の住所にある
@@ -888,12 +932,15 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 continue
             if len(line.split()) < 3:
                 continue
-            candidates.append((len(line), index, line))
+            # 読み崩れた断片を住所にしない。`〒4 らの - の９の` を防ぐ。
+            if not looks_like_address(line):
+                continue
+            candidates.append((len(line), start, end, line))
         if candidates:
-            _, index, line = max(candidates)
+            _, start, end, line = max(candidates)
             fields["address"] = strip_address_label(line)
             confidence["address"] = 0.4
-            used.add(index)
+            used.update(range(start, end + 1))
 
     # 会社名
     for index, line in enumerate(cleaned):
