@@ -2,6 +2,12 @@
 setlocal
 cd /d "%~dp0..\app"
 
+rem /quick が付いたら確認テスト（数分）を省く。「1 準備する」から
+rem 毎回呼ばれるため、2回目以降まで通しで走らせると待たされる。
+rem 初回（実行環境をこれから作る場合）は付いていても必ず走らせる。
+set "QUICK="
+if /i "%~1"=="/quick" set "QUICK=1"
+
 echo ============================================
 echo  名刺一元管理システム  セットアップ
 echo ============================================
@@ -20,6 +26,8 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+
+if not exist ".venv\Scripts\python.exe" set "QUICK="
 
 if not exist ".venv\Scripts\python.exe" (
     echo Python の実行環境を作っています...
@@ -47,10 +55,18 @@ if errorlevel 1 (
 )
 
 echo.
-echo 動作確認をしています...
+if defined QUICK goto :skip_tests
+echo 動作確認をしています（数分かかります）...
 echo.
 .venv\Scripts\python -m pytest tests -q
 echo.
+goto :after_tests
+
+:skip_tests
+echo 動作確認は省きました（初回のみ実行します）。
+echo.
+
+:after_tests
 
 echo --------------------------------------------
 echo  OCR^(tesseract^)の状態
@@ -59,7 +75,7 @@ rem 他のバッチと同じ確認を使う。PATH に無い場合は既定の場所も探す。
 call "%~dp0_check-tesseract.bat"
 if errorlevel 1 (
     echo   ラベル入力を試すだけなら、無くても進められます。
-    echo   名刺の仕分け^(4^)と精度測定^(8^)には必要です。
+    echo   名刺の仕分け^(2^)と精度測定^(4^)には必要です。
 ) else (
     echo  日本語データを含めて使える状態です。
 )
@@ -69,7 +85,10 @@ echo.
 echo ============================================
 echo  セットアップが終わりました。
 echo.
-echo  次は「練習サンプルを作る」を実行してください。
+echo  次は「2 名刺を仕分ける」を実行してください。
 echo ============================================
 echo.
+
+rem 「1 準備する」から呼ばれた場合は、呼び出し元が案内を出すので止めない
+if defined QUICK exit /b 0
 pause

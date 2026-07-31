@@ -3,6 +3,11 @@ setlocal
 cd /d "%~dp0..\app"
 
 rem 仕分け結果の確認用。「不明」フォルダと一覧を開くだけ。
+rem
+rem /quiet は「2 名刺を仕分ける」から続けて呼ばれたときの指定。
+rem 呼び出し元がすでに案内を出しているので、待たずにすぐ戻る。
+set "QUIET="
+if /i "%~1"=="/quiet" set "QUIET=1"
 
 if not exist "poc\real-cards" (
     echo [エラー] 名刺のフォルダがありません: "%CD%\poc\real-cards"
@@ -32,6 +37,9 @@ if exist "sort.md" (
     start "" "%CD%\sort.md"
 )
 
+if defined QUIET exit /b 0
+
 echo.
 echo 開いたら、この画面は閉じて構いません。
 timeout /t 5 >nul
+exit /b 0

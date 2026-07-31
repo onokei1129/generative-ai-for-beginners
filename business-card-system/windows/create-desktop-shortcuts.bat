@@ -36,33 +36,32 @@ rem このフォルダのショートカット（.lnk）だけ作り直す。
 rem 消すのはショートカットのみで、名刺の画像やラベルには一切触れない。
 if exist "%FOLDER%\*.lnk" del /q "%FOLDER%\*.lnk"
 
-call :make "0 最新版に更新する"             "update.bat"
-call :make "1 セットアップ"                 "setup.bat"
-call :make "2 練習サンプルを作る"           "make-practice-samples.bat"
-call :make "3 ラベル入力（練習）"           "label-practice.bat"
-call :make "4 名刺を仕分ける"               "classify-scans.bat"
-call :make "5 仕分け結果を確認する"         "open-card-folder.bat"
-call :make "6 ラベル入力（実際の名刺）"     "label-real-cards.bat"
-call :make "7 進み具合を見る"               "check-progress.bat"
-call :make "8 精度を測る"                   "measure-accuracy.bat"
-call :make "9 アプリを起動"                 "run-app.bat"
-call :make "この1枚を調べる"               "explain-one.bat"
-call :make "動かないとき（診断）"         "doctor.bat"
+rem 押す順に番号を振る。まとめられるものはまとめてある。
+rem   1 = 更新 ＋ セットアップ      （更新のあとは必ずセットアップが要る）
+rem   2 = 仕分け ＋ 結果を開く      （仕分けたら必ず結果を確認する）
+rem   4 = 進み具合 ＋ 精度測定      （測る前に進み具合を出す作りになっている）
+rem 練習用（練習サンプル・練習ラベル）はショートカットから外した。
+rem バッチは windows フォルダに残してあるので、必要なら直接実行できる。
+call :make "1 準備する（更新とセットアップ）" "update.bat"
+call :make "2 名刺を仕分ける"                 "classify-scans.bat"
+call :make "3 ラベル入力"                     "label-real-cards.bat"
+call :make "4 精度を測る"                     "measure-accuracy.bat"
+call :make "アプリを起動"                     "run-app.bat"
+call :make "この1枚を調べる"                  "explain-one.bat"
+call :make "動かないとき（診断）"             "doctor.bat"
 
 echo.
 echo ============================================
 echo  作成しました: %FOLDER%
 echo.
-echo  はじめて使う場合   : 1 から順に実行してください。
-echo  実名刺のテスト     : 4 → 5 → 6 → 7 → 8 の順です。
-echo                       6 と 7 は何度往復しても構いません。
+echo  1 から順に押してください。3 と 4 は何度往復しても構いません。
 echo.
 echo  仕分けが違っていたとき:
 echo    その画像を「この1枚を調べる」へドラッグ＆ドロップすると、
 echo    判定の根拠とOCRが読んだ文字が出ます。
 echo.
-echo  次からは「0 最新版に更新する」を押すだけで、
-echo  最新版の取得とショートカットの作り直しが終わります。
+echo  次からは「1 準備する」を押すだけで、最新版の取得・
+echo  ショートカットの作り直し・セットアップまで終わります。
 echo ============================================
 echo.
 

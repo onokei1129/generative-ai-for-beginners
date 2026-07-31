@@ -1,12 +1,18 @@
-"""デスクトップのショートカットを作るバッチ（windows/）。
+"""デスクトップのショートカット一式（windows/）。
 
-実テストで、「0 最新版に更新する」を押すたびにエクスプローラーの窓が
-1つ増え、押すほど溜まっていく、という報告があった。
+実テストからの3つの報告に対応した形を守るためのテスト。
 
-    create-desktop-shortcuts.bat の末尾に無条件の `explorer "%FOLDER%"` があり、
-    update.bat が最後にこのバッチを呼ぶため、更新のたびに窓が開いていた。
+1. 「押すたびにエクスプローラーの窓が増える」
+   ショートカットを作り直すたびにフォルダを開いていた。更新から呼ぶときは
+   `/quiet`、自分で作り直すときも初回だけ開く。
 
-更新から呼ぶときは `/quiet` を付け、フォルダを開かない。
+2. 「最低でも同じウィンドウが2枚開いている」
+   `real-cards` と その中の `unknown` を別々に開いていた。`/select` で
+   1つの窓にまとめる。
+
+3. 「ショートカットを減らしてシンプルにしたい」
+   続けて実行するものは1つにまとめる（更新＋セットアップ、仕分け＋結果
+   確認）。終わった作業の窓は自動で閉じ、失敗したときだけ止めて理由を出す。
 
 バッチはこのテストからは実行できない（Windows専用）ので、中身を読んで
 確かめる。バッチは CP932 で保存する（Windows のコマンドプロンプトが
@@ -42,12 +48,6 @@ class TestTheUpdateDoesNotPileUpWindows:
         text = source(SHORTCUTS)
 
         assert text.index("if defined QUIET exit /b 0") < text.index('explorer "%FOLDER%"')
-
-    def test_the_update_still_waits_for_a_key(self):
-        """静かに呼ぶぶん、更新側で止めること。止めないと結果が読めない。"""
-        tail = source(UPDATE).rsplit("/quiet", 1)[-1]
-
-        assert "pause" in tail
 
 
 class TestTheFolderOpensOnlyOnTheFirstRun:
@@ -100,6 +100,60 @@ class TestTheSortResultOpensOneWindow:
         assert "goto :opened" in text
 
 
+class TestTheStepsAreChained:
+    """押す回数を減らすため、続けて実行するものは1つにまとめる。"""
+
+    def test_preparing_runs_the_setup_too(self):
+        assert 'call "%BCWIN%\\setup.bat" /quick' in source(UPDATE)
+
+    def test_the_setup_is_skipped_on_failure(self):
+        """更新に失敗したらセットアップへ進まないこと。"""
+        text = source(UPDATE)
+        after = text.split('call "%BCWIN%\\setup.bat" /quick', 1)[1]
+
+        assert "if errorlevel 1 exit /b 1" in after.split("\n\n", 1)[0]
+
+    def test_sorting_opens_the_result(self):
+        text = (WINDOWS / "classify-scans.bat").read_text(encoding="cp932")
+
+        assert 'call "%~dp0open-card-folder.bat" /quiet' in text
+
+    def test_the_first_setup_still_runs_the_checks(self):
+        """初回は /quick が付いていても確認テストを走らせること。"""
+        text = (WINDOWS / "setup.bat").read_text(encoding="cp932")
+
+        assert 'if not exist ".venv\\Scripts\\python.exe" set "QUICK="' in text
+
+
+class TestFinishedWorkClosesItsWindow:
+    """終わった作業の窓は自動で閉じる。失敗したときだけ止めて理由を出す。"""
+
+    @pytest.mark.parametrize(
+        "name", ["update.bat", "classify-scans.bat", "measure-accuracy.bat"]
+    )
+    def test_the_window_closes_after_a_countdown(self, name: str):
+        tail = (WINDOWS / name).read_text(encoding="cp932").rsplit("============", 1)[-1]
+
+        assert "timeout /t" in tail
+        assert "pause" not in tail
+
+    @pytest.mark.parametrize(
+        "name", ["update.bat", "classify-scans.bat", "measure-accuracy.bat", "setup.bat"]
+    )
+    def test_failures_still_wait_so_the_reason_can_be_read(self, name: str):
+        text = (WINDOWS / name).read_text(encoding="cp932")
+
+        assert "[エラー]" in text
+        assert "pause" in text
+
+    @pytest.mark.parametrize("name", ["label-real-cards.bat", "run-app.bat"])
+    def test_windows_that_run_a_server_stay_open(self, name: str):
+        """サーバーを動かす窓は閉じない（閉じると止まる）。"""
+        text = (WINDOWS / name).read_text(encoding="cp932")
+
+        assert "ウィンドウを閉じてください" in text
+
+
 class TestEveryShortcutPointsAtARealFile:
     """作ったショートカットの飛び先が実在すること。
 
@@ -109,17 +163,43 @@ class TestEveryShortcutPointsAtARealFile:
     def targets(self) -> list[tuple[str, str]]:
         return re.findall(r'call :make\s+"([^"]+)"\s+"([^"]+)"', source(SHORTCUTS))
 
-    def test_the_list_is_not_empty(self):
-        assert len(self.targets()) >= 10
+    def test_the_list_is_short(self):
+        """押す数を増やさないこと。まとめられるものはまとめる方針。"""
+        assert 5 <= len(self.targets()) <= 8
 
     def test_each_target_exists(self):
         missing = [(label, bat) for label, bat in self.targets() if not (WINDOWS / bat).is_file()]
 
         assert missing == []
 
-    @pytest.mark.parametrize("label", ["0 最新版に更新する", "この1枚を調べる", "動かないとき（診断）"])
+    @pytest.mark.parametrize(
+        "label",
+        [
+            "1 準備する（更新とセットアップ）",
+            "2 名刺を仕分ける",
+            "3 ラベル入力",
+            "4 精度を測る",
+            "この1枚を調べる",
+            "動かないとき（診断）",
+        ],
+    )
     def test_the_documented_shortcuts_are_present(self, label: str):
         assert label in [name for name, _ in self.targets()]
+
+    def test_the_numbers_run_from_one_without_gaps(self):
+        """番号を飛ばさないこと。押す順が分からなくなる。"""
+        numbers = [name[0] for name, _ in self.targets() if name[0].isdigit()]
+
+        assert numbers == [str(n) for n in range(1, len(numbers) + 1)]
+
+    def test_the_merged_steps_are_gone(self):
+        """まとめた側の入口を二重に置かないこと。"""
+        names = [name for name, _ in self.targets()]
+
+        assert not any("セットアップ" == name for name in names)
+        assert not any("仕分け結果" in name for name in names)
+        assert not any("進み具合" in name for name in names)
+        assert not any("練習" in name for name in names)
 
 
 class TestTheBatchFilesStayReadableOnWindows:

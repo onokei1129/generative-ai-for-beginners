@@ -17,7 +17,7 @@ if not exist ".venv\Scripts\python.exe" (
 
 if not exist "poc\real-cards" (
     echo [エラー] 名刺のフォルダがありません: "%CD%\poc\real-cards"
-    echo   先に「4 名刺を仕分ける」を実行してください。
+    echo   先に「2 名刺を仕分ける」を実行してください。
     echo.
     pause
     exit /b 1
@@ -61,4 +61,8 @@ echo ============================================
 echo.
 set /p "OPEN=結果を開きますか？ 開く場合は Enter、閉じる場合は n: "
 if /i not "%OPEN%"=="n" start "" "%CD%\real-rule.md"
-pause
+
+echo.
+echo この画面は8秒後に閉じます。
+timeout /t 8 >nul
+exit /b 0
