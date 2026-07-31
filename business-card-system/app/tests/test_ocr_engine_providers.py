@@ -32,15 +32,23 @@ from bcards.services.ocr.providers import (  # noqa: E402
 )
 
 
+CARD_WIDTH = 1050  # 名刺のおおよその画素幅（段の区切りの閾値に使う）
+
+
 class TestGroupBoxesIntoLines:
     def test_boxes_on_the_same_row_become_one_line(self):
-        """同じ行の領域を1行にまとめ、左から右へ並べること。"""
+        """同じ行の領域を1行にまとめ、左から右へ並べること。
+
+        ラベルと番号は隣接して印字されるので、その間隔で置く。大きく離すと
+        （幅の8%超）左右2段組みの段の区切りとして扱われる
+        （`test_ocr_line_gaps.py`）。
+        """
         boxes = [
-            (100.0, 300.0, 20.0, "03-1234-5678"),
+            (100.0, 80.0, 20.0, "03-1234-5678"),
             (100.0, 10.0, 20.0, "TEL"),
         ]
 
-        assert group_boxes_into_lines(boxes) == ["TEL 03-1234-5678"]
+        assert group_boxes_into_lines(boxes, CARD_WIDTH) == ["TEL 03-1234-5678"]
 
     def test_rows_are_ordered_top_to_bottom(self):
         boxes = [
@@ -49,7 +57,7 @@ class TestGroupBoxesIntoLines:
             (200.0, 10.0, 20.0, "営業部 部長"),
         ]
 
-        assert group_boxes_into_lines(boxes) == [
+        assert group_boxes_into_lines(boxes, CARD_WIDTH) == [
             "株式会社サンプル商事",
             "営業部 部長",
             "山田 太郎",
@@ -63,7 +71,7 @@ class TestGroupBoxesIntoLines:
             (400.0, 10.0, 30.0, "山田 太郎"),
         ]
 
-        assert group_boxes_into_lines(boxes) == ["TEL 03-1234-5678", "山田 太郎"]
+        assert group_boxes_into_lines(boxes, CARD_WIDTH) == ["TEL 03-1234-5678", "山田 太郎"]
 
     def test_a_narrow_line_gap_is_not_merged(self):
         """行間の狭い名刺で、別の行を巻き込まないこと。
@@ -77,13 +85,13 @@ class TestGroupBoxesIntoLines:
             (118.0, 10.0, 18.0, "代表社員"),
         ]
 
-        assert group_boxes_into_lines(boxes) == ["〒460-0008", "代表社員"]
+        assert group_boxes_into_lines(boxes, CARD_WIDTH) == ["〒460-0008", "代表社員"]
 
     def test_empty_input(self):
-        assert group_boxes_into_lines([]) == []
+        assert group_boxes_into_lines([], CARD_WIDTH) == []
 
     def test_blank_texts_are_dropped(self):
-        assert group_boxes_into_lines([(10.0, 10.0, 20.0, "   ")]) == []
+        assert group_boxes_into_lines([(10.0, 10.0, 20.0, "   ")], CARD_WIDTH) == []
 
 
 class TestProviderRegistry:

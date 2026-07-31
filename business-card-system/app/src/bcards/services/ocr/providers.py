@@ -97,6 +97,10 @@ def _limit_tesseract_threads() -> None:
         os.environ["OMP_THREAD_LIMIT"] = str(limit)
 
 
+# 段の区切りとみなす間隔の下限（名刺の幅に対する割合）。`_to_lines` の説明を参照。
+COLUMN_GAP_RATIO = 0.08
+
+
 class TesseractOcrProvider:
     """ローカルの tesseract を使う。画像を外部サービスへ送信しない構成。"""
 
@@ -119,7 +123,7 @@ class TesseractOcrProvider:
                 output_type=pytesseract.Output.DICT,
                 timeout=settings.ocr_timeout_seconds,
             )
-            lines = self._to_lines(data)
+            lines = self._to_lines(data, image.width)
             text = "\n".join(lines)
             score = len(text.replace(" ", ""))
             if best is None or score > best["score"]:
@@ -137,8 +141,29 @@ class TesseractOcrProvider:
         )
 
     @staticmethod
-    def _to_lines(data: dict[str, Any]) -> list[str]:
-        buckets: dict[tuple[int, int, int], list[str]] = {}
+    def _to_lines(data: dict[str, Any], card_width: int) -> list[str]:
+        """単語を行にまとめる。**語の間隔は保つこと。**
+
+        名刺は左に社名・ロゴ、右に連絡先を置く2段組みが多い。tesseract は
+        同じ高さの文字を1行として返すため、左段と右段が1行に混ざる。
+        項目分離（`parser.split_columns`）はその**空きの広さ**を手がかりに
+        段を分けるので、ここで空白1つに潰すと段を分けられなくなる。
+
+        実テストで、`explain-one`（`image_to_string`、間隔が残る）では直る
+        名刺が、この画面（`image_to_data`）では直らないという食い違いが出た。
+
+        閾値は**名刺の幅に対する割合**で決める。文字の高さとの比では測れない
+        ——tesseract は `第` のような字の高さを2pxと返すことがあり、10pxの
+        間隔が「高さの5倍」になってしまう。合成サンプル20枚での実測：
+
+            語の中（`第`→`一`、`う`→`は`）           0.4 〜 1.7%
+            ラベルと値（`E-mail :` → アドレス）      1.0 〜 2.3%
+            `テクノロジー`→`株式会社`（切ってはいけない） 4.2%
+            **段の区切り**                          9.5 〜 36.1%
+
+        幅の8%を超えたときだけ段の区切りとみなし、空白3つを置く。
+        """
+        buckets: dict[tuple[int, int, int], list[tuple[int, int, int, str]]] = {}
         for index, word in enumerate(data["text"]):
             if not word.strip():
                 continue
@@ -149,11 +174,28 @@ class TesseractOcrProvider:
             if conf < 20:  # 日本語は信頼度が低めに出るため閾値を緩める
                 continue
             key = (data["block_num"][index], data["par_num"][index], data["line_num"][index])
-            buckets.setdefault(key, []).append(word)
-        return [" ".join(words).strip() for _, words in sorted(buckets.items()) if words]
+            buckets.setdefault(key, []).append((
+                int(data["left"][index]),
+                int(data["width"][index]),
+                int(data["height"][index]),
+                word,
+            ))
+
+        lines = []
+        for _, words in sorted(buckets.items()):
+            words.sort(key=lambda item: item[0])
+            text = words[0][3]
+            for previous, current in zip(words, words[1:]):
+                gap = current[0] - (previous[0] + previous[1])
+                text += ("   " if gap > card_width * COLUMN_GAP_RATIO else " ") + current[3]
+            if text.strip():
+                lines.append(text.strip())
+        return lines
 
 
-def group_boxes_into_lines(boxes: list[tuple[float, float, float, str]]) -> list[str]:
+def group_boxes_into_lines(
+    boxes: list[tuple[float, float, float, str]], card_width: int
+) -> list[str]:
     """文字領域を行にまとめる（PaddleOCR・EasyOCR 共通）。
 
     どちらも「領域ごとの文字列」を返すため、そのまま並べると1行の中の語が
@@ -182,9 +224,17 @@ def group_boxes_into_lines(boxes: list[tuple[float, float, float, str]]) -> list
             lines.append([box])
     result = []
     for line in lines:
-        text = " ".join(item[3] for item in sorted(line, key=lambda item: item[1])).strip()
-        if text:
-            result.append(text)
+        # 語の間隔は保つ（`TesseractOcrProvider._to_lines` と同じ理由。
+        # 空白1つに潰すと、左右2段組みの段を分けられなくなる）。
+        # 領域の幅は持たないので、間隔は左端どうしの距離から見る。
+        items = sorted(line, key=lambda item: item[1])
+        text = items[0][3]
+        for previous, current in zip(items, items[1:]):
+            span = len(previous[3]) * previous[2] * 0.6  # 前の語のおおよその幅
+            gap = current[1] - (previous[1] + span)
+            text += ("   " if gap > card_width * COLUMN_GAP_RATIO else " ") + current[3]
+        if text.strip():
+            result.append(text.strip())
     return result
 
 
@@ -249,7 +299,7 @@ class PaddleOcrProvider:
                 if index < len(confidences):
                     scores.append(float(confidences[index]))
 
-        lines = group_boxes_into_lines(boxes)
+        lines = group_boxes_into_lines(boxes, image.width)
         return OcrOutput(
             provider=self.name,
             api_version=_installed_version("paddleocr"),
@@ -305,7 +355,7 @@ class EasyOcrProvider:
             boxes.append((sum(ys) / len(ys), min(xs), max(ys) - min(ys), str(text)))
             scores.append(float(score))
 
-        lines = group_boxes_into_lines(boxes)
+        lines = group_boxes_into_lines(boxes, image.width)
         return OcrOutput(
             provider=self.name,
             api_version=_installed_version("easyocr"),
