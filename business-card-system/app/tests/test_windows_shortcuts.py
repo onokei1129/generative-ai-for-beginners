@@ -146,6 +146,49 @@ class TestTheResultIsVerified:
         assert 'if /i "%PLAIN%"=="%DESKTOP%" goto :verify' in text
 
 
+class TestPressingItAlsoFetchesTheLatest:
+    """自分で押したときは、まず最新版を取ってから作ること。
+
+    実テストで「このバッチを何度押しても直らない」という報告が続いた。
+    取得するのは update.bat だけで、このバッチはディスクにある版で作り直す
+    だけだった。押す側からは区別がつかない。
+    """
+
+    def test_it_pulls_when_pressed_directly(self):
+        assert "git pull" in source(SHORTCUTS)
+
+    def test_it_copies_itself_before_pulling(self):
+        """git pull は自分自身を書き換えうる。実行中に書き換わると壊れる。"""
+        text = source(SHORTCUTS)
+
+        assert 'copy /y "%~f0" "%TEMP%\\bcards-shortcuts.bat"' in text
+        assert '"%TEMP%\\bcards-shortcuts.bat" /pull "%HERE%"' in text
+
+    def test_the_fetched_version_does_the_work(self):
+        """取得したあとのファイルを呼ぶこと（写しではなく）。"""
+        assert 'call "%SRC%\\create-desktop-shortcuts.bat" /nopull' in source(SHORTCUTS)
+
+    @pytest.mark.parametrize("flag", ["/quiet", "/nopull"])
+    def test_being_called_from_elsewhere_skips_the_fetch(self, flag: str):
+        """「1 準備する」は直前に取得している。二重に取らない。"""
+        text = source(SHORTCUTS)
+
+        assert re.search(rf'if /i "%~1"=="{flag}" +set "NOPULL=1"', text)
+        assert "if defined NOPULL goto :begin" in text
+
+    def test_a_missing_git_still_creates_the_shortcuts(self):
+        text = source(SHORTCUTS)
+
+        assert "goto :pull_no_git" in text
+        assert text.index("\n:pull_no_git\n") < text.index("\n:pull_done\n")
+
+    def test_a_failed_copy_still_creates_the_shortcuts(self):
+        text = source(SHORTCUTS)
+        after = text.split('copy /y "%~f0"', 1)[1]
+
+        assert after.startswith(' "%TEMP%\\bcards-shortcuts.bat" >nul\nif errorlevel 1 goto :begin')
+
+
 class TestWhichCopyAndWhichVersionIsShown:
     """どの複製の、どの版を動かしているのかを最初に出すこと。
 

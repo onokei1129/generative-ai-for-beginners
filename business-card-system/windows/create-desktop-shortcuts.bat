@@ -2,11 +2,60 @@
 setlocal
 set "HERE=%~dp0"
 if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
-set "LOG=%HERE%\ショートカット作成ログ.txt"
 
-rem /quiet を付けて呼ぶと一時停止しない（「1 準備する」から呼ぶとき）。
+rem --------------------------------------------------------------------
+rem 呼ばれ方は4通り。
+rem
+rem   （引数なし）   自分で押した。まず最新版を取ってから作る。
+rem   /pull <場所>   一時フォルダへ写した自分自身。取得だけを担当する。
+rem   /nopull        取得済みの状態から呼ばれた。作るだけ。
+rem   /quiet         「名刺 1 準備する」から呼ばれた。作るだけ、止まらない。
+rem
+rem 自分で押したときも取得するのは、実テストで「このバッチを何度押しても
+rem 直らない」という報告が続いたため。取得するのは update.bat だけであり、
+rem このバッチはディスクにある版で作り直すだけだった。押す側からは区別が
+rem つかない。
+rem --------------------------------------------------------------------
 set "QUIET="
-if /i "%~1"=="/quiet" set "QUIET=1"
+set "NOPULL="
+if /i "%~1"=="/quiet"  set "QUIET=1"
+if /i "%~1"=="/quiet"  set "NOPULL=1"
+if /i "%~1"=="/nopull" set "NOPULL=1"
+if /i "%~1"=="/pull"   goto :pull
+if defined NOPULL goto :begin
+
+rem git pull はこのファイル自身を書き換えうる。cmd.exe はバッチを実行
+rem しながら少しずつ読むため、実行中に書き換わると途中から壊れる。
+rem そのため一時フォルダへ写し、そちらに取得を任せる（update.bat と同じ）。
+copy /y "%~f0" "%TEMP%\bcards-shortcuts.bat" >nul
+if errorlevel 1 goto :begin
+"%TEMP%\bcards-shortcuts.bat" /pull "%HERE%"
+exit /b
+
+:pull
+set "SRC=%~2"
+echo 最新版を取得しています...
+cd /d "%SRC%\..\.." 2>nul
+if errorlevel 1 goto :pull_done
+git rev-parse --show-toplevel >nul 2>&1
+if errorlevel 1 goto :pull_no_git
+git pull
+if not errorlevel 1 goto :pull_done
+rem 追跡先が未設定だと引数なしの git pull は止まる。origin から明示的に取る。
+for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD 2^>nul') do git pull origin "%%b"
+goto :pull_done
+
+:pull_no_git
+echo   （git が使えないため、いまディスクにある版で作ります）
+
+:pull_done
+echo.
+rem 取得後の版で作り直す。ここで呼ぶのは書き換わったあとのファイル。
+call "%SRC%\create-desktop-shortcuts.bat" /nopull
+exit /b
+
+:begin
+set "LOG=%HERE%\ショートカット作成ログ.txt"
 
 rem 作り方。既定はショートカット（.lnk）。同期ソフトに消される場合だけ
 rem バッチ（.bat）へ切り替える。:verify を参照。
