@@ -12,13 +12,20 @@ if not exist "poc\real-cards" (
     exit /b 1
 )
 
+rem 窓は1つだけ開く。以前は real-cards と その中の unknown を別々に
+rem 開いていたため、見た目のほとんど同じ窓が2枚並んで紛らわしかった
+rem （実テストで報告）。`/select` なら1つの窓の中で unknown を選んだ
+rem 状態にできる。
 echo 名刺フォルダを開きます: %CD%\poc\real-cards
-start "" "%CD%\poc\real-cards"
+if exist "poc\real-cards\unknown" goto :open_with_unknown
+explorer "%CD%\poc\real-cards"
+goto :opened
 
-if exist "poc\real-cards\unknown" (
-    echo 「不明」フォルダも開きます。名刺なら1つ上へ移してください。
-    start "" "%CD%\poc\real-cards\unknown"
-)
+:open_with_unknown
+echo 「不明」フォルダを選んだ状態で開きます。名刺なら1つ上へ移してください。
+explorer /select,"%CD%\poc\real-cards\unknown"
+
+:opened
 
 if exist "sort.md" (
     echo 仕分けの一覧も開きます: "%CD%\sort.md"

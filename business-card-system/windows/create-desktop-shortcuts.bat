@@ -24,6 +24,11 @@ if not exist "%DESKTOP%" (
 )
 
 set "FOLDER=%DESKTOP%\名刺システム"
+
+rem フォルダを開くのは**初回だけ**。作り直すたびに開くと窓が溜まる。
+rem 2回目以降は場所を文字で出すだけにする（デスクトップにあるので迷わない）。
+set "FIRST="
+if not exist "%FOLDER%" set "FIRST=1"
 if not exist "%FOLDER%" mkdir "%FOLDER%"
 
 rem 番号が変わったときに古いショートカットが残ると紛らわしいので、
@@ -63,7 +68,7 @@ echo.
 
 rem 呼び出し元が案内を出す場合は、ここでは開かない・止めない
 if defined QUIET exit /b 0
-explorer "%FOLDER%"
+if defined FIRST explorer "%FOLDER%"
 pause
 exit /b 0
 

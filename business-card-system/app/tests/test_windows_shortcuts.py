@@ -23,6 +23,7 @@ import pytest
 WINDOWS = Path(__file__).resolve().parents[2] / "windows"
 SHORTCUTS = WINDOWS / "create-desktop-shortcuts.bat"
 UPDATE = WINDOWS / "update.bat"
+CARD_FOLDER = WINDOWS / "open-card-folder.bat"
 
 
 def source(path: Path) -> str:
@@ -49,6 +50,56 @@ class TestTheUpdateDoesNotPileUpWindows:
         assert "pause" in tail
 
 
+class TestTheFolderOpensOnlyOnTheFirstRun:
+    """作り直すたびに開くと窓が溜まる。初回だけ開く。"""
+
+    def test_the_first_run_is_detected(self):
+        text = source(SHORTCUTS)
+
+        assert 'if not exist "%FOLDER%" set "FIRST=1"' in text
+
+    def test_the_check_comes_before_the_folder_is_made(self):
+        """先に mkdir すると、初回でも「既にある」と見えてしまう。"""
+        text = source(SHORTCUTS)
+
+        assert text.index('set "FIRST=1"') < text.index('mkdir "%FOLDER%"')
+
+    def test_the_folder_is_opened_only_when_first(self):
+        assert 'if defined FIRST explorer "%FOLDER%"' in source(SHORTCUTS)
+
+
+class TestTheSortResultOpensOneWindow:
+    """似た見た目の窓を2枚並べないこと。
+
+    実テストで「最低でも同じウィンドウが2枚開いている」という報告があった。
+    `real-cards` と その中の `unknown` を別々に開いていたため。
+    """
+
+    def test_the_unknown_folder_is_selected_not_opened_separately(self):
+        text = source(CARD_FOLDER)
+
+        assert 'explorer /select,"%CD%\\poc\\real-cards\\unknown"' in text
+
+    def test_the_parent_is_not_opened_as_well(self):
+        """`/select` で開くときは、親フォルダを重ねて開かないこと。"""
+        text = source(CARD_FOLDER)
+
+        assert 'start "" "%CD%\\poc\\real-cards"' not in text
+        assert 'start "" "%CD%\\poc\\real-cards\\unknown"' not in text
+
+    def test_the_parent_still_opens_when_there_is_no_unknown_folder(self):
+        text = source(CARD_FOLDER)
+
+        assert 'explorer "%CD%\\poc\\real-cards"' in text
+
+    def test_only_one_explorer_runs_per_path(self):
+        """どちらか一方だけを通ること（goto で分岐）。"""
+        text = source(CARD_FOLDER)
+
+        assert "goto :open_with_unknown" in text
+        assert "goto :opened" in text
+
+
 class TestEveryShortcutPointsAtARealFile:
     """作ったショートカットの飛び先が実在すること。
 
@@ -72,11 +123,11 @@ class TestEveryShortcutPointsAtARealFile:
 
 
 class TestTheBatchFilesStayReadableOnWindows:
-    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE])
+    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE, CARD_FOLDER])
     def test_the_encoding_is_cp932(self, path: Path):
         path.read_text(encoding="cp932")  # 読めなければ例外
 
-    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE])
+    @pytest.mark.parametrize("path", [SHORTCUTS, UPDATE, CARD_FOLDER])
     def test_the_line_endings_are_crlf(self, path: Path):
         raw = path.read_bytes()
 
