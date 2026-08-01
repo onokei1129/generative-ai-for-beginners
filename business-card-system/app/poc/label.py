@@ -31,9 +31,11 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import queue
 import sys
 import threading
 import traceback
+from collections import OrderedDict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -115,9 +117,28 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
     # 利用者がその名刺へ進んだとき、同じ画像を2回OCRしてしまう
     # （実測：3枚に対してOCRが4回走っていた）。CPUを二重に使うだけでなく、
     # 表示が出るまでの待ちも長くなる。
-    _ocr_cache: dict[str, tuple[dict[str, str], str | None]] = {}
+    # 覚えておく枚数の上限。1件あたりOCRの読み取り文字を丸ごと持つため、
+    # 222枚を通すと積み上がる。行き来するのは前後数枚なので、これで足りる。
+    CACHE_LIMIT = 40
+
+    _ocr_cache: OrderedDict[str, tuple[dict[str, str], str | None, str]] = OrderedDict()
     _running: dict[str, threading.Event] = {}
     _cache_lock = threading.Lock()
+
+    # 先読みは1本ずつ。実テストで、222枚を続けて進めている最中にサーバーが
+    # 落ちた。先読みは押すたびにスレッドを最大2本立てる作りで、上限が無かった。
+    # 1本あたり画像1枚（実測78MB）と tesseract のプロセスを抱えるため、
+    # 速く進めるほど積み上がる。1本に絞れば、余分は多くても1枚分で済む。
+    _warm_queue: queue.Queue[Path] = queue.Queue()
+    _warm_started = threading.Event()
+
+    def _remember(name: str, result: tuple[dict[str, str], str | None, str]) -> None:
+        """結果を覚える。上限を超えたら古いものから捨てる。"""
+        with _cache_lock:
+            _ocr_cache[name] = result
+            _ocr_cache.move_to_end(name)
+            while len(_ocr_cache) > CACHE_LIMIT:
+                _ocr_cache.popitem(last=False)
 
     def image_files() -> list[Path]:
         return sorted(
@@ -281,8 +302,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 # 失敗したままになる。次に開いたときにやり直せるようにする。
                 return {key: "" for key in FIELD_KEYS}, f"{step}で失敗（{detail}）", ""
 
-            with _cache_lock:
-                _ocr_cache[path.name] = result
+            _remember(path.name, result)
             return result
         finally:
             # 成功・失敗どちらでも待ち手を解放する。ここを漏らすと、
@@ -292,18 +312,39 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             if finished is not None:
                 finished.set()
 
+    def _warm_worker() -> None:
+        """並んだ先読みを1件ずつ片付ける。この裏方は1本しか立てない。"""
+        while True:
+            target = _warm_queue.get()
+            try:
+                _ocr_draft(target)
+            except Exception:  # 先読みの失敗で止まらない
+                traceback.print_exc()
+            finally:
+                _warm_queue.task_done()
+
     def _warm_next(name: str) -> None:
-        """次の名刺のOCRを裏で先に済ませておく（1枚あたり数秒かかるため）。"""
+        """次の名刺のOCRを裏で先に済ませておく（1枚あたり数秒かかるため）。
+
+        並べるだけで、実際に処理するのは1本の裏方。速く進めても積み上がらない。
+        """
+        if not _warm_started.is_set():
+            _warm_started.set()
+            threading.Thread(target=_warm_worker, daemon=True).start()
+
         names = [p.name for p in image_files()]
         if name not in names:
             return
         index = names.index(name)
         for nxt in names[index + 1 : index + 3]:
-            target = directory / nxt
             with _cache_lock:
                 if nxt in _ocr_cache:
                     continue
-            threading.Thread(target=_ocr_draft, args=(target,), daemon=True).start()
+            # 押すのが速いと並びが伸びる。伸びたぶんは捨てる（先読みは
+            # 速くするための仕掛けで、無くても動く）。
+            if _warm_queue.qsize() >= 4:
+                return
+            _warm_queue.put(directory / nxt)
 
     @app.post("/api/label/{name}")
     async def api_save_label(name: str, request: Request) -> JSONResponse:
