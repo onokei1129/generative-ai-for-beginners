@@ -187,3 +187,90 @@ class TestLatinAddress:
         got = fields(["John Smith", "Room 101"])
 
         assert got["address"] == ""
+
+
+class TestTheRealOcrTextOfTheSpanishCard:
+    """実際のOCR結果をそのまま通す（`ANA FERNANDEZ DEL RIO`）。
+
+    この1枚で4つずれていた。
+
+    1. 氏名が空。長さの上限が日本語向けの12文字で、空白を除いて18文字ある
+       この氏名は入らなかった。語数の上限（3語）も足りない。
+    2. 全部大文字の行を氏名にしない決まりがあった（ロゴ対策）。海外の名刺は
+       氏名も大文字で刷る。メールの左側（`ana@`）に語があれば人名とみなす。
+    3. 役職 `Principal Data Scientist` が `Scientist` だけになっていた。
+    4. 飾り罫の読み崩れ `ーー` が、ふりがな（のちに氏名）に入っていた。
+    """
+
+    RAW = [
+        "ーー",
+        "ANA FERNANDEZ DEL RIO",
+        "Principal Data Scientist",
+        "+34 644 460 544",
+        "ana@causalfoundry.ai",
+        "TT",
+    ]
+
+    def result(self) -> dict[str, str]:
+        return fields(self.RAW)
+
+    @pytest.mark.parametrize(
+        ("key", "want"),
+        [
+            ("last_name", "FERNANDEZ DEL RIO"),
+            ("first_name", "ANA"),
+            ("title", "Principal Data Scientist"),
+            ("tel", "+34 644 460 544"),
+            ("email", "ana@causalfoundry.ai"),
+        ],
+    )
+    def test_every_printed_item_is_extracted(self, key: str, want: str):
+        assert self.result()[key] == want
+
+    def test_the_decorative_rule_is_not_a_field(self):
+        """`ーー` `TT` は飾り罫の読み崩れ。項目にしないこと。"""
+        got = self.result()
+
+        for key in ("last_name", "first_name", "last_name_kana", "first_name_kana", "title"):
+            assert got[key] not in ("ーー", "TT")
+
+    def test_the_company_stays_empty(self):
+        """この面に社名は刷られていない。ドメインから作らないこと。"""
+        assert self.result()["company_name"] == ""
+
+
+class TestAllCapsNeedsBackingFromTheEmail:
+    """全部大文字の行は、メールの左側に語があるときだけ氏名とみなす。"""
+
+    def test_a_logo_is_still_not_a_name(self):
+        got = fields(["AONE GAMES", "patricio@aonegames.com"])
+
+        assert (got["last_name"], got["first_name"]) == ("", "")
+        assert got["company_name"] == "AONE GAMES"
+
+    def test_a_name_backed_by_the_email_is_a_name(self):
+        got = fields(["MARIA SILVA", "maria@example.com"])
+
+        assert (got["last_name"], got["first_name"]) == ("SILVA", "MARIA")
+
+    def test_without_an_email_all_caps_stays_out(self):
+        """裏づけが無ければ従来どおり。推測で氏名にしない。"""
+        got = fields(["AONE GAMES", "03-1234-5678"])
+
+        assert (got["last_name"], got["first_name"]) == ("", "")
+
+
+class TestASurnameCanBeSeveralWords:
+    """スペイン語圏は父方・母方の姓を並べる。姓は最初の語を除いた残り。"""
+
+    @pytest.mark.parametrize(
+        ("printed", "want"),
+        [
+            ("ANA FERNANDEZ DEL RIO", ("FERNANDEZ DEL RIO", "ANA")),
+            ("Sangeon Lee", ("Lee", "Sangeon")),
+            ("John A. Smith", ("Smith", "John A.")),
+            ("Maria Garcia Lopez", ("Garcia Lopez", "Maria")),
+        ],
+    )
+    def test_the_split(self, printed: str, want: tuple[str, str]):
+        assert split_person_name(printed) == want

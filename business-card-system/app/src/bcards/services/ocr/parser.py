@@ -159,6 +159,16 @@ TITLE_KEYWORDS = (
     # 実データ（7枚目）の `Team Member`。役職の語が無いため空になっていた。
     # `Board Member` `Staff Member` にも効く。
     "Member",
+    # 実データ（`Principal Data Scientist`）。職種の語が無いため空になっていた。
+    # いずれも職種を表す語で、社名・住所には出てこない。
+    "Scientist",
+    "Principal",
+    "Officer",
+    "Architect",
+    "Analyst",
+    "Specialist",
+    "Researcher",
+    "Consultant",
 )
 
 DEPARTMENT_KEYWORDS = (
@@ -373,7 +383,11 @@ def pick_title(line: str, keyword: str) -> str:
         return line
     # 「シニアエンジニア」「エグゼクティブ・プロデューサー」のように、
     # 役職の語に修飾が付いた形は全体が役職名。行が短ければそのまま残す。
-    if len(line) <= len(keyword) + 12:
+    #
+    # 許す長さは字種で変える。英語は語を空白で区切るぶん長くなる（実データの
+    # `Principal Data Scientist` は24文字あり、`Scientist` だけになっていた）。
+    margin = 12 if _has_japanese(line) else 24
+    if len(line) <= len(keyword) + margin:
         return line
     return keyword
 
@@ -707,8 +721,11 @@ def normalize_company(value: str) -> str:
 
 
 def _is_kana_only(text: str) -> bool:
+    """かなだけの行か。長音記号（ー）だけの飾り罫は含めない。"""
     stripped = re.sub(r"\s+", "", text)
-    return bool(stripped) and bool(re.fullmatch(r"[ぁ-んァ-ヶー]+", stripped))
+    if not (stripped and re.fullmatch(r"[ぁ-んァ-ヶー]+", stripped)):
+        return False
+    return bool(re.search(r"[ぁ-んァ-ヶ]", stripped))
 
 
 def _is_hiragana_only(text: str) -> bool:
@@ -717,9 +734,14 @@ def _is_hiragana_only(text: str) -> bool:
     ふりがなはひらがなで印字される。カタカナだけの行を「ふりがな」と見ると、
     外国名の名刺（`パトリシオ　バスケス`）で氏名が空になり、ふりがな欄に
     氏名が入る。実データで発生した。
+
+    長音記号（ー）だけの行はふりがなではない。実データでは飾り罫が `ーー` と
+    読まれ、それがふりがなに入っていた。かなが1文字も無いものは除く。
     """
     stripped = re.sub(r"\s+", "", text)
-    return bool(stripped) and bool(re.fullmatch(r"[ぁ-んー]+", stripped))
+    if not re.fullmatch(r"[ぁ-んー]+", stripped or "-"):
+        return False
+    return bool(re.search(r"[ぁ-ん]", stripped))
 
 
 def _is_katakana_only(text: str) -> bool:
@@ -731,9 +753,20 @@ def _has_japanese(text: str) -> bool:
     return bool(re.search(r"[ぁ-んァ-ヶ一-龥]", text))
 
 
-def _looks_like_person_name(line: str) -> bool:
+def _email_words(email: str) -> set[str]:
+    """メールアドレスの左側にある語。氏名の裏づけに使う。"""
+    local = email.split("@", 1)[0].lower()
+    return set(re.findall(r"[a-z]{2,}", local))
+
+
+def _looks_like_person_name(line: str, email: str = "") -> bool:
     text = re.sub(r"\s+", "", normalize(line))
-    if not (2 <= len(text) <= 12):
+    if len(text) < 2:
+        return False
+    # 長さの上限は字種で変える。日本語の氏名は長くて12文字ほどだが、ラテン文字
+    # の氏名はもっと長い（実データの `ANA FERNANDEZ DEL RIO` は空白を除いて
+    # 18文字あり、12文字で切っていたため氏名が空になっていた）。
+    if len(text) > (12 if _has_japanese(text) else 32):
         return False
     if any(keyword in line for keyword in COMPANY_KEYWORDS + TITLE_KEYWORDS + DEPARTMENT_KEYWORDS):
         return False
@@ -753,16 +786,25 @@ def _looks_like_person_name(line: str) -> bool:
     # 々（踊り字）を入れておくこと。`佐々木` `野々村` は珍しくない姓で、
     # 入れないと氏名として認識されない（実測で `主任 佐々木 健` の氏名が空になった）。
     if re.fullmatch(r"[一-龥々〆ヶヵぁ-んァ-ヴー・]{2,12}", text):
-        return True
+        # 長音記号や中黒だけの行は飾り罫。実データでは `ーー` を氏名として
+        # 登録していた。字が1文字も無いものは氏名にしない。
+        return bool(re.search(r"[一-龥々ぁ-んァ-ヴ]", text))
     latin = normalize(line).strip()
-    if not re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,2}", latin):
+    # 語数の上限は4。スペイン語圏の氏名は父方・母方の姓を並べるため長い
+    # （実データ: `ANA FERNANDEZ DEL RIO`）。3語までにしていて空になっていた。
+    if not re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,3}", latin):
         return False
     lowered = latin.lower()
     if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
         return False
-    # 全部大文字はロゴや社名の綴り（`AONE GAMES`）。人名は通常そう書かない。
-    # 実データでロゴが氏名として登録されていた。
-    return latin != latin.upper()
+    if latin != latin.upper():
+        return True
+    # 全部大文字はロゴや社名の綴り（`AONE GAMES`）のことが多い。ただし海外の
+    # 名刺は氏名も大文字で刷る。メールの左側にその語があれば人名とみなす。
+    #
+    #   `ana@causalfoundry.ai`   と `ANA FERNANDEZ DEL RIO` → 氏名
+    #   `patricio@aonegames.com` と `AONE GAMES`            → 社名のまま
+    return bool({word.lower() for word in latin.split()} & _email_words(email))
 
 
 def split_person_name(full: str) -> tuple[str, str]:
@@ -798,7 +840,16 @@ def split_person_name(full: str) -> tuple[str, str]:
         # ラテン文字の氏名は「名 姓」の順で印字される。実データ（7枚目）の
         # `Sangeon Lee` を、日本語と同じ「姓 名」とみて 姓=Sangeon としていた。
         # 姓は最後の語。残りを名にする。
-        if not _has_japanese(text) and re.fullmatch(r"[A-Za-z .'\-]+", text):
+        if not _has_japanese(text) and re.fullmatch(r"[A-Za-zÀ-ÿ .'\-]+", text):
+            given = [parts[0]]
+            rest = list(parts[1:])
+            # `John A. Smith` の `A.` は中間名の頭文字。名のほうに残す。
+            while rest and re.fullmatch(r"[A-Za-zÀ-ÿ]\.?", rest[0]):
+                given.append(rest.pop(0))
+            # 残り全部が姓。スペイン語圏は父方・母方の姓を並べるため複数語に
+            # なる（実データ: `ANA FERNANDEZ DEL RIO` の姓は `FERNANDEZ DEL RIO`）。
+            if rest:
+                return " ".join(rest), " ".join(given)
             return parts[-1], " ".join(parts[:-1])
         return parts[0], " ".join(parts[1:])
     if len(text) >= 4 and _has_japanese(text):
@@ -1051,7 +1102,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                     not head
                     and len(tail) >= 3
                     and not any(tail.endswith(word) for word in TITLE_TAIL_WORDS)
-                    and _looks_like_person_name(tail)
+                    and _looks_like_person_name(tail, fields["email"])
                 ):
                     # 「課長補佐」「主任研究員」のような役職の続きと区別する。
                     # 氏名として通すのは3文字以上で、役職の語尾で終わらないものに限る
@@ -1092,7 +1143,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             continue
         if _is_hiragana_only(cleaned[following]):
             continue  # ふりがなの続き。氏名ではない
-        if not _looks_like_person_name(cleaned[following]):
+        if not _looks_like_person_name(cleaned[following], fields["email"]):
             continue
         name_index = following
         reading_index = index
@@ -1114,7 +1165,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         for index, line in enumerate(cleaned):
             if index in used or _is_hiragana_only(line):
                 continue
-            if not _looks_like_person_name(line):
+            if not _looks_like_person_name(line, fields["email"]):
                 continue
             if _has_japanese(line):
                 name_index = index
@@ -1137,7 +1188,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             # 2文字の断片は氏名と見なさない。ロゴの読み崩れが当たりやすい
             if len(re.sub(r"\s+", "", segment)) < 3:
                 continue
-            if _looks_like_person_name(segment):
+            if _looks_like_person_name(segment, fields["email"]):
                 name_index = index
                 name_from_segment = segment
                 break
