@@ -179,3 +179,45 @@ class TestAMisreadHyphenIsPutBack:
         ])["fields"]
 
         assert fields["email"] == "yamada@example.co.jp"
+
+
+class TestTheGuardAppliesToEveryPath:
+    """歯止めは経路によらず最後に掛けること。
+
+    はじめは英字住所の最終手段にだけ掛けていた。実テスト（8枚目）では
+    それとは別の経路から `〒4 らの - の９の` が入り、直したはずの名刺で
+    残ったままだった。
+    """
+
+    def test_the_check_runs_on_the_final_value(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "src/bcards/services/ocr/parser.py"
+        ).read_text()
+        tail = source.rsplit("leftovers =", 1)[0]
+
+        assert 'if fields["address"] and not looks_like_address(fields["address"])' in tail
+
+    def test_the_confidence_goes_with_it(self):
+        """値を消したら確からしさも残さないこと。"""
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "src/bcards/services/ocr/parser.py"
+        ).read_text()
+
+        assert 'confidence.pop("address", None)' in source
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "ヒューマックスビル",
+            "サンシャインシティ",
+        ],
+    )
+    def test_a_katakana_building_is_kept(self, text: str):
+        """漢字が無くてもカタカナの建物名なら住所として通す。"""
+        assert looks_like_address(text)
+
+    @pytest.mark.parametrize("text", ["1-2-3", "らの - の９の", "〒4 らの - の９の"])
+    def test_kana_and_digits_alone_are_rejected(self, text: str):
+        assert not looks_like_address(text)

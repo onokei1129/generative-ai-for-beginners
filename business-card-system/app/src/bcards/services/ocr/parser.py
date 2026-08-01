@@ -556,6 +556,7 @@ def strip_postal_prefix(text: str) -> str:
 # （`Nambusunhwan-ro` `Gangnam-gu`）か、漢字が2文字以上（`東京都渋谷区`）。
 ADDRESS_WORD_RE = re.compile(r"[A-Za-z]{3,}")
 KANJI_RE = re.compile(r"[\u4e00-\u9fff]")
+KATAKANA_RE = re.compile(r"[\u30a1-\u30fa]")
 
 
 # 住所に `@` は入らない。実データ（7枚目）では `Gangnam-gu` が
@@ -570,9 +571,17 @@ def repair_address_symbols(text: str) -> str:
 
 
 def looks_like_address(text: str) -> bool:
+    """住所には地名が要る。
+
+    弾くのは、漢字もカタカナも英単語も無いもの——数字・記号・ひらがなだけの
+    断片。日本の住所は必ず漢字（東京都）かカタカナ（ヒューマックス）を含み、
+    海外の住所は英単語を含む。ひらがなだけの住所は無い。
+    """
     if len(ADDRESS_WORD_RE.findall(text)) >= 2:
         return True
-    return len(KANJI_RE.findall(text)) >= 2
+    if len(KANJI_RE.findall(text)) >= 2:
+        return True
+    return len(KATAKANA_RE.findall(text)) >= 3
 
 
 def wrapped_blocks(lines: list[str], used: set[int]) -> list[tuple[int, int, str]]:
@@ -1237,6 +1246,17 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     if fields["address"]:
         fields["address"] = repair_address_symbols(fields["address"])
 
-    leftovers = [line for index, line in enumerate(cleaned) if index not in used]
+    # 住所らしさの歯止めは、経路によらず最後に掛ける。
+    #
+    # はじめは英字住所の最終手段にだけ掛けていた。実テスト（8枚目）では
+    # それとは別の経路から `〒4 らの - の９の` が入っており、直したはずの
+    # 名刺で残ったままだった。どの経路で入ったものでも、住所として成り立た
+    # ないものは載せない。空欄なら人が入れれば済むが、読み崩れた断片は
+    # 誤りだと気づきにくい。
+    if fields["address"] and not looks_like_address(fields["address"]):
+        fields["address"] = ""
+        confidence.pop("address", None)
+
+    leftovers =[line for index, line in enumerate(cleaned) if index not in used]
     fields["note"] = "\n".join(leftovers)
     return {"fields": fields, "confidence": confidence}
