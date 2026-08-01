@@ -40,10 +40,16 @@ def run(*args: str) -> subprocess.CompletedProcess[bytes]:
 
 @pytest.fixture(scope="module")
 def card(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    from poc.samples import build_samples
+    """名刺くらいの大きさの画像を1枚。中身は問わない。
+
+    ここで確かめるのは受け渡し——子がJSONを返し、親が読めること。テストの
+    OCRは mock なので、何が描いてあっても結果は同じになる。日本語フォントの
+    要る合成サンプルを使うと、フォントの無い環境（CI）で作れずに落ちる。
+    """
+    from PIL import Image
 
     path = tmp_path_factory.mktemp("cards") / "card.png"
-    build_samples()[0].image.save(path)
+    Image.new("RGB", (1050, 640), "white").save(path)
     return path
 
 
