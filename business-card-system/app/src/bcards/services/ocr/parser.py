@@ -156,6 +156,9 @@ TITLE_KEYWORDS = (
     "Head of",
     "Engineer",
     "Sales",
+    # 実データ（7枚目）の `Team Member`。役職の語が無いため空になっていた。
+    # `Board Member` `Staff Member` にも効く。
+    "Member",
 )
 
 DEPARTMENT_KEYWORDS = (
@@ -792,6 +795,11 @@ def split_person_name(full: str) -> tuple[str, str]:
         return boundary.group(1), boundary.group(2)
 
     if len(parts) >= 2:
+        # ラテン文字の氏名は「名 姓」の順で印字される。実データ（7枚目）の
+        # `Sangeon Lee` を、日本語と同じ「姓 名」とみて 姓=Sangeon としていた。
+        # 姓は最後の語。残りを名にする。
+        if not _has_japanese(text) and re.fullmatch(r"[A-Za-z .'\-]+", text):
+            return parts[-1], " ".join(parts[:-1])
         return parts[0], " ".join(parts[1:])
     if len(text) >= 4 and _has_japanese(text):
         return text[:2], text[2:]

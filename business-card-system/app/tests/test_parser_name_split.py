@@ -62,7 +62,7 @@ class TestReadingIsSplitByBalance:
         [
             ("山田 太郎", ("山田", "太郎")),
             ("佐々木 健", ("佐々木", "健")),
-            ("John A. Smith", ("John", "A. Smith")),
+            ("John A. Smith", ("Smith", "John A.")),
         ],
     )
     def test_kanji_and_latin_are_unchanged(self, printed: str, expected: tuple[str, str]):
@@ -92,9 +92,10 @@ class TestOfficeIsNotAPerson:
         assert (got["last_name"], got["first_name"]) == ("鈴木", "一郎")
 
     def test_a_latin_person_name_is_still_a_name(self):
+        """ラテン文字は「名 姓」の順。姓は後ろの語。"""
         got = fields("John Smith", "Sales Manager")
 
-        assert (got["last_name"], got["first_name"]) == ("John", "Smith")
+        assert (got["last_name"], got["first_name"]) == ("Smith", "John")
 
     def test_the_place_line_is_kept_in_the_note(self):
         """氏名にしないだけで、読み取った文字は捨てないこと。"""

@@ -40,7 +40,7 @@ class TestTitleAndNameOnOneLine:
         [
             ("代表取締役 ユン ソクン", "代表取締役", "ユン", "ソクン"),
             ("部長 山田 太郎", "部長", "山田", "太郎"),
-            ("CEO John Smith", "CEO", "John", "Smith"),
+            ("CEO John Smith", "CEO", "Smith", "John"),
             ("主任 佐々木 健", "主任", "佐々木", "健"),
         ],
     )

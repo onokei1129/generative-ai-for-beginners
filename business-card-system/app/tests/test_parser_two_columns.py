@@ -122,9 +122,14 @@ class TestSingleLetterContactLabels:
 
 class TestForeignCardFields:
     def test_the_name_and_organisation_are_found(self):
+        """`Sangeon Lee` の姓は Lee。ラテン文字は「名 姓」の順で印字される。
+
+        実テストで、この名刺の姓が Sangeon になっていた（ご本人に確認：
+        Lee が姓、Sangeon が名）。
+        """
         got = fields(NEXON)
 
-        assert (got["last_name"], got["first_name"]) == ("Sangeon", "Lee")
+        assert (got["last_name"], got["first_name"]) == ("Lee", "Sangeon")
         assert got["company_name"] == "NEXON GAMES"
         assert got["department_name"] == "Planning & Coordination Dept"
 
@@ -183,7 +188,7 @@ class TestJapaneseNameWinsOverAsciiLine:
         """日本語の候補が無ければ英字の行を採る（英語の名刺を壊さない）。"""
         got = fields(NEXON)
 
-        assert (got["last_name"], got["first_name"]) == ("Sangeon", "Lee")
+        assert (got["last_name"], got["first_name"]) == ("Lee", "Sangeon")
 
 
 class TestNoiseAroundTheColumns:
@@ -199,3 +204,65 @@ class TestNoiseAroundTheColumns:
 
         assert got["mobile"] == "090-6596-0349"
         assert got["email"] == "sakamoto@edgecre.co.jp"
+
+
+class TestTheRealOcrTextOfCardSeven:
+    """7枚目の**実際のOCR結果**をそのまま通す。
+
+    ここまで、この名刺の読み取り結果を組み直して確かめていたが、実物とは
+    違っていた（住所も郵便番号も再現しなかった）。`この1枚を調べる` で
+    出力された文字をそのまま置く。組み直しでは気づけないずれを止める。
+
+    ロゴが `時NEXロN` `GAMES` と読み崩れて左段に入る点も、実物どおり。
+    """
+
+    RAW = [
+        "時NEXロN                  NEXON GAMES",
+        "GAMES                  2621, Nambusunhwan-ro,",
+        "",
+        "Gangnam-gu, Seoul, Korea,",
+        "06267",
+        "",
+        "Sangeon Lee            T +82.2.6421.7777",
+        "",
+        "Planning & Coordination Dept         F +82.2.569.6448",
+        "",
+        "Team 1                             C +82.10.3661.0778",
+        "",
+        "Team Member                        E eonlee@nexongames.co.kr",
+    ]
+
+    def result(self) -> dict[str, str]:
+        return fields(self.RAW)
+
+    @pytest.mark.parametrize(
+        ("key", "want"),
+        [
+            ("last_name", "Lee"),
+            ("first_name", "Sangeon"),
+            ("company_name", "NEXON GAMES"),
+            ("department_name", "Planning & Coordination Dept"),
+            ("title", "Team Member"),
+            ("address", "2621, Nambusunhwan-ro, Gangnam-gu, Seoul, Korea, 06267"),
+            ("tel", "+82.2.6421.7777"),
+            ("fax", "+82.2.569.6448"),
+            ("mobile", "+82.10.3661.0778"),
+            ("email", "eonlee@nexongames.co.kr"),
+        ],
+    )
+    def test_every_printed_item_is_extracted(self, key: str, want: str):
+        assert self.result()[key] == want
+
+    def test_the_misread_logo_does_not_become_a_field(self):
+        """`時NEXロN` `GAMES` はロゴの読み崩れ。項目にしないこと。"""
+        got = self.result()
+
+        for key in ("last_name", "first_name", "company_name", "department_name", "title"):
+            assert "時NEX" not in got[key]
+
+    def test_the_postal_code_stays_in_the_address(self):
+        """`06267` は韓国の5桁。日本の3桁-4桁の欄には入れず、住所に残す。"""
+        got = self.result()
+
+        assert got["postal_code"] == ""
+        assert got["address"].endswith("06267")

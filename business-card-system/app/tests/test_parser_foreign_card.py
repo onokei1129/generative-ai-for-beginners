@@ -99,7 +99,7 @@ class TestKatakanaSplit:
             ("山田 太郎", ("山田", "太郎")),
             ("佐々木 健", ("佐々木", "健")),
             ("やまだ たろう", ("やまだ", "たろう")),
-            ("John A. Smith", ("John", "A. Smith")),
+            ("John A. Smith", ("Smith", "John A.")),
         ],
     )
     def test_other_names_are_unchanged(self, printed: str, expected: tuple[str, str]):
@@ -116,11 +116,14 @@ class TestLogoIsNotAName:
         assert got["first_name"] == ""
 
     def test_title_case_latin_name_is_still_a_person(self):
-        """英字の人名（`John Smith`）は従来どおり氏名として拾うこと。"""
+        """英字の人名（`John Smith`）は従来どおり氏名として拾うこと。
+
+        ラテン文字は「名 姓」の順で印字されるので、姓は後ろの語。
+        """
         got = fields(["John Smith", "Sales Manager", "john@example.com"])
 
-        assert got["last_name"] == "John"
-        assert got["first_name"] == "Smith"
+        assert got["last_name"] == "Smith"
+        assert got["first_name"] == "John"
 
 
 class TestCompanyFromEmailDomain:
