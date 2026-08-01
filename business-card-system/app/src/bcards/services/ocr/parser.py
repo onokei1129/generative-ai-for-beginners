@@ -558,6 +558,17 @@ ADDRESS_WORD_RE = re.compile(r"[A-Za-z]{3,}")
 KANJI_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
+# 住所に `@` は入らない。実データ（7枚目）では `Gangnam-gu` が
+# `Gangnam@gu` と読まれていた。字の間のハイフンを `@` と読み違えたもので、
+# 住所として登録する前に戻す。英数字に挟まれている `@` に限る
+# （`@` で始まる SNS の ID などを壊さないため）。
+ADDRESS_AT_RE = re.compile(r"(?<=[A-Za-z0-9])@(?=[A-Za-z0-9])")
+
+
+def repair_address_symbols(text: str) -> str:
+    return ADDRESS_AT_RE.sub("-", text)
+
+
 def looks_like_address(text: str) -> bool:
     if len(ADDRESS_WORD_RE.findall(text)) >= 2:
         return True
@@ -1222,6 +1233,9 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     for key in ("company_name", "department_name", "title", "address"):
         if fields[key]:
             fields[key] = trim_ocr_noise(fields[key])
+
+    if fields["address"]:
+        fields["address"] = repair_address_symbols(fields["address"])
 
     leftovers = [line for index, line in enumerate(cleaned) if index not in used]
     fields["note"] = "\n".join(leftovers)

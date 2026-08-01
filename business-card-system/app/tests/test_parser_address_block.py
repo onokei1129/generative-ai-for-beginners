@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from bcards.services.ocr.parser import (  # noqa: E402
     looks_like_address,
     parse_fields,
+    repair_address_symbols,
     wrapped_blocks,
 )
 
@@ -132,3 +133,49 @@ class TestGarbageIsNotAnAddress:
         ])
 
         assert got == "東京都渋谷区恵比寿南1-1-1"
+
+
+class TestAMisreadHyphenIsPutBack:
+    """住所に `@` は入らない。
+
+    実テスト（7枚目）で、住所が
+    `2621, Nambusunhwan-ro, Gangnam@gu, Seoul, Korea` になっていた。
+    `Gangnam-gu` の字の間のハイフンを `@` と読み違えたもの。読み違えそのものは
+    OCRの側の問題だが、住所に `@` が入りえない以上、登録する前に戻せる。
+    """
+
+    def test_the_real_card_that_came_back_with_an_at_sign(self):
+        got = repair_address_symbols("2621, Nambusunhwan-ro, Gangnam@gu, Seoul, Korea")
+
+        assert got == "2621, Nambusunhwan-ro, Gangnam-gu, Seoul, Korea"
+
+    @pytest.mark.parametrize(
+        ("text", "want"),
+        [
+            ("A@B", "A-B"),
+            ("1@2", "1-2"),
+            ("Gangnam@gu@dong", "Gangnam-gu-dong"),
+        ],
+    )
+    def test_it_only_touches_an_at_sign_between_characters(self, text: str, want: str):
+        assert repair_address_symbols(text) == want
+
+    @pytest.mark.parametrize("text", ["@example の建物", "建物 @", "@", "ビル @2F"])
+    def test_a_standalone_at_sign_is_left_alone(self, text: str):
+        """`@` で始まる ID などを壊さないこと。"""
+        assert repair_address_symbols(text) == text
+
+    def test_a_japanese_address_is_unchanged(self):
+        text = "東京都渋谷区恵比寿南1-1-1 ヒューマックス恵比寿ビル8F"
+
+        assert repair_address_symbols(text) == text
+
+    def test_the_email_field_is_not_touched(self):
+        """直すのは住所だけ。メールの `@` は残す。"""
+        fields = parse_fields([
+            "山田 太郎",
+            "yamada@example.co.jp",
+            "〒150-0022 東京都渋谷区恵比寿南1-1-1",
+        ])["fields"]
+
+        assert fields["email"] == "yamada@example.co.jp"
