@@ -108,6 +108,44 @@ def _version() -> str:
     return stamp.strftime("%m/%d %H:%M")
 
 
+# 重い処理を任せる子プロセスの入口。
+ONE_CARD = Path(__file__).resolve().parent / "one_card.py"
+
+# 1枚にかける上限。これを超えたら子を打ち切る（待ち続けるより空欄のほうがよい）。
+CHILD_TIMEOUT = 120
+
+
+class ChildFailed(RuntimeError):
+    """子プロセスが失敗した。終了コードと標準エラーを添える。"""
+
+
+def run_in_child(args: list[str]) -> dict:
+    """PDFの描画とOCRを別プロセスで行う。
+
+    実テスト（222枚）で、ラベル入力の画面が2度、途中で応答しなくなった。
+    PDFの描画（pypdfium2）とOCR（tesseract）は C のライブラリを呼ぶため、
+    ここが落ちるとプロセスごと消え、Python 側には何も残らない。同じ入口で
+    動かしている限り、1枚で落ちるとそのあとの全部が止まる。
+
+    別プロセスに出せば、落ちるのは子だけ。画面には「この1枚は失敗」と出て、
+    次の名刺へ進める。1枚ごとに子が終わるので、抱えた画像も確実に解放される。
+    """
+    import subprocess
+
+    completed = subprocess.run(
+        [sys.executable, str(ONE_CARD), *args],
+        capture_output=True,
+        timeout=CHILD_TIMEOUT,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip().splitlines()
+        reason = detail[-1] if detail else f"終了コード {completed.returncode}"
+        raise ChildFailed(f"{reason}（終了コード {completed.returncode}）")
+    if not completed.stdout:
+        return {}
+    return json.loads(completed.stdout.decode("utf-8", "replace"))
+
+
 def build_app(directory: Path, prefill: bool) -> FastAPI:
     app = FastAPI(title="正解ラベル入力", docs_url=None, redoc_url=None)
 
@@ -183,30 +221,26 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             # ブラウザが表示できない形式はJPEGに変換して返す。
             # 失敗しても壊れた画像アイコンだけを出さず、理由を返す
             # （実テストで1枚だけ画像が出ず、原因が分からない状態になった）。
-            import io
+            import tempfile
             import traceback
 
             from fastapi.responses import Response
 
-            from bcards.services.images import load_pages
-
-            try:
-                # 1枚目しか使わないので1ページだけ読む。全ページ読むと、
-                # 読み取り機がまとめて出す複数ページPDFで数百MB〜1GBを使い、
-                # 以降の名刺の画像が出なくなる（実テストで発生）。
-                pages = load_pages(path.read_bytes(), path.name, limit=1)
-                if not pages:
-                    raise ValueError("ページがありません")
-                buffer = io.BytesIO()
-                pages[0].image.save(buffer, format="JPEG", quality=90)
-            except Exception as exc:  # noqa: BLE001 - 画面に理由を出すため握る
-                traceback.print_exc()
-                print(f"[画像を表示できません] {path.name}: {exc}")
-                return JSONResponse(
-                    {"error": f"画像を表示できません: {type(exc).__name__}: {exc}"},
-                    status_code=415,
-                )
-            return Response(content=buffer.getvalue(), media_type="image/jpeg")
+            # 描画は子プロセスに任せる。ここが落ちてもサーバーは生き残る
+            # （`run_in_child` の説明を参照）。1ページだけ読むのも子の側。
+            with tempfile.TemporaryDirectory() as work:
+                out = Path(work) / "page.jpg"
+                try:
+                    run_in_child(["image", str(path), str(out)])
+                    data = out.read_bytes()
+                except Exception as exc:  # noqa: BLE001 - 画面に理由を出すため握る
+                    traceback.print_exc()
+                    print(f"[画像を表示できません] {path.name}: {exc}")
+                    return JSONResponse(
+                        {"error": f"画像を表示できません: {type(exc).__name__}: {exc}"},
+                        status_code=415,
+                    )
+            return Response(content=data, media_type="image/jpeg")
         return FileResponse(path)
 
     @app.get("/api/label/{name}")
@@ -276,22 +310,10 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         step = "準備"
         try:
             try:
-                from bcards.services.images import process_file
-                from bcards.services.ocr import recognize_card
-
-                step = "画像の読み込みと補正"
-                # 使うのは cards[0] だけ。1ページに絞らないと、複数ページPDFで
-                # ページごとに補正まで走り、メモリと時間を無駄に使う
-                # （実測：20ページで 1.17GB / 23秒 → 1ページなら 78MB / 1.2秒）。
-                cards = process_file(path.read_bytes(), path.name, page_limit=1)
-                if not cards:
-                    raise RuntimeError("画像を1枚も取り出せませんでした")
-
-                step = "OCR"
-                output, parsed = recognize_card(cards[0].ocr_image)
-                values = {key: str(parsed["fields"].get(key, "") or "") for key in FIELD_KEYS}
-                text = output.text if output is not None else ""
-                result = (values, None, text)
+                step = "OCR（別プロセス）"
+                payload = run_in_child(["ocr", str(path)])
+                values = {key: str(payload["fields"].get(key, "") or "") for key in FIELD_KEYS}
+                result = (values, None, payload.get("text", ""))
             except Exception as exc:
                 # 画面には要約しか出せないので、原因を追えるようにコンソールへ全文を出す
                 print(f"\n[{path.name}] {step}で失敗しました", file=sys.stderr)

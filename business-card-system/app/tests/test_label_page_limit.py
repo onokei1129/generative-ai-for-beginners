@@ -105,7 +105,12 @@ class TestTheLabelScreenPassesTheLimit:
     """
 
     def test_both_call_sites_limit_to_one_page(self):
-        source = (Path(__file__).resolve().parents[1] / "poc" / "label.py").read_text(
+        """1ページに絞る指定は、重い処理を任せた子プロセス側にある。
+
+        画面（label.py）は子を呼ぶだけになった。読み込み自体は
+        `poc/one_card.py` が行う（`run_in_child` の説明を参照）。
+        """
+        source = (Path(__file__).resolve().parents[1] / "poc" / "one_card.py").read_text(
             encoding="utf-8"
         )
 

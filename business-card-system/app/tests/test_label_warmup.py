@@ -106,7 +106,10 @@ class TestTheDraftStillWorks:
     """作り直しても、下書きそのものの約束は変えないこと。"""
 
     def test_only_the_first_page_is_used(self):
-        assert "page_limit=1" in source()
+        """1ページに絞る指定は子プロセス側（poc/one_card.py）にある。"""
+        child = (LABEL.parent / "one_card.py").read_text(encoding="utf-8")
+
+        assert "page_limit=1" in child
 
     def test_a_failure_is_not_remembered(self):
         """一時的な失敗を覚え込まない（直しても開き直すまで直らなくなる）。"""

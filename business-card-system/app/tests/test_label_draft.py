@@ -35,17 +35,17 @@ def test_failure_is_not_remembered(cards: Path, monkeypatch):
     失敗をキャッシュすると、tesseract を入れ直しても画面を開き直すまで
     失敗したままになり、直ったことに気づけない。
     """
-    import bcards.services.ocr as ocr_service
+    import poc.label as label_module
 
     calls = {"n": 0}
 
-    def _flaky(image):
+    def _flaky(args):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("一時的な失敗")
-        return None, {"fields": {"company_name": "株式会社サンプル商事"}, "confidence": {}}
+        return {"fields": {"company_name": "株式会社サンプル商事"}, "text": ""}
 
-    monkeypatch.setattr(ocr_service, "recognize_card", _flaky)
+    monkeypatch.setattr(label_module, "run_in_child", _flaky)
 
     client = TestClient(build_app(cards, prefill=True))
 
@@ -59,15 +59,15 @@ def test_failure_is_not_remembered(cards: Path, monkeypatch):
 
 def test_success_is_remembered(cards: Path, monkeypatch):
     """成功はキャッシュすること（1枚あたり数秒かかるため）。"""
-    import bcards.services.ocr as ocr_service
+    import poc.label as label_module
 
     calls = {"n": 0}
 
-    def _once(image):
+    def _once(args):
         calls["n"] += 1
-        return None, {"fields": {"company_name": "テクノロジー株式会社"}, "confidence": {}}
+        return {"fields": {"company_name": "テクノロジー株式会社"}, "text": ""}
 
-    monkeypatch.setattr(ocr_service, "recognize_card", _once)
+    monkeypatch.setattr(label_module, "run_in_child", _once)
 
     client = TestClient(build_app(cards, prefill=True))
     client.get("/api/label/card01.jpg")
@@ -77,17 +77,22 @@ def test_success_is_remembered(cards: Path, monkeypatch):
 
 
 def test_error_names_the_failing_step(cards: Path, monkeypatch):
-    """どの工程で落ちたかを画面に出すこと。"""
-    import bcards.services.images as image_service
+    """どの工程で落ちたかを画面に出すこと。
 
-    def _boom(*args, **kwargs):
-        raise RuntimeError("画像が壊れています")
+    重い処理は別プロセスで動く。子が落ちたときは、終了コードと標準エラーの
+    最後の行を添えて返す（`run_in_child` の説明を参照）。
+    """
+    import poc.label as label_module
 
-    monkeypatch.setattr(image_service, "process_file", _boom)
+    def _boom(args):
+        raise label_module.ChildFailed("画像が壊れています（終了コード -1073741819）")
+
+    monkeypatch.setattr(label_module, "run_in_child", _boom)
 
     client = TestClient(build_app(cards, prefill=True))
     body = client.get("/api/label/card01.jpg").json()
 
     assert body["kind"] == "error"
-    assert "画像の読み込みと補正" in body["source"]
+    assert "OCR（別プロセス）" in body["source"]
     assert "画像が壊れています" in body["source"]
+    assert "終了コード" in body["source"]

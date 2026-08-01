@@ -35,20 +35,25 @@ def cards(tmp_path: Path) -> Path:
 
 
 def _counting_ocr(monkeypatch, seconds: float = 0.0):
-    """OCRの呼ばれた回数を数える。seconds は処理に時間がかかる状況の再現。"""
-    import bcards.services.ocr as ocr_service
+    """OCRの呼ばれた回数を数える。seconds は処理に時間がかかる状況の再現。
+
+    重い処理は別プロセスへ出したので、差し替えるのは親に残る境界
+    （`run_in_child`）。ここを数えれば、先読みと本体で二重に走っていないか
+    が分かる。
+    """
+    import poc.label as label_module
 
     calls: list[str] = []
     lock = threading.Lock()
 
-    def fake(image):
+    def fake(args):
         with lock:
-            calls.append("x")
+            calls.append(args[0])
         if seconds:
             time.sleep(seconds)
-        return None, {"fields": {"company_name": "株式会社サンプル商事"}, "confidence": {}}
+        return {"fields": {"company_name": "株式会社サンプル商事"}, "text": "読んだ文字"}
 
-    monkeypatch.setattr(ocr_service, "recognize_card", fake)
+    monkeypatch.setattr(label_module, "run_in_child", fake)
     return calls
 
 
@@ -79,10 +84,10 @@ class TestNoDuplicateWork:
 
     def test_failure_releases_the_waiters(self, cards: Path, monkeypatch):
         """失敗しても待ち手を解放すること。ここを漏らすと画面が固まる。"""
-        import bcards.services.ocr as ocr_service
+        import poc.label as label_module
 
         monkeypatch.setattr(
-            ocr_service, "recognize_card", lambda image: (_ for _ in ()).throw(RuntimeError("失敗"))
+            label_module, "run_in_child", lambda args: (_ for _ in ()).throw(RuntimeError("失敗"))
         )
         client = TestClient(build_app(cards, prefill=True))
 
