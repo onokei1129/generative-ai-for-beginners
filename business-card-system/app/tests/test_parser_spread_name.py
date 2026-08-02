@@ -112,15 +112,21 @@ class TestNameOnTwoLines:
 
         assert (got["last_name"], got["first_name"]) == (last, first)
 
-    def test_a_full_name_on_the_next_line_is_not_a_given_name(self):
-        """4文字の行（氏名がまるごと入った行）を名にしないこと。
+    def test_a_logo_does_not_take_the_place_of_the_name(self):
+        """ロゴの読み崩れ（`ビー`）ではなく、本来の氏名を採ること。
 
         実測では、ロゴを氏名として拾ったあと、次の行の `伊藤直樹` を
-        名として取っていた。
+        名として取っていた。当時は「4文字の行を名にしない」ことで直し、
+        姓『ビー』名（空）で止めていた——ロゴが姓に残ったままだった。
+
+        いまはロゴ側を後回しにするので、氏名そのものが採れる。
+        かなだけで区切りの無い行（`ビー`）は姓と名に割れないため、
+        漢字の候補があればそちらを先に見る（poc の実データで、姓『ソク』
+        名『ン』のような割り方をしていたのと同じ直し）。
         """
         got = fields(["ビー", "伊藤直樹"])
 
-        assert got["first_name"] == ""
+        assert (got["last_name"], got["first_name"]) == ("伊藤", "直樹")
 
 
 class TestPublicOfficeIsACompany:

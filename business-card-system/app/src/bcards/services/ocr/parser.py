@@ -803,8 +803,20 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     # 名刺は氏名も大文字で刷る。メールの左側にその語があれば人名とみなす。
     #
     #   `ana@causalfoundry.ai`   と `ANA FERNANDEZ DEL RIO` → 氏名
-    #   `patricio@aonegames.com` と `AONE GAMES`            → 社名のまま
-    return bool({word.lower() for word in latin.split()} & _email_words(email))
+    words = {word.lower() for word in latin.split()}
+    if words & _email_words(email):
+        return True
+    # メールが無ければ裏づけが取れない。推測で氏名にはしない。
+    if "@" not in email:
+        return False
+    # メールの左側が役職名（`ceo@` `info@`）だと、上の照合はできない。
+    # そこでドメインを見る。社名はドメインの綴りになっていることが多いので、
+    # 行の語がすべてドメインに現れるなら社名、現れないなら人名とみなす。
+    #
+    #   `patricio@aonegames.com` と `AONE GAMES`    → aonegames に両方ある → 社名
+    #   `ceo@omorobot.com`       と `SEOKHOON YOON` → omorobot に無い     → 氏名
+    domain = email.split("@", 1)[1].lower()
+    return not all(word in domain for word in words)
 
 
 def split_person_name(full: str) -> tuple[str, str]:
@@ -1162,18 +1174,36 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         # `Creators`）、本来の氏名『坂本』が空になっていた。
         # 日本語の候補が無いときだけ英字を採るので、英語の名刺は変わらない。
         ascii_name: int | None = None
+        katakana_name: int | None = None
         for index, line in enumerate(cleaned):
             if index in used or _is_hiragana_only(line):
                 continue
             if not _looks_like_person_name(line, fields["email"]):
                 continue
             if _has_japanese(line):
+                # かなだけの氏名で、姓と名の区切りが無いものは後回しにする。
+                # 外国名の音写は同じ名前がラテン文字でも刷られていることが多く、
+                # そちらは空白で区切られているぶん確実に割れる。
+                #
+                #   印字  ユン　ソクン        読み  dy  ソクン
+                #         SEOKHOON YOON            SEOKHOON YOON
+                #
+                # `ユン` が読めず、残った `ソクン` を 姓『ソク』名『ン』に
+                # 割っていた（実データ）。区切りが無いなら割る位置は決められない。
+                #
+                # 区切りが残っていれば、かなのほうが名刺の印字に近いので優先する
+                # （`ユン ソクン` `パトリシオ　バスケス`）。空白は cleaned では
+                # 消えているため、空白を残した spaced_lines のほうを見る。
+                if _is_kana_only(line) and not re.search(r"\s", spaced_lines[index]):
+                    if katakana_name is None:
+                        katakana_name = index
+                    continue
                 name_index = index
                 break
             if ascii_name is None:
                 ascii_name = index
         if name_index is None:
-            name_index = ascii_name
+            name_index = ascii_name if ascii_name is not None else katakana_name
 
     # 行そのままでは氏名にならなかった場合にだけ、行の一部を見る。
     # 先に行そのままで探しきること。ロゴの読み崩れ（`トイ ヽ っ` の `トイ`）が
