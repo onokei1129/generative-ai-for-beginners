@@ -316,6 +316,21 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 "ocr_text": "",
             })
 
+    @app.get("/api/ocr-text/{name}")
+    def api_ocr_text(name: str) -> JSONResponse:
+        """OCRが読んだ文字だけを返す（保存済みの札を見直すとき用）。
+
+        保存済みではOCRを走らせないため、画面の欄を開いたときにここへ来る。
+        ここも例外を出さない。原因は本文に入れて返す（画面がJSONとして
+        読めないと、何が起きたのか分からないまま報告の往復になる）。
+        """
+        try:
+            _, error, ocr_text = _ocr_draft(directory / name)
+        except Exception as exc:
+            _log_failure(f"OCRが読んだ文字の取得（{name}）")
+            return JSONResponse({"ocr_text": f"取得できませんでした: {type(exc).__name__}: {exc}"})
+        return JSONResponse({"ocr_text": ocr_text or (error or "（読めた文字がありませんでした）")})
+
     def _label_payload(name: str, draft: str | None) -> JSONResponse:
         path = directory / name
         saved = label_path(path)
@@ -326,6 +341,10 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 "source": "保存済み",
                 "kind": "saved",
                 "prefilled": [],
+                # 保存済みではOCRを走らせない（戻るたびに数秒待たされるため）。
+                # 読んだ文字は、画面で欄を開いたときに取りに行く。
+                "ocr_text": "",
+                "ocr_text_available": True,
             })
 
         use_draft = prefill if draft is None else (draft == "1")
@@ -796,8 +815,12 @@ async function show(i) {
 
   if (state.timer) clearInterval(state.timer);
   showBar(null);
+  // 下書きなら本文が既に来ている。保存済みは走らせていないので、
+  // 欄を開いたときに取りに行く（戻るたびに数秒待たされないように）。
+  state.ocrLoaded = !data.ocr_text_available;
   document.getElementById('ocrtext').textContent =
-      data.ocr_text || '（OCRの結果はありません）';
+      data.ocr_text || (data.ocr_text_available ? '' : '（読めた文字がありませんでした）');
+  document.getElementById('ocrbox').open = false;
   src.textContent = data.source;
   src.className = 'source ' + (data.kind === 'draft' || data.kind === 'error' ? 'warn' : 'plain');
 
@@ -909,6 +932,25 @@ document.getElementById('notcard').onclick = async () => {
   await show(Math.min(at, state.files.length - 1));
   document.getElementById('saved').textContent = '一覧から外しました';
 };
+// 保存済みの札は下書きを作っていないので、欄を開いたときにだけ読みに行く。
+// 保存した値の誤りに気づいたとき、何をどう読み違えたのかを見るための欄。
+document.getElementById('ocrbox').addEventListener('toggle', async (e) => {
+  if (!e.target.open || state.ocrLoaded) return;
+  state.ocrLoaded = true;
+  const pre = document.getElementById('ocrtext');
+  pre.textContent = 'OCRで読んでいます…';
+  const name = state.files[state.index].name;
+  try {
+    const res = await fetch('/api/ocr-text/' + encodeURIComponent(name));
+    const data = await res.json();
+    // 待っているあいだに別の名刺へ移っていたら、その結果は捨てる
+    if (state.files[state.index].name !== name) return;
+    pre.textContent = data.ocr_text || '（読めた文字がありませんでした）';
+  } catch (err) {
+    state.ocrLoaded = false;
+    pre.textContent = '取得できませんでした: ' + err;
+  }
+});
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); saveAndNext(); }
   if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); if (state.index < state.files.length - 1) show(state.index + 1); }

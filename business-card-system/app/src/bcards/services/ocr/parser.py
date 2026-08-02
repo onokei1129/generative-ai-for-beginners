@@ -298,6 +298,21 @@ NOT_A_NAME_WORDS = (
     "laboratory",
     "center",
     "centre",
+    # 職務を表す語。役職・部署の行であって氏名ではない。実データ 10枚目
+    # （ロシアの名刺）では `Game Business Development` を 姓『Business
+    # Development』名『Game』として登録していた。
+    "business",
+    "development",
+    "marketing",
+    "sales",
+    "engineering",
+    "operations",
+    "planning",
+    "management",
+    "division",
+    "department",
+    "dept",
+    "team",
 )
 
 # 住所のラベル。`Add 〒580-0021 大阪府…` のように住所と同じ行に印字される。
@@ -465,6 +480,39 @@ NOISE_TOKEN_RE = re.compile(
 # `回回` が入っていた）。同じ字が並ぶ短い塊はノイズとして扱う。
 # 地名にも使う字なので、2文字以上の繰り返しに限る（`回` 1文字は落とさない）。
 SQUARE_NOISE_RE = re.compile(r"^([回口ロ日目田■□▪▫●○◆◇])\1{1,3}$")
+
+
+# 行頭に付いたロゴ・アイコンの読み崩れ（実データ 10・11枚目の `@` と `x)`）。
+#
+# `trim_ocr_noise` は日本語を含む行しか見ないため、英字だけの行に効かない。
+# 11枚目では、これで社名が空になっていた。社名はメールのドメインとの前方
+# 一致で見つけるが、照合に使う文字列が行頭の `x` を含んで `xedgecreators`
+# になり、`edgecre` と一致しなかった。
+#
+# 落とすのは**記号を含む短い塊**だけ。`Edge Creators` の `Edge` のように
+# 記号を含まない語まで落とすと、社名そのものが消える。
+def strip_leading_noise(text: str) -> str:
+    """行頭のノイズを1つ落とす。字種は問わない。
+
+    ノイズとみなすのは、空白までの最初の塊が
+      * 英数字を1つも含まない（`@` `=:`）、または
+      * 2文字までで、記号を含み、数字を含まない（`x)`）
+    場合だけ。`e-mail:` のようなラベルは3文字を超えるので残る。
+
+    数字を含むものは落とさないこと。国際電話の `+7 916 737-23-13` は
+    `+7` が2文字で記号を含むため、この例外が無いと `916 737-23-13` に
+    なる（実データ 10枚目で実際に壊した）。
+    """
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    head, _, tail = stripped.partition(" ")
+    has_letter = bool(re.search(r"[^\W_]", head, re.UNICODE))
+    has_symbol = bool(re.search(r"[^\w\s]", head, re.UNICODE))
+    has_digit = bool(re.search(r"\d", head))
+    if has_letter and not (len(head) <= 2 and has_symbol and not has_digit):
+        return stripped
+    return tail.strip()
 
 
 def trim_ocr_noise(text: str, keep_house_number: bool = False) -> str:
@@ -820,12 +868,26 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     # 姓に含まれることはあっても、5文字を超えることはまず無い。
     if len(text) >= 5 and any(hint in text for hint in ("都", "道", "府", "県")):
         return False
+    # かなだけの行にひらがなが混じっていれば、読み崩れであって氏名ではない。
+    #
+    # かなの氏名は外国名の音写なのでカタカナで印字される（`ユン ソクン`
+    # `パトリシオ バスケス`）。ひらがなだけの行は、ふりがなとして別に扱う。
+    # 実データ 10枚目（ロシアの名刺）では、飾りが `に ロニ エニ` と読まれ、
+    # 姓『にロニ』名『エニ』として登録されていた。空欄なら入力する人が
+    # 気づくが、それらしい誤りは気づかれずに保存される。
+    if _is_kana_only(text) and re.search(r"[ぁ-ん]", text) and re.search(r"[ァ-ヴ]", text):
+        return False
     # 々（踊り字）を入れておくこと。`佐々木` `野々村` は珍しくない姓で、
     # 入れないと氏名として認識されない（実測で `主任 佐々木 健` の氏名が空になった）。
     if re.fullmatch(r"[一-龥々〆ヶヵぁ-んァ-ヴー・]{2,12}", text):
         # 長音記号や中黒だけの行は飾り罫。実データでは `ーー` を氏名として
         # 登録していた。字が1文字も無いものは氏名にしない。
-        return bool(re.search(r"[一-龥々ぁ-んァ-ヴ]", text))
+        #
+        # 字が1文字しか無いものも同じ（実データ 10枚目の `スー`）。氏名は
+        # 2文字以上あるので、飾りを除いて1文字なら読み崩れとみなす。
+        # `リー` のような1文字＋長音の姓は落ちるが、名刺は姓と名を並べて
+        # 印字するため、行がそれだけになることはまず無い。
+        return len(re.findall(r"[一-龥々〆ヶヵぁ-んァ-ヴ]", text)) >= 2
     latin = normalize(line).strip()
     # 語数の上限は4。スペイン語圏の氏名は父方・母方の姓を並べるため長い
     # （実データ: `ANA FERNANDEZ DEL RIO`）。3語までにしていて空になっていた。
@@ -833,6 +895,14 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
         return False
     lowered = latin.lower()
     if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
+        return False
+    # 印字された氏名は先頭が大文字（`German Kurnikov` `SEOKHOON YOON`）。
+    # 小文字で始まるものは読み崩れの断片。実データ 10枚目では、メールの行の
+    # 残りかす `ee BO` を 姓『BO』名『ee』として登録していた。
+    #
+    # 2語目以降は見ない。`Maria de la Cruz` のように小文字で始まる語を
+    # 含む氏名があるため。
+    if not latin[:1].isupper():
         return False
     if latin != latin.upper():
         return True
@@ -915,8 +985,9 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     pairs = []
     for raw in lines:
         for line in split_columns(raw):
-            spaced = join_spaced_letters(normalize(line)).strip()
-            compact = strip_inner_spaces(normalize(line))
+            line = strip_leading_noise(normalize(line))
+            spaced = join_spaced_letters(line).strip()
+            compact = strip_inner_spaces(line)
             if compact:
                 pairs.append((compact, spaced))
     cleaned = [c for c, _ in pairs]
