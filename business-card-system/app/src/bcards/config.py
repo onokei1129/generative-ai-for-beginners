@@ -50,8 +50,16 @@ class Settings:
     device_cookie: str = "bcards_device"
     secure_cookie: bool = _env_bool("BCARDS_SECURE_COOKIE", False)
 
-    # OCR プロバイダ: mock / tesseract / paddle / easyocr / azure
-    ocr_provider: str = _env("BCARDS_OCR_PROVIDER", "tesseract")
+    # OCR プロバイダ: mock / tesseract / paddle / easyocr / combined / azure
+    #
+    # 既定は combined（EasyOCR と tesseract の併用）。論点Cの計測で、項目
+    # 正答率 68.0% → 74.9%、1枚あたりの修正 4.2 → 3.2 項目になった
+    # （ocr-decision-2026-08.md §6）。
+    #
+    # EasyOCR は依存が大きく（約1.5GB）requirements.txt には入れていない。
+    # 入っていない環境では tesseract だけで動く（＝従来どおり）。黙って
+    # 精度が戻らないよう、起動時と poc/doctor.py で知らせる。
+    ocr_provider: str = _env("BCARDS_OCR_PROVIDER", "combined")
     ocr_languages: str = _env("BCARDS_OCR_LANGUAGES", "jpn+jpn_vert+eng")
     # PaddleOCR / EasyOCR を使う場合のみ（任意インストール。app/README.md 参照）。
     # 言語の指定方法がプロバイダごとに違うため別の設定にしている。

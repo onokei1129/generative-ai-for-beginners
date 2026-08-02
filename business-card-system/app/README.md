@@ -6,7 +6,7 @@
 - サーバーサイドレンダリングの Web アプリ（FastAPI + Jinja2）
 - データベースは SQLite（開発）／ PostgreSQL（本番）。スキーマは Alembic で管理する
 - 画像はオブジェクトストレージ層に保存。ローカル／S3（MinIO 等の S3 互換を含む）を設定で切替
-- OCR はプロバイダを差し替え可能。既定はローカルの tesseract（画像を外部へ送信しない）
+- OCR はプロバイダを差し替え可能。既定はローカルの EasyOCR + tesseract の併用（画像を外部へ送信しない）
 - 取込はキュー方式。アップロードは即応答し、ワーカーが順次処理する
 
 > 本番環境の構築・運用手順（HTTPS、鍵、バックアップ、復元訓練、監視）は
@@ -116,7 +116,7 @@ cd business-card-system/app
 
 ### OCR について
 
-既定は `tesseract`（日本語 `jpn` + 縦書き `jpn_vert` + 英語 `eng`）。Ubuntu/Debian では次で導入する。
+tesseract は日本語 `jpn` + 縦書き `jpn_vert` + 英語 `eng` を使う。Ubuntu/Debian では次で導入する。
 
 ```bash
 apt-get install -y tesseract-ocr tesseract-ocr-jpn tesseract-ocr-jpn-vert
@@ -126,25 +126,33 @@ tesseract が無い環境では `BCARDS_OCR_PROVIDER=mock` を指定すると、
 
 #### 別のOCRエンジンで精度を比べる（論点C）
 
-外部へ画像を送らないローカルOCRを2つ、任意インストールで選べる。
-**依存が大きいので既定では入れていない。**
+外部へ画像を送らないローカルOCRだけで構成する。**既定は EasyOCR と tesseract の併用**で、
+EasyOCR は依存が大きいため `requirements.txt` とは別に入れる。
 
 | エンジン | インストール | 設定 | 目安 |
 | --- | --- | --- | --- |
+| **併用（既定）** | `pip install -r requirements-combined.txt` | `BCARDS_OCR_PROVIDER=combined` | EasyOCR と tesseract を両方かける |
 | PaddleOCR | `pip install -r requirements-paddle.txt` | `BCARDS_OCR_PROVIDER=paddle` | 約1.4GB。傾き・レイアウト検出を内蔵 |
-| EasyOCR | `pip install -r requirements-easyocr.txt` | `BCARDS_OCR_PROVIDER=easyocr` | PyTorch を伴う |
-| **併用** | `pip install -r requirements-combined.txt` | `BCARDS_OCR_PROVIDER=combined` | EasyOCR と tesseract を両方かける |
+| EasyOCR 単独 | `pip install -r requirements-easyocr.txt` | `BCARDS_OCR_PROVIDER=easyocr` | PyTorch を伴う |
+| tesseract 単独 | （`requirements.txt` に含まれる） | `BCARDS_OCR_PROVIDER=tesseract` | 従来の構成 |
 
-どちらも**初回実行時にモデルの重みを取得する**ため、そのときだけ外部への通信が
+いずれも**初回実行時にモデルの重みを取得する**ため、そのときだけ外部への通信が
 必要（PaddleOCR は HuggingFace / ModelScope / BOS、EasyOCR は GitHub）。
 取得後はオフラインで動き、**名刺の画像を外部へ送ることはない**。
 
-**併用**は、2つのエンジンの弱点が重ならないことを利用する構成（[../ocr-decision-2026-08.md](../ocr-decision-2026-08.md) §6）。
-EasyOCR は日本語と数字が強いが英数字の記号（`.` や `//`）を落とし、tesseract はその逆で
-英数字は取れるが日本語を1字ずつ切る。両方かけて項目ごとに取れたほうを採ると、
-合成サンプル20枚で **68.0% → 74.9%**（1枚あたりの修正 4.2 → 3.2 項目）。
-代償は処理時間で、1枚あたり 3.4秒 → 14.9秒 になる。取込はキュー方式で背後で進むため
-利用者の待ち時間は変わらないが、**既定は tesseract のままにしてある**。
+**併用が既定**（論点Cの決裁 2026-08-02、[../ocr-decision-2026-08.md](../ocr-decision-2026-08.md) §6）。
+2つのエンジンの弱点が重ならないことを利用する。EasyOCR は日本語と数字が強いが
+英数字の記号（`.` や `//`）を落とし、tesseract はその逆で英数字は取れるが日本語を
+1字ずつ切る。両方かけて項目ごとに取れたほうを採ると、合成サンプル20枚で
+**68.0% → 74.9%**（1枚あたりの修正 4.2 → 3.2 項目）。
+
+代償は処理時間で、1枚あたり 3.4秒 → 15〜21秒 になる。取込はキュー方式で背後で
+進むため、**利用者の待ち時間は変わらない**（アップロードの応答は実測0.05秒／3ファイル）。
+
+> **EasyOCR は依存が大きい（約1.5GB）ため `requirements.txt` には入れていない。**
+> 入っていない環境では tesseract だけで動く（＝従来どおりの精度）。見た目は正常な
+> まま精度だけ戻るため気づけない。起動時の設定チェックと `python -m poc.doctor`
+> で知らせる。Windows は `setup.bat`（`update.bat` から呼ばれる）が自動で入れる。
 
 精度の比較は同じ手順で測れる（前処理と項目分離は構成Dと揃えてある）。
 
@@ -357,7 +365,7 @@ SQLite・PostgreSQL のいずれでも 76 件すべて通ることを確認し�
 | `BCARDS_STORAGE_USAGE_CACHE_SECONDS` | `300` | 使用量の集計をキャッシュする秒数。`0` で毎回集計（後述） |
 | `BCARDS_SECRET_KEY` | `dev-secret-key-change-me` | セッション署名鍵（**本番では必ず変更**） |
 | `BCARDS_SECURE_COOKIE` | `0` | HTTPS 環境では `1` |
-| `BCARDS_OCR_PROVIDER` | `tesseract` | `mock` / `tesseract` / `paddle` / `easyocr` / `azure` |
+| `BCARDS_OCR_PROVIDER` | `combined` | `mock` / `tesseract` / `paddle` / `easyocr` / `combined` / `azure` |
 | `BCARDS_OCR_LANGUAGES` | `jpn+jpn_vert+eng` | tesseract の言語 |
 | `BCARDS_OCR_PADDLE_LANGUAGE` | `japan` | PaddleOCR の言語（任意インストール時） |
 | `BCARDS_OCR_EASYOCR_LANGUAGES` | `ja,en` | EasyOCR の言語（任意インストール時） |

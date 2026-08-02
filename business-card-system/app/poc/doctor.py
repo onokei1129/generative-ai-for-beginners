@@ -13,9 +13,11 @@ tesseract なのか、画像処理なのか、PDFの読み込みなのかが分�
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 # 終了コードの意味。Windows の異常終了は負の値で返る。
 FATAL_CODES = {
@@ -153,21 +155,52 @@ CHECKS: list[tuple[str, str]] = [
         """,
     ),
     (
+        "EasyOCR（併用構成のもう一方。既定で使う）",
+        """
+        from PIL import Image
+        from bcards.services.ocr.providers import EasyOcrProvider
+        out = EasyOcrProvider().recognize(Image.new("RGB", (600, 200), "white"))
+        print("ok", out.api_version)
+        """,
+    ),
+    (
         "アプリのOCR（ラベル入力と同じ経路）",
         """
-        import io, os
-        os.environ["BCARDS_OCR_PROVIDER"] = "tesseract"
+        import io
         from PIL import Image
         from bcards.services.images import process_file
         from bcards.services.ocr import recognize_card
         buf = io.BytesIO()
         Image.new("RGB", (1650, 1000), "white").save(buf, format="JPEG")
         cards = process_file(buf.getvalue(), "sample.jpg")
-        recognize_card(cards[0].ocr_image)
-        print("ok")
+        # 設定を上書きしないこと。既定（併用）そのままを試す。ここで
+        # tesseract に固定していると、既定を変えても動作確認が追随しない。
+        output, _ = recognize_card(cards[0].ocr_image)
+        print("ok", output.provider, output.raw.get("engines", ""))
         """,
     ),
 ]
+
+# 入っていなくても取込は止まらないもの。落ちても「使えません」と伝えるだけ。
+OPTIONAL_CHECKS = {"EasyOCR（併用構成のもう一方。既定で使う）"}
+
+
+APP_DIR = Path(__file__).resolve().parents[1]
+
+
+def child_env() -> dict[str, str]:
+    """子プロセスから `bcards` を読めるようにする。
+
+    別のプロセスで試すため、親が通したパスは引き継がれない。渡さないと
+    アプリ側の確認が必ず `ModuleNotFoundError: No module named 'bcards'`
+    で落ち、**部品は動いているのに「動かない」と報告する**。診断の道具が
+    嘘をつくと、そこから先の切り分けが全部むだになる。
+    """
+    paths = [str(APP_DIR / "src"), str(APP_DIR)]
+    current = os.environ.get("PYTHONPATH")
+    if current:
+        paths.append(current)
+    return {**os.environ, "PYTHONPATH": os.pathsep.join(paths)}
 
 
 def run_check(code: str) -> tuple[int, str]:
@@ -176,6 +209,7 @@ def run_check(code: str) -> tuple[int, str]:
         capture_output=True,
         text=True,
         timeout=180,
+        env=child_env(),
     )
     output = (completed.stdout + completed.stderr).strip()
     return completed.returncode, output
@@ -199,6 +233,13 @@ def main() -> int:
             continue
 
         label = FATAL_CODES.get(returncode, (f"終了コード {returncode}", ""))[0]
+        if name in OPTIONAL_CHECKS:
+            # 入っていなくても取込は動く。ただし精度は落ちるので、
+            # 「動いている」と誤解しないよう理由を書いて先へ進む。
+            print(f"  [ -- ] {name}  ← 使えません")
+            print("         tesseract だけで動きます（項目正答率 74.9% → 68.0%）。")
+            print("         入れる場合: pip install -r requirements-combined.txt")
+            continue
         print(f"  [ NG ] {name}  ← {label}")
         failures.append((name, returncode, output))
 

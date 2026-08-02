@@ -15,6 +15,30 @@ logger = logging.getLogger("bcards.startup")
 
 DEFAULT_SECRET_KEY = "dev-secret-key-change-me"
 
+# 併用構成で使うエンジンと、それぞれが要るパッケージ。
+COMBINED = "combined"
+COMBINED_ENGINES = (("easyocr", "EasyOCR", "easyocr"), ("tesseract", "tesseract", "pytesseract"))
+
+
+def _missing_engines() -> list[tuple[str, str]]:
+    """入っていないエンジンを返す。
+
+    **起動せずに、入っているかどうかだけを見る。** EasyOCR は起動すると
+    PyTorch とモデルを読み込むため数秒かかる。設定の点検のたびにそれを
+    払うのは高い（一度これを書いてしまい、テストが重くなって気づいた）。
+    """
+    from importlib.util import find_spec
+
+    missing = []
+    for _, label, module in COMBINED_ENGINES:
+        try:
+            found = find_spec(module) is not None
+        except (ImportError, ValueError):
+            found = False
+        if not found:
+            missing.append((label, module))
+    return missing
+
 
 @dataclass
 class Finding:
@@ -86,6 +110,19 @@ def check_configuration() -> list[Finding]:
                 "CPUの奪い合いで取込が滞留します。BCARDS_OCR_THREAD_LIMIT=1 を推奨します。",
             )
         )
+
+    # 併用構成で片方のエンジンが入っていないと、見た目は正常なまま精度だけが
+    # 戻る（74.9% → 68.0%）。動くので気づけない。ここで知らせる。
+    if settings.ocr_provider == COMBINED:
+        for label, module in _missing_engines():
+            findings.append(
+                Finding(
+                    "warning",
+                    f"併用構成ですが {label}（{module}）が入っていません。"
+                    "残ったエンジンだけで動くため、項目正答率が 74.9% から 68.0% に戻ります。"
+                    "pip install -r requirements-combined.txt を実行してください。",
+                )
+            )
 
     if settings.storage_backend == "s3" and not settings.s3_bucket:
         findings.append(Finding("error", "BCARDS_STORAGE_BACKEND=s3 ですが BCARDS_S3_BUCKET が未設定です。"))

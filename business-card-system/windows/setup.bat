@@ -55,6 +55,25 @@ if errorlevel 1 (
 )
 
 echo.
+echo --------------------------------------------
+echo  読み取りエンジン EasyOCR を入れます
+echo.
+echo  名刺の項目を取る精度が上がります（68%% → 75%%）。
+echo  約1.5GB あるため、初回は10分ほどかかります。
+echo  入らなくても取込は動きます（従来どおりの精度になります）。
+echo --------------------------------------------
+echo.
+.venv\Scripts\pip install -r requirements-combined.txt
+if errorlevel 1 (
+    echo.
+    echo [注意] EasyOCR を入れられませんでした。
+    echo   tesseract だけで動きます（項目正答率が 75%% から 68%% に戻ります）。
+    echo   あとから入れる場合:
+    echo     .venv\Scripts\pip install -r requirements-combined.txt
+    echo.
+)
+
+echo.
 if defined QUICK goto :skip_tests
 echo 動作確認をしています（数分かかります）...
 echo.

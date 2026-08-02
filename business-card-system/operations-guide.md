@@ -206,7 +206,7 @@ S3 の認証情報はアプリに持たせず、インスタンスロール（IA
 
 | 変数 | 既定 | 説明 |
 | --- | --- | --- |
-| `BCARDS_OCR_PROVIDER` | `tesseract` | `mock` / `tesseract` / `azure` |
+| `BCARDS_OCR_PROVIDER` | `combined` | `mock` / `tesseract` / `easyocr` / `paddle` / `combined` / `azure`。既定は EasyOCR と tesseract の併用（[ocr-decision-2026-08.md](./ocr-decision-2026-08.md) §6）。EasyOCR が無い場合は tesseract だけで動き、起動時に警告する |
 | `BCARDS_OCR_LANGUAGES` | `jpn+jpn_vert+eng` | 縦書き対応のため `jpn_vert` を含める |
 | `BCARDS_OCR_THREAD_LIMIT` | `1` | tesseract の OpenMP スレッド数（§5 参照） |
 | `BCARDS_OCR_TIMEOUT_SECONDS` | `120` | 1回の OCR の上限。超えたらそのファイルはエラー |
