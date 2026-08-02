@@ -18,6 +18,7 @@ PDFの描画（pypdfium2）とOCR（tesseract）は C のライブラリを呼�
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -32,9 +33,19 @@ sys.path.insert(0, str(APP / "src"))
 sys.path.insert(0, str(APP))
 
 
-def run(*args: str) -> subprocess.CompletedProcess[bytes]:
+def run(*args: str, encoding: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    """`encoding` を渡すと、子の画面の文字コードをその名前で動かす。
+
+    Windows の日本語環境（cp932）を、この環境から再現するために使う。
+    """
+    env = dict(os.environ)
+    if encoding is not None:
+        env["PYTHONIOENCODING"] = encoding
     return subprocess.run(
-        [sys.executable, str(ONE_CARD), *args], capture_output=True, timeout=180
+        [sys.executable, str(ONE_CARD), *args],
+        capture_output=True,
+        timeout=180,
+        env=env,
     )
 
 
@@ -83,6 +94,74 @@ class TestTheChildDoesTheWork:
 
         assert run("image", str(card), str(out)).returncode == 0
         assert out.read_bytes()[:2] == b"\xff\xd8"  # JPEG の先頭
+
+
+class TestTheChildAlwaysSpeaksUtf8:
+    """画面の文字コードに関わらず、結果は UTF-8 で返すこと。
+
+    実テストで、姓が「ソ」の1枚（`(会社名)_ユンソめ ン.pdf`）の下書きが
+    こう出て失敗した:
+
+        OCR（別プロセス）で失敗（Expecting ',' delimiter: line 1 column 33 (char 32)）
+
+    子は `sys.stdout` へ**文字として**書いていた。そこは画面の文字コードで
+    書かれるため、Windows の日本語環境では cp932 になる。cp932 の「ソ」は
+    0x83 0x5C で、2バイト目が円記号（UTF-8 では \\）。親は UTF-8 として
+    読むので、この \\ が直後の引用符を打ち消し、文字列が閉じなくなる。
+
+    「ソ」に限った話ではない。cp932 のバイト列は UTF-8 として読めないため、
+    **日本語の項目が取れた名刺ほど失敗する**。別プロセスに出した時点で
+    持ち込んだ不具合で、それまでは同じプロセス内で受け渡していた。
+
+    ここでは cp932 を明示して子を動かし、それでも壊れないことを確かめる。
+    """
+
+    def test_the_output_is_utf8_even_on_a_cp932_console(self, card: Path):
+        done = run("ocr", str(card), encoding="cp932")
+
+        assert done.returncode == 0
+        done.stdout.decode("utf-8")  # 置き換えなし。壊れていれば例外
+
+    def test_the_draft_still_parses_on_a_cp932_console(self, card: Path):
+        """親と同じ読み方（bytes をそのまま json へ）で確かめる。"""
+        payload = json.loads(run("ocr", str(card), encoding="cp932").stdout)
+
+        assert payload["fields"]
+
+    def test_japanese_comes_back_unchanged(self, card: Path):
+        """文字化けは「読めた」で通ってしまうため、中身まで比べる。"""
+        plain = json.loads(run("ocr", str(card)).stdout)
+        cp932 = json.loads(run("ocr", str(card), encoding="cp932").stdout)
+
+        assert cp932 == plain
+
+    def test_the_troublesome_character_survives(self):
+        """姓が「ソ」の値をそのまま書かせて往復させる。
+
+        実際に壊れた文字をそのまま置く。画像は要らない——壊れるのは
+        受け渡しの側なので、書き出しだけを cp932 の画面で動かす。
+        """
+        code = (
+            f"import sys; sys.path.insert(0, {str(APP)!r});"
+            "from poc.one_card import emit;"
+            "emit({'fields': {'last_name': 'ソ'}})"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            timeout=60,
+            env={**os.environ, "PYTHONIOENCODING": "cp932"},
+        )
+
+        assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+        assert json.loads(done.stdout)["fields"]["last_name"] == "ソ"
+
+    def test_the_result_never_goes_through_the_text_layer(self):
+        """`sys.stdout` へ文字で書く形に戻らないこと（戻ると不具合も戻る）。"""
+        source = (APP / "poc" / "one_card.py").read_text(encoding="utf-8")
+
+        assert "sys.stdout.buffer.write" in source
+        assert "json.dump(" not in source  # json.dumps(...).encode(...) を使う
 
 
 class TestAFailureIsReportedNotSwallowed:

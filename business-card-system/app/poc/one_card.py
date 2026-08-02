@@ -58,23 +58,48 @@ def write_image(path: Path, out: Path) -> None:
     out.write_bytes(buffer.getvalue())
 
 
+def emit(payload: dict) -> None:
+    """結果は UTF-8 のバイトで書く。文字として書いてはいけない。
+
+    `sys.stdout` は**画面の文字コード**で書く。Windows の日本語環境では
+    そこが cp932 になる。cp932 の「ソ」は 0x83 0x5C で、2バイト目が円記号
+    （UTF-8 では \\）。親は UTF-8 として読むため、この \\ が直後の引用符を
+    打ち消し、JSON の文字列が閉じなくなる。
+
+    実テストの1枚（姓が「ソ」）で、画面にこう出た:
+
+        OCR（別プロセス）で失敗（Expecting ',' delimiter: line 1 column 33 (char 32)）
+
+    「ソ」に限らず、日本語が入っていれば cp932 のバイト列は UTF-8 として
+    読めない。つまり**日本語の項目が取れた名刺ほど失敗する**。
+    """
+    sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    sys.stdout.buffer.flush()
+
+
+def warn(text: str) -> None:
+    """理由も UTF-8 のバイトで書く（画面にそのまま出るため）。"""
+    sys.stderr.buffer.write(f"{text}\n".encode("utf-8"))
+    sys.stderr.buffer.flush()
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("使い方: one_card.py ocr <ファイル> | image <ファイル> <出力>", file=sys.stderr)
+        warn("使い方: one_card.py ocr <ファイル> | image <ファイル> <出力>")
         return 2
 
     mode, target = argv[0], Path(argv[1])
     if mode == "ocr":
-        json.dump(run_ocr(target), sys.stdout, ensure_ascii=False)
+        emit(run_ocr(target))
         return 0
     if mode == "image":
         if len(argv) < 3:
-            print("出力先が要ります", file=sys.stderr)
+            warn("出力先が要ります")
             return 2
         write_image(target, Path(argv[2]))
         return 0
 
-    print(f"知らない指定です: {mode}", file=sys.stderr)
+    warn(f"知らない指定です: {mode}")
     return 2
 
 

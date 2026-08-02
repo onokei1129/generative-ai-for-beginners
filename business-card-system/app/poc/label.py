@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import os
 import queue
 import sys
 import threading
@@ -132,10 +133,14 @@ def run_in_child(args: list[str]) -> dict:
     """
     import subprocess
 
+    # 子の標準出力・標準エラーを UTF-8 に固定する。Windows の日本語環境では
+    # 既定が cp932 で、Python が出す traceback もそちらの文字コードで届く。
+    # 結果そのものは子が UTF-8 のバイトで書く（poc/one_card.py の emit）。
     completed = subprocess.run(
         [sys.executable, str(ONE_CARD), *args],
         capture_output=True,
         timeout=CHILD_TIMEOUT,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", "replace").strip().splitlines()
@@ -143,7 +148,9 @@ def run_in_child(args: list[str]) -> dict:
         raise ChildFailed(f"{reason}（終了コード {completed.returncode}）")
     if not completed.stdout:
         return {}
-    return json.loads(completed.stdout.decode("utf-8", "replace"))
+    # bytes のまま渡す（json は UTF-8 として読む）。ここで文字へ直すと、
+    # 直し方を間違えたときに JSON の構文エラーとして出てきて原因が見えない。
+    return json.loads(completed.stdout)
 
 
 def build_app(directory: Path, prefill: bool) -> FastAPI:
@@ -465,8 +472,27 @@ PAGE = """
   .imgerror { font-size: 13px; padding: 8px 10px; border-radius: 4px; margin: 8px 0;
               background: #fff4e5; border: 1px solid #ffd8a8; color: #8a5300; }
   .source { font-size: 12px; padding: 6px 8px; border-radius: 4px; margin-bottom: 10px; }
+  /* 下書き中は文を出さない。空の帯だけが残らないようにする */
+  .source:empty { display: none; }
   .source.warn { background: #fff4e5; border: 1px solid #ffd8a8; color: #8a5300; }
   .source.plain { background: #f0f2f5; color: #555; }
+  /* OCRの下書き中は、文で伝えるより動いているものを見せるほうが分かりやすい。
+     文字は秒数だけにして、進んでいるかどうかはバーの動きで示す。
+     どこまで進んだかは分からないため、割合ではなく往復するバーにする。 */
+  .ocrbar { position: relative; height: 22px; border-radius: 4px; margin-bottom: 10px;
+            background: #e4e7ec; overflow: hidden; }
+  .ocrbar::before { content: ''; position: absolute; top: 0; bottom: 0; width: 40%;
+                    background: linear-gradient(90deg, #1a73e8aa, #1a73e8);
+                    border-radius: 4px; animation: ocrslide 1.1s ease-in-out infinite; }
+  .ocrbar span { position: absolute; inset: 0; display: flex; align-items: center;
+                 justify-content: center; font-size: 12px; font-weight: 700;
+                 color: #10305c; font-variant-numeric: tabular-nums; }
+  @keyframes ocrslide { 0% { left: -40%; } 100% { left: 100%; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ocrbar::before { animation-duration: 3s; }
+  }
+  .ocrslow { font-size: 12px; color: #8a5300; margin: -4px 0 10px; }
+  .ocrslow:empty { display: none; }
   .field { margin-bottom: 10px; }
   .field label { display: block; font-size: 12px; color: #444; margin-bottom: 3px; font-weight: 600; }
   .field input { width: 100%; padding: 7px 9px; font-size: 14px; border: 1px solid #c8ccd4;
@@ -531,6 +557,8 @@ PAGE = """
   <div>
     <div class="panel">
       <div class="source plain" id="source">—</div>
+      <div class="ocrbar" id="ocrbar" hidden><span id="ocrsec"></span></div>
+      <div class="ocrslow" id="ocrslow"></div>
       <form id="form" autocomplete="off"></form>
       <div class="actions">
         <button type="button" id="prev">← 前へ</button>
@@ -662,20 +690,19 @@ async function show(i) {
 
   const useDraft = document.getElementById('draft').checked ? '1' : '0';
   const src = document.getElementById('source');
-  src.textContent = useDraft === '1' ? 'OCRで下書きしています…' : '';
+  src.textContent = '';
   src.className = 'source plain';
 
-  // 経過を出す。止まっているのか動いているのか分からないと手が止まる。
-  // 20秒を超えたら、待たずに進めることを伝える。
+  // 下書き中は、文ではなくバーで見せる。止まっているのか動いているのかが
+  // 一目で分かればよく、読ませる必要はない。バーの中の文字は秒数だけにする。
+  // 20秒を超えたときだけ、待たずに進められることをバーの下に添える。
   if (state.timer) clearInterval(state.timer);
+  showBar(useDraft === '1' ? 0 : null);
   if (useDraft === '1') {
     const started = Date.now();
     state.timer = setInterval(() => {
       if (state.index !== i) { clearInterval(state.timer); return; }
-      const seconds = Math.round((Date.now() - started) / 1000);
-      src.textContent = seconds >= 20
-        ? `OCRで下書きしています…（${seconds}秒）　時間がかかっています。「スキップ」で次へ進めます`
-        : `OCRで下書きしています…（${seconds}秒）`;
+      showBar(Math.round((Date.now() - started) / 1000));
     }, 1000);
   }
 
@@ -686,6 +713,8 @@ async function show(i) {
   } catch (e) {
     // 取れなくても手を止めない。空欄のまま入力できるようにする
     if (state.index !== i) return;
+    if (state.timer) clearInterval(state.timer);
+    showBar(null);
     document.getElementById('next').disabled = false;
     src.textContent = 'OCRの結果を取得できませんでした。空欄から入力してください。';
     src.className = 'source warn';
@@ -702,6 +731,7 @@ async function show(i) {
   for (const key of state.unverified) mark(key, true);
 
   if (state.timer) clearInterval(state.timer);
+  showBar(null);
   document.getElementById('ocrtext').textContent =
       data.ocr_text || '（OCRの結果はありません）';
   src.textContent = data.source;
@@ -712,6 +742,25 @@ async function show(i) {
   renderUnverified();
   const first = document.getElementById('f_' + state.fields[0].key);
   if (first) first.focus();
+}
+
+// OCRの下書き中を示すバー。seconds に数値を渡すと出し、null で消す。
+// バーの中に出すのは秒数だけにする（動いていることはバー自体が示す）。
+function showBar(seconds) {
+  const bar = document.getElementById('ocrbar');
+  const slow = document.getElementById('ocrslow');
+  if (seconds === null) {
+    bar.hidden = true;
+    slow.textContent = '';
+    return;
+  }
+  bar.hidden = false;
+  document.getElementById('ocrsec').textContent = seconds + '秒';
+  // 20秒を超えたら、待たずに進められることだけ添える。バーの外に出すのは、
+  // 中を秒数だけにしておくため（実テストで、長い文だと読み飛ばされた）。
+  slow.textContent = seconds >= 20
+    ? '時間がかかっています。「スキップ」で次へ進めます。'
+    : '';
 }
 
 function mark(key, on) {
