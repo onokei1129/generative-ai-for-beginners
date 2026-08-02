@@ -133,15 +133,23 @@ tesseract が無い環境では `BCARDS_OCR_PROVIDER=mock` を指定すると、
 | --- | --- | --- | --- |
 | PaddleOCR | `pip install -r requirements-paddle.txt` | `BCARDS_OCR_PROVIDER=paddle` | 約1.4GB。傾き・レイアウト検出を内蔵 |
 | EasyOCR | `pip install -r requirements-easyocr.txt` | `BCARDS_OCR_PROVIDER=easyocr` | PyTorch を伴う |
+| **併用** | `pip install -r requirements-combined.txt` | `BCARDS_OCR_PROVIDER=combined` | EasyOCR と tesseract を両方かける |
 
 どちらも**初回実行時にモデルの重みを取得する**ため、そのときだけ外部への通信が
 必要（PaddleOCR は HuggingFace / ModelScope / BOS、EasyOCR は GitHub）。
 取得後はオフラインで動き、**名刺の画像を外部へ送ることはない**。
 
+**併用**は、2つのエンジンの弱点が重ならないことを利用する構成（[../ocr-decision-2026-08.md](../ocr-decision-2026-08.md) §6）。
+EasyOCR は日本語と数字が強いが英数字の記号（`.` や `//`）を落とし、tesseract はその逆で
+英数字は取れるが日本語を1字ずつ切る。両方かけて項目ごとに取れたほうを採ると、
+合成サンプル20枚で **68.0% → 74.9%**（1枚あたりの修正 4.2 → 3.2 項目）。
+代償は処理時間で、1枚あたり 3.4秒 → 14.9秒 になる。取込はキュー方式で背後で進むため
+利用者の待ち時間は変わらないが、**既定は tesseract のままにしてある**。
+
 精度の比較は同じ手順で測れる（前処理と項目分離は構成Dと揃えてある）。
 
 ```bash
-python -m poc.runner --only D,F,G    # tesseract / PaddleOCR / EasyOCR
+python -m poc.runner --only D,F,G,H    # tesseract / PaddleOCR / EasyOCR / 併用
 ```
 
 項目分離（OCRテキストを氏名・会社名などに分ける処理）は2方式ある。

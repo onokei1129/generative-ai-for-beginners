@@ -94,3 +94,12 @@ def test_unbounded_tesseract_threads_warns_when_workers_are_parallel(production,
 
     monkeypatch.setattr(settings, "ocr_thread_limit", 1)
     assert check_configuration() == []
+
+
+def test_the_combined_provider_gets_the_same_warning(production, monkeypatch):
+    """併用構成は内側で tesseract を動かすため、同じ奪い合いが起きる。"""
+    monkeypatch.setattr(settings, "ocr_provider", "combined")
+    monkeypatch.setattr(settings, "worker_concurrency", 2)
+    monkeypatch.setattr(settings, "ocr_thread_limit", 0)
+
+    assert "BCARDS_OCR_THREAD_LIMIT" in _messages(check_configuration())

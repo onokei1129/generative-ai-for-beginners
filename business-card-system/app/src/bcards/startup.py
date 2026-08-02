@@ -73,8 +73,9 @@ def check_configuration() -> list[Finding]:
             )
         )
 
+    # combined は tesseract を内側で動かすため、同じ奪い合いが起きる。
     if (
-        settings.ocr_provider == "tesseract"
+        settings.ocr_provider in ("tesseract", "combined")
         and settings.worker_concurrency > 1
         and settings.ocr_thread_limit <= 0
     ):

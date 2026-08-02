@@ -14,6 +14,9 @@
   C 改善後の前処理（切り出し＋傾き補正のみ）+ ルールベース抽出
   D 改善後 + 縦書き言語データ併用 + ルールベース抽出（現行実装）
   E 改善後 + LLM抽出（Claude API。認証情報がある場合のみ）
+  F 改善後 + PaddleOCR（読み取りエンジンの差し替え）
+  G 改善後 + EasyOCR（読み取りエンジンの差し替え）
+  H 改善後 + EasyOCR と tesseract の併用（項目ごとに取れたほうを採る）
 """
 
 from __future__ import annotations
@@ -167,6 +170,46 @@ class EnginePipeline:
         parsed = parse_fields(output.lines or output.text.splitlines())
         elapsed = time.perf_counter() - started
         return PipelineResult(fields=parsed["fields"], seconds=elapsed, ocr_text=output.text)
+
+
+class CombinedEnginePipeline:
+    """複数の読み取りエンジンを両方かけ、項目ごとに取れたほうを採る。
+
+    構成DとGの比較で、両者の弱点が重ならないことが分かったため測る。
+    前処理と項目分離は構成Dと揃える（差は読み取りエンジンだけ）。
+    """
+
+    def __init__(self, label: str, engines: tuple[str, ...]) -> None:
+        self.label = label
+        self.engines = engines
+        self.providers: list[Any] = []
+
+    def _ensure_providers(self) -> list[Any]:
+        if not self.providers:
+            from bcards.services.ocr.providers import EasyOcrProvider, PaddleOcrProvider
+
+            factories: dict[str, Any] = {
+                "paddle": PaddleOcrProvider,
+                "easyocr": EasyOcrProvider,
+                "tesseract": lambda: TesseractOcrProvider("jpn+jpn_vert+eng"),
+            }
+            self.providers = [factories[name]() for name in self.engines]
+        return self.providers
+
+    def run(self, sample: Sample) -> PipelineResult:
+        from bcards.services.ocr import merge_fields
+
+        providers = self._ensure_providers()
+        started = time.perf_counter()
+        prepared = preprocess_current(sample.image)
+        outputs = [provider.recognize(prepared) for provider in providers]
+        merged = merge_fields([parse_fields(o.lines or o.text.splitlines()) for o in outputs])
+        elapsed = time.perf_counter() - started
+        return PipelineResult(
+            fields=merged["fields"],
+            seconds=elapsed,
+            ocr_text="\n".join(f"--- {o.provider} ---\n{o.text}" for o in outputs),
+        )
 
 
 class LlmPipeline:
@@ -406,6 +449,7 @@ def main() -> None:
     # 依存が大きいため任意インストール。入っていなければ「未計測」と出る。
     pipelines.append(EnginePipeline("F 改善後+PaddleOCR", "paddle"))
     pipelines.append(EnginePipeline("G 改善後+EasyOCR", "easyocr"))
+    pipelines.append(CombinedEnginePipeline("H 改善後+EasyOCR/tesseract併用", ("easyocr", "tesseract")))
 
     if args.only:
         wanted = {token.strip().upper() for token in args.only.split(",") if token.strip()}
