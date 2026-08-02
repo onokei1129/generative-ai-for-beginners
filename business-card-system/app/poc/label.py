@@ -84,12 +84,8 @@ HINTS = {
 }
 
 
-def _version() -> str:
-    """この画面がどの版かを返す。
-
-    「最新版に更新する」を実行したつもりで取得できていない、という取り違えが
-    実際に起きた。画面に版を出して、その場で確かめられるようにする。
-    """
+def _disk_version() -> str:
+    """いま**ディスクにある**版を返す。動いている版とは限らない。"""
     import subprocess
 
     root = Path(__file__).resolve().parents[3]
@@ -109,6 +105,23 @@ def _version() -> str:
     return stamp.strftime("%m/%d %H:%M")
 
 
+# 起動した時点の版。**このサーバーが動かしている**コードの版はこちら。
+#
+# 以前は要求のたびにディスクを見ていた。取得（git pull）はサーバーを立てた
+# まま行えるため、ディスクだけが新しくなり、画面には新しい版が出るのに
+# 動いているのは古いコード、という状態になる。版を出したのは「更新できて
+# いるか」をその場で確かめるためなので、これでは逆に取り違えを招く。
+_RUNNING_VERSION = _disk_version()
+
+
+def _version() -> str:
+    """画面に出す版。動いている版を示し、ディスクと違えば併記する。"""
+    disk = _disk_version()
+    if disk != _RUNNING_VERSION:
+        return f"{_RUNNING_VERSION}（動作中／ディスクは {disk}。開き直してください）"
+    return _RUNNING_VERSION
+
+
 # 重い処理を任せる子プロセスの入口。
 ONE_CARD = Path(__file__).resolve().parent / "one_card.py"
 
@@ -118,6 +131,36 @@ CHILD_TIMEOUT = 120
 
 class ChildFailed(RuntimeError):
     """子プロセスが失敗した。終了コードと標準エラーを添える。"""
+
+
+# 失敗の全文を残す先。コンソールは流れて消えるうえ、閉じると何も残らない。
+# 実テストでは「画面にこう出た」だけが手がかりで、原因の特定に往復していた。
+LOG_PATH = Path(__file__).resolve().parent / "ラベル入力ログ.txt"
+
+
+def _log_failure(what: str) -> None:
+    """失敗の全文をコンソールとファイルの両方へ書く。
+
+    コンソールへの出力は、そこで例外を出さないようにすること。Windows の
+    日本語環境では画面の文字コードが cp932 で、書けない文字があると
+    `print` 自体が UnicodeEncodeError を出す。それが握られていない場所で
+    起きると、元の失敗ではなくそちらが表に出て、原因が分からなくなる。
+    """
+    import datetime
+
+    body = traceback.format_exc()
+    stamp = datetime.datetime.now().strftime("%m/%d %H:%M:%S")
+    text = f"\n===== {stamp}  {what} =====\n{body}"
+    try:
+        sys.stderr.buffer.write(text.encode("utf-8", "replace"))
+        sys.stderr.buffer.flush()
+    except Exception:  # noqa: BLE001 - 記録できなくても本筋を止めない
+        pass
+    try:
+        with LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(text)
+    except Exception:  # noqa: BLE001 - 同上
+        pass
 
 
 def run_in_child(args: list[str]) -> dict:
@@ -229,7 +272,6 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             # 失敗しても壊れた画像アイコンだけを出さず、理由を返す
             # （実テストで1枚だけ画像が出ず、原因が分からない状態になった）。
             import tempfile
-            import traceback
 
             from fastapi.responses import Response
 
@@ -241,8 +283,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                     run_in_child(["image", str(path), str(out)])
                     data = out.read_bytes()
                 except Exception as exc:  # noqa: BLE001 - 画面に理由を出すため握る
-                    traceback.print_exc()
-                    print(f"[画像を表示できません] {path.name}: {exc}")
+                    _log_failure(f"画像の表示（{path.name}）")
                     return JSONResponse(
                         {"error": f"画像を表示できません: {type(exc).__name__}: {exc}"},
                         status_code=415,
@@ -252,6 +293,30 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
 
     @app.get("/api/label/{name}")
     def api_get_label(name: str, draft: str | None = None) -> JSONResponse:
+        """下書きを返す。**ここから例外を出さない。**
+
+        例外を出すと FastAPI が本文なしの 500 を返す。画面側はJSONとして
+        読もうとして失敗し、「OCRの結果を取得できませんでした」という、
+        原因の分からない文言だけが出る（実テストで発生）。
+
+        理由が分からないと報告の往復になるので、何が起きても中身をJSONで
+        返し、画面に理由をそのまま出す。
+        """
+        try:
+            return _label_payload(name, draft)
+        except Exception as exc:  # noqa: BLE001 - 画面に理由を出すため握る
+            _log_failure(f"下書きの作成（{name}）")
+            # ここは最後の受け皿なので、原因になりうるものに一切頼らない。
+            # 空の辞書で返す（画面側は項目ごとに `|| ''` で受けている）。
+            return JSONResponse({
+                "values": {},
+                "source": f"下書きを作れませんでした: {type(exc).__name__}: {exc}",
+                "kind": "error",
+                "prefilled": [],
+                "ocr_text": "",
+            })
+
+    def _label_payload(name: str, draft: str | None) -> JSONResponse:
         path = directory / name
         saved = label_path(path)
         if saved.exists():
@@ -323,8 +388,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 result = (values, None, payload.get("text", ""))
             except Exception as exc:
                 # 画面には要約しか出せないので、原因を追えるようにコンソールへ全文を出す
-                print(f"\n[{path.name}] {step}で失敗しました", file=sys.stderr)
-                traceback.print_exc()
+                _log_failure(f"{step}（{path.name}）")
                 detail = str(exc) or exc.__class__.__name__
                 # 失敗はキャッシュしない。一時的な失敗（メモリ不足、他プロセスとの
                 # 競合など）を覚え込むと、原因を直しても画面を開き直すまで
@@ -348,7 +412,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             try:
                 _ocr_draft(target)
             except Exception:  # 先読みの失敗で止まらない
-                traceback.print_exc()
+                _log_failure(f"先読み（{target.name}）")
             finally:
                 _warm_queue.task_done()
 
