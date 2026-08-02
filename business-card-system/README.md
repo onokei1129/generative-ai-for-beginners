@@ -12,6 +12,7 @@
 | [screens-and-functions-v0.3.md](./screens-and-functions-v0.3.md) | 画面一覧・機能一覧 | Ver.0.3 | ドラフト |
 | [personal-data-handling-v0.3.md](./personal-data-handling-v0.3.md) | 個人情報の取扱い（利用目的・安全管理措置・開示請求対応／論点M） | Ver.0.3 | **草案（法務／総務レビュー待ち）** |
 | [ocr-poc-report.md](./ocr-poc-report.md) | OCR精度PoCの計測報告（論点C） | 第1回 | 実測済み |
+| [ocr-decision-2026-08.md](./ocr-decision-2026-08.md) | 論点Cの決裁報告（最新の実測・費用・推奨） | 2026-08 | **決裁待ち** |
 | [operations-guide.md](./operations-guide.md) | 本番導入・運用手引き（構築／HTTPS／バックアップ／監査ログのアーカイブ／監視） | Ver.0.3 | ドラフト |
 | [restore-drill-2026-07.md](./restore-drill-2026-07.md) | 復元訓練 第1回の実施記録 | 第1回 | 実施済み |
 | [capacity-report-2026-07.md](./capacity-report-2026-07.md) | 本番相当データでの性能実測（検索応答時間・RTO） | 第1回 | 実測済み |
@@ -26,6 +27,7 @@
 4. **screens-and-functions-v0.3.md** — 画面・機能への展開。見積の入力とする
 5. **personal-data-handling-v0.3.md** — 個人情報の取扱い。5章が法務／総務への確認事項の一覧
 6. **ocr-poc-report.md** — OCR精度の実測結果。論点Cの判断材料
+   （最新の数値と推奨は **ocr-decision-2026-08.md**）
 7. **app/README.md** — 実装の起動方法・構成・要件との対応
 8. **operations-guide.md** — 本番環境の構築と運用（システム管理者向け）
 
