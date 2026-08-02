@@ -32,6 +32,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from bcards.services.ocr.parser import (  # noqa: E402
+    is_house_number_only,
     looks_like_address,
     parse_fields,
     repair_address_symbols,
@@ -221,3 +222,75 @@ class TestTheGuardAppliesToEveryPath:
     @pytest.mark.parametrize("text", ["1-2-3", "らの - の９の", "〒4 らの - の９の"])
     def test_kana_and_digits_alone_are_rejected(self, text: str):
         assert not looks_like_address(text)
+
+
+class TestAHouseNumberOnTheNextLineIsJoined:
+    """番地だけが次の行に回った場合につなぐ。
+
+    実テスト（227枚）の3枚目で、住所が `大阪府松原市高見の里六丁目` になり、
+    番地の `7-18` が落ちていた。名刺には1行で印字されているが、OCRは
+    別の行として返していた。
+
+    英字の住所は行末の読点が折り返しの印になるが、日本語の住所には印が無い。
+    数字だけの行は、その手前の住所の続きとみなす。
+
+    電話番号・郵便番号を巻き込まないこと。どちらも数字と区切りだけの行に
+    なりうるうえ、住所の近くに印字される。
+    """
+
+    def test_the_real_card_that_lost_its_house_number(self):
+        got = parse_fields([
+            "代表取締役",
+            "ユン ソクン",
+            "SEOKHOON YOON",
+            "HP 070-9385-4004",
+            "Tel 050-3110-2873",
+            "E-mail ceo@omorobot.com",
+            "Add 〒580-0021",
+            "大阪府松原市高見の里六丁目",
+            "7-18",
+        ])["fields"]
+
+        assert got["address"] == "大阪府松原市高見の里六丁目7-18"
+
+    def test_the_other_fields_are_not_disturbed(self):
+        got = parse_fields([
+            "Add 〒580-0021",
+            "大阪府松原市高見の里六丁目",
+            "7-18",
+            "HP 070-9385-4004",
+            "Tel 050-3110-2873",
+        ])["fields"]
+
+        assert got["postal_code"] == "580-0021"
+        assert got["tel"] == "050-3110-2873"
+        assert got["mobile"] == "070-9385-4004"
+
+    @pytest.mark.parametrize("text", ["7-18", "1-2-3", "2621", "18"])
+    def test_a_house_number_is_recognised(self, text: str):
+        assert is_house_number_only(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "580-0021",       # 郵便番号
+            "03-1234-5678",   # 固定電話
+            "090-1234-5678",  # 携帯
+            "123456789",      # 9桁。電話番号の桁数
+            "六丁目",           # 数字ではない
+            "7-18 Osaka",     # 数字だけの行ではない
+            "",
+        ],
+    )
+    def test_other_numbers_are_left_alone(self, text: str):
+        assert not is_house_number_only(text)
+
+    def test_a_phone_line_is_not_swallowed(self):
+        """住所の次が電話番号でも、住所につながないこと。"""
+        got = parse_fields([
+            "〒100-0001 東京都千代田区千代田",
+            "03-1234-5678",
+        ])["fields"]
+
+        assert got["address"] == "東京都千代田区千代田"
+        assert got["tel"] == "03-1234-5678"

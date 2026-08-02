@@ -587,6 +587,21 @@ def repair_address_symbols(text: str) -> str:
     return ADDRESS_AT_RE.sub("-", text)
 
 
+def is_house_number_only(text: str) -> bool:
+    """番地だけの行か（`7-18` `1-2-3`）。住所の続きとしてつなぐ判定に使う。
+
+    電話番号・郵便番号を巻き込まないこと。どちらも数字と区切りだけの行に
+    なりうる。電話番号は9桁以上（このファイルの他の判定と同じ基準）、
+    郵便番号は3桁-4桁なので、その形は除く。
+    """
+    compact = re.sub(r"\s+", "", normalize(text))
+    if not re.fullmatch(r"\d{1,4}(?:-\d{1,4}){0,3}", compact):
+        return False
+    if re.fullmatch(r"\d{3}-\d{4}", compact):
+        return False  # 郵便番号
+    return len(re.sub(r"\D", "", compact)) <= 8
+
+
 def looks_like_address(text: str) -> bool:
     """住所には地名が要る。
 
@@ -961,6 +976,8 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             phone_used.add(index)
 
     # 郵便番号・住所
+    # 採った行を覚えておく。番地が次の行へ回ることがあり、つなぐのに要る。
+    address_index: int | None = None
     for index, line in enumerate(cleaned):
         match = POSTAL_RE.search(line)
         if match and not fields["postal_code"]:
@@ -976,6 +993,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if remainder and not fields["address"]:
                 fields["address"] = remainder
                 confidence["address"] = 0.7
+                address_index = index
             used.add(index)
 
     if not fields["address"]:
@@ -985,6 +1003,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if len(line) >= 6 and sum(hint in line for hint in ADDRESS_HINTS) >= 2:
                 fields["address"] = strip_postal_prefix(strip_address_label(line))
                 confidence["address"] = 0.6
+                address_index = index
                 used.add(index)
                 break
 
@@ -998,6 +1017,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if len(remainder) >= 4:
                 fields["address"] = remainder
                 confidence["address"] = 0.7
+                address_index = index
                 used.add(index)
                 break
 
@@ -1031,7 +1051,22 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             _, start, end, line = max(candidates)
             fields["address"] = strip_address_label(line)
             confidence["address"] = 0.4
+            address_index = end
             used.update(range(start, end + 1))
+
+    # 番地だけが次の行に回った場合につなぐ。
+    #
+    # 日本語の住所は読点で終わらないので、折り返しの印が無い。実データ
+    # （3枚目）では `大阪府松原市高見の里六丁目` と `7-18` が別の行として
+    # 読まれ、番地の無い住所になっていた。人が見れば1行に見えるため、
+    # 「OCRが弱い」と誤解されやすい種類の取りこぼし。
+    while address_index is not None and address_index + 1 < len(cleaned):
+        nxt = address_index + 1
+        if nxt in used or not is_house_number_only(cleaned[nxt]):
+            break
+        fields["address"] = f"{fields['address']}{normalize(cleaned[nxt]).strip()}"
+        used.add(nxt)
+        address_index = nxt
 
     # 会社名
     for index, line in enumerate(cleaned):
