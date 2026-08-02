@@ -33,6 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from bcards.services.ocr.parser import (  # noqa: E402
     is_house_number_only,
+    join_house_number,
+    trim_ocr_noise,
     looks_like_address,
     parse_fields,
     repair_address_symbols,
@@ -294,3 +296,74 @@ class TestAHouseNumberOnTheNextLineIsJoined:
 
         assert got["address"] == "東京都千代田区千代田"
         assert got["tel"] == "03-1234-5678"
+
+
+class TestAHouseNumberIsNotMistakenForNoise:
+    """住所の末尾の番地を、ロゴの読み崩れとして落とさないこと。
+
+    実テスト（227枚）の3枚目で、住所が `大阪府松原市高見の里六丁目` になり、
+    番地の `7-18` が消えていた。画面の「OCRが読んだ文字」はこう。
+
+        大 阪 府 松原 市 高見 の 里 六 丁目 7-18
+
+    番地は読めている。落としていたのは `trim_ocr_noise` で、項目の前後に付く
+    ロゴの読み崩れ（`Ob` `eC` `Ai` `LOBE`）を落とす仕掛け。英数字4文字までを
+    ノイズとみなすため、`7-18`（4文字）がちょうど当たっていた。
+
+    桁数しだいで消えたり残ったりする、たちの悪い形をしていた。
+
+        7-18   4文字 → 消える
+        1-1-1  5文字 → 残る
+
+    住所の末尾に限り、番地の形の語は落とさない。
+    """
+
+    def test_the_real_ocr_text_keeps_its_house_number(self):
+        got = parse_fields([
+            "の",
+            "HP",
+            "070-9385-4004",
+            "Tel",
+            "代表 取締 役   050-3110-2873",
+            "dy ソクン   E-mail",
+            "SEOKHOON YOON   ceo@omorobot.com",
+            "Add",
+            "580-0021",
+            "大 阪 府 松原 市 高見 の 里 六 丁目 7-18",
+        ])["fields"]
+
+        assert got["address"] == "大阪府松原市高見の里六丁目7-18"
+
+    @pytest.mark.parametrize("number", ["7-18", "1-2", "12", "3-4-5"])
+    def test_a_house_number_of_any_length_survives(self, number: str):
+        """桁数で結果が変わらないこと。ここが元の不具合だった。"""
+        got = address([f"大阪府松原市高見の里六丁目 {number}"])
+
+        assert got == f"大阪府松原市高見の里六丁目{number}"
+
+    def test_the_space_before_the_house_number_is_closed(self):
+        """日本語の住所は番地の前で空けない。OCRが入れた空白を詰める。"""
+        assert join_house_number("大阪府松原市高見の里六丁目 7-18") == "大阪府松原市高見の里六丁目7-18"
+
+    def test_an_english_address_is_left_alone(self):
+        """英字の住所は空白に意味がある。詰めないこと。"""
+        assert join_house_number("Chiyoda, Tokyo 100") == "Chiyoda, Tokyo 100"
+
+
+class TestNoiseIsStillTrimmed:
+    """番地を残す変更で、ロゴの読み崩れを落とせなくならないこと。"""
+
+    @pytest.mark.parametrize(
+        ("text", "want"),
+        [
+            ("Ob eC F 東京都千代田区平河町2-6-3 Ai AP APE LOBE", "東京都千代田区平河町2-6-3"),
+            ("© 沖縄県東京事務所", "沖縄県東京事務所"),
+            ("回回 東京都港区1-2", "東京都港区1-2"),
+        ],
+    )
+    def test_noise_around_an_address_is_dropped(self, text: str, want: str):
+        assert trim_ocr_noise(text, keep_house_number=True) == want
+
+    def test_other_fields_still_lose_trailing_short_tokens(self):
+        """社名・部署・役職では、末尾の短い英数字は従来どおり落とす。"""
+        assert trim_ocr_noise("沖縄県東京事務所 Ai") == "沖縄県東京事務所"

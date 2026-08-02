@@ -467,11 +467,19 @@ NOISE_TOKEN_RE = re.compile(
 SQUARE_NOISE_RE = re.compile(r"^([回口ロ日目田■□▪▫●○◆◇])\1{1,3}$")
 
 
-def trim_ocr_noise(text: str) -> str:
+def trim_ocr_noise(text: str, keep_house_number: bool = False) -> str:
     """日本語の項目の前後に付いた短い英数字・記号を落とす。
 
     日本語を含まない行（`AONE GAMES` のような英字の社名）は触らない。
     4文字までに限るので、`Acme株式会社` の `Acme` は残る。
+
+    住所の末尾の番地は落とさないこと（`keep_house_number`）。番地は短い
+    英数字なのでノイズと同じ形をしている。実データ（3枚目）では
+
+        大阪府松原市高見の里六丁目 7-18  →  大阪府松原市高見の里六丁目
+
+    と番地が消えていた。`7-18` は4文字でノイズの上限にちょうど当たる。
+    `1-1-1` は5文字で残るため、番地の桁数しだいで消えたり残ったりしていた。
     """
     if not _has_japanese(text):
         return text
@@ -482,8 +490,22 @@ def trim_ocr_noise(text: str) -> str:
     while tokens and noise(tokens[0]):
         tokens.pop(0)
     while tokens and noise(tokens[-1]):
+        if keep_house_number and is_house_number_only(tokens[-1]):
+            break
         tokens.pop()
     return " ".join(tokens)
+
+
+# 住所の末尾で番地の前に空いた空白。日本語の住所は番地の前で空けないので、
+# OCRが字間に入れたもの。実データでは `六丁目 7-18` と空いて読まれていた。
+HOUSE_NUMBER_TAIL_RE = re.compile(
+    r"(?<=[぀-ヿ一-鿿])\s+(\d{1,4}(?:-\d{1,4}){0,3})$"
+)
+
+
+def join_house_number(text: str) -> str:
+    """住所の末尾にある番地の前の空白を詰める。"""
+    return HOUSE_NUMBER_TAIL_RE.sub(r"\1", text)
 
 
 def split_columns(line: str) -> list[str]:
@@ -1365,9 +1387,11 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     # `Ob eC F 東京都千代田区平河町2-6-3 Ai AP APE LOBE` になっていた。
     for key in ("company_name", "department_name", "title", "address"):
         if fields[key]:
-            fields[key] = trim_ocr_noise(fields[key])
+            # 住所だけは末尾の番地を残す（短い英数字でノイズと同じ形のため）
+            fields[key] = trim_ocr_noise(fields[key], keep_house_number=key == "address")
 
     if fields["address"]:
+        fields["address"] = join_house_number(fields["address"])
         fields["address"] = repair_address_symbols(fields["address"])
 
     # 住所らしさの歯止めは、経路によらず最後に掛ける。
