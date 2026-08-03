@@ -527,6 +527,18 @@ SQUARE_NOISE_RE = re.compile(r"^([回口ロ日目田■□▪▫●○◆◇])\1
 #
 # 落とすのは**記号を含む短い塊**だけ。`Edge Creators` の `Edge` のように
 # 記号を含まない語まで落とすと、社名そのものが消える。
+def _continues_into_next_line(text: str) -> bool:
+    """英字の住所の折り返しか（読点で終わる行）。
+
+    日本語の住所は読点で終わらないので、日本語を含む行は対象にしない。
+    住所以外の行を巻き込まないよう、番地らしい数字を含むことも求める。
+    """
+    stripped = text.strip()
+    if not stripped.endswith(",") or _has_japanese(stripped):
+        return False
+    return bool(re.search(r"\d", stripped)) and len(stripped.split()) >= 2
+
+
 def _is_hiragana_sentence(text: str) -> bool:
     """ひらがなに読点・区切りが付いた行か（文の一部）。
 
@@ -1281,6 +1293,22 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             confidence["address"] = 0.4
             address_index = end
             used.update(range(start, end + 1))
+
+    # 英字の住所が折り返された場合、前の行をつなぐ。
+    #
+    #     VORT Suehiro-cho II 2F, 6-14-3, Sotokanda,     ← 読点で終わる＝続く
+    #     Chiyoda-ku, Tokyo 101-0021, JAPAN              ← 郵便番号があるのでこちらを採っていた
+    #
+    # 郵便番号のある行だけを住所にしていたため、番地とビル名が落ちていた
+    # （実データ 17枚目）。英字の住所は折り返しに読点が残る。日本語の住所は
+    # 読点で終わらないので、この見分けは英字の住所にだけ効く。
+    while address_index is not None and address_index > 0:
+        previous = address_index - 1
+        if previous in used or not _continues_into_next_line(cleaned[previous]):
+            break
+        fields["address"] = f"{normalize(cleaned[previous]).strip()} {fields['address']}"
+        used.add(previous)
+        address_index = previous
 
     # 番地だけが次の行に回った場合につなぐ。
     #
