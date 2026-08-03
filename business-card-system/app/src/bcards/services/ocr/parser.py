@@ -145,6 +145,16 @@ TITLE_KEYWORDS = (
     "エンジニア",
     "アナリスト",
     "スペシャリスト",
+    # 実データ 16・18枚目。職種の語が無いため、行ごと氏名になっていた
+    # （`水引アーティスト` → 姓『水引』／ 名『アーティスト』）。
+    "アーティスト",
+    "デザイナー",
+    "プランナー",
+    "ライター",
+    "クリエイター",
+    # 実データ 19枚目の `需給調整事業専門相談員`。
+    "相談員",
+    "指導員",
     "President",
     "CEO",
     "COO",
@@ -206,6 +216,12 @@ DEPARTMENT_KEYWORDS = (
     "工場",
     "課",
     "室",
+    # 官公庁の組織名（実データ 19枚目の `沖縄労働局 職業安定部`）。
+    # 人の姓名にこれらの字は入らないので、氏名として拾わせない。
+    "局",
+    "庁",
+    "署",
+    "安定部",
     "グループ",
     "チーム",
     "Division",
@@ -500,6 +516,38 @@ SQUARE_NOISE_RE = re.compile(r"^([回口ロ日目田■□▪▫●○◆◇])\1
 #
 # 落とすのは**記号を含む短い塊**だけ。`Edge Creators` の `Edge` のように
 # 記号を含まない語まで落とすと、社名そのものが消える。
+def _is_hiragana_sentence(text: str) -> bool:
+    """ひらがなに読点・区切りが付いた行か（文の一部）。
+
+    ふりがなには読点が入らない。標語やキャッチコピーは入る
+    （実データ 19枚目の `ひと、くらし、`）。
+    """
+    if not re.search(r"[、,；;。・]", text):
+        return False
+    body = re.sub(r"[、,；;。・\s]", "", text)
+    return bool(body) and bool(re.fullmatch(r"[ぁ-んー]+", body))
+
+
+def drop_unmatched_prefix(line: str, key: str) -> str:
+    """社名の行から、ドメインとの一致に効いていない先頭の塊を落とす。
+
+    社名はメールのドメインとの前方一致で見つける。照合は英数字だけを見て
+    行うため、行の先頭にアイコンの読み崩れが付いていても一致してしまい、
+    それがそのまま社名になる（実データ 18枚目の `個 kimusubitokyo`）。
+
+    先頭の塊を1つずつ外し、外しても一致が保たれるあいだは外す。
+    """
+
+    def matches(text: str) -> bool:
+        compact = re.sub(r"[^a-z0-9]", "", text.lower())
+        return len(compact) >= 4 and (compact.startswith(key) or key.startswith(compact))
+
+    tokens = [token for token in re.split(r"\s+", line.strip()) if token]
+    while len(tokens) > 1 and matches(" ".join(tokens[1:])):
+        tokens.pop(0)
+    return " ".join(tokens)
+
+
 def strip_leading_noise(text: str) -> str:
     """行頭のノイズを1つ落とす。字種は問わない。
 
@@ -934,6 +982,16 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     # 気づくが、それらしい誤りは気づかれずに保存される。
     if _is_kana_only(text) and re.search(r"[ぁ-ん]", text) and re.search(r"[ァ-ヴ]", text):
         return False
+    # 漢字とカタカナが何度も入れ替わる行は、ロゴなどの読み崩れ。
+    #
+    # 日本語の氏名で字種が変わるのは1回まで（`ジョンソン裕子`）。実データ
+    # 17枚目では、ロゴ `METEORISE` が `小ケ戸テンク南ア三` と読まれ、
+    # 姓『小ケ』／ 名『戸テンク南ア三』になっていた。
+    #
+    # ひらがなは数えない（`山田はな子` は氏名）。`小ケ戸` のような、かなを
+    # 含む珍しい姓を残すため、3つまでは通す。
+    if len(re.findall(r"[一-龥々〆]+|[ァ-ヴ]+", re.sub(r"[ぁ-んー・]", "", text))) > 3:
+        return False
     # 々（踊り字）を入れておくこと。`佐々木` `野々村` は珍しくない姓で、
     # 入れないと氏名として認識されない（実測で `主任 佐々木 健` の氏名が空になった）。
     if re.fullmatch(r"[一-龥々〆ヶヵぁ-んァ-ヴー・]{2,12}", text):
@@ -987,7 +1045,7 @@ def split_person_name(full: str) -> tuple[str, str]:
     """姓と名に分割する。空白があればそこで、なければ日本語姓の一般的な長さで分ける。"""
     text = normalize(full)
     parts = [p for p in re.split(r"[\s　]+", text) if p]
-    if len(parts) >= 3 and _is_kana_only(text):
+    if len(parts) >= 3 and _has_japanese(text):
         # かなの氏名・ふりがなは、OCRが語の途中にも空白を入れる。実測では
         #
         #   `やまだ たろう`      → `や まだ た ろう`   → `や` / `まだ た ろう`
@@ -997,9 +1055,16 @@ def split_person_name(full: str) -> tuple[str, str]:
         # のように先頭の空白で切っていた（合成サンプル16枚のうち9枚でふりがなが不一致）。
         # どこが語の切れ目かは字面では決まらないので、長さの釣り合いが
         # いちばん良い位置で分ける（姓と名は極端に長さが違わない）。
+        #
+        # 漢字の氏名も同じ。名刺は字間を大きく空けて刷ることがあり、実データ
+        # 18枚目の `舟　木　香　織` は1文字ずつに分かれて読まれて
+        # 姓『舟』／ 名『木 香 織』になっていた。
+        #
+        # 釣り合いが同じなら、後ろで切る（`冨 田 修` は 冨田／修）。
+        # 日本語の姓は2文字が最も多い。
         best = min(
             range(1, len(parts)),
-            key=lambda at: abs(len("".join(parts[:at])) - len("".join(parts[at:]))),
+            key=lambda at: (abs(len("".join(parts[:at])) - len("".join(parts[at:]))), -at),
         )
         return "".join(parts[:best]), "".join(parts[best:])
     # カタカナと漢字が混じる氏名は、字種の変わり目で分ける。
@@ -1235,25 +1300,43 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         # 国別ドメインは国ごとに違う（`.kr` `.tw` `.cl`）ので、2文字の末尾を
         # まとめて外す。実データの `eonlee@nexongames.co.kr` は `.kr` を
         # 知らないため `NEXON GAMES` と照合できず、社名が空になっていた。
-        host = re.sub(r"\.[a-z]{2}$", "", domain)
-        host = re.sub(r"\.(?:co|or|ne|ac|go|com|net|org|jp|io|dev|app)$", "", host)
-        host = re.sub(r"\.(?:co|or|ne|ac|go|com|net|org|jp)$", "", host)
-        key = re.sub(r"[^a-z0-9]", "", host.lower())
+        # 末尾の区切りを、残りが4文字以上あるあいだ外していく。
+        #
+        # 以前は2文字の末尾と既知の語（co/com/jp など）だけを外していた。
+        # `.tokyo` `.games` のような新しいドメインを知らないため、実データ
+        # 18枚目では `kimusubi.tokyo` の鍵が `kimusubitokyo` のままになり、
+        # 社名として `kimusubi` ではなくURLの行を採っていた。
+        #
+        # 語を並べるのはきりが無い（新しいドメインは増え続ける）ので、
+        # **形**で外す。会社を表す部分まで削らないよう、6文字までの区切りに
+        # 限る（`logi-kyushu.example` の `example` は7文字なので残る）。
+        host = domain.lower()
+        while "." in host:
+            head, _, last = host.rpartition(".")
+            if len(head) < 4 or not re.fullmatch(r"[a-z]{2,6}", last):
+                break
+            host = head
+        key = re.sub(r"[^a-z0-9]", "", host)
         if len(key) >= 4:
             # ドメインは社名を縮めることがある（`edgecre` ← `Edge Creators`）ので、
-            # 先頭が一致する行も同じ会社と見る。ただし読み崩れた断片にも当たる
-            # （`時NEXO` がドメイン `nexongames` の先頭に一致した）ため、
-            # 当たった行のうち**いちばん長いもの**を採る。
+            # 先頭が一致する行も同じ会社と見る。ただし当たるものが2種類ある。
+            #
+            #   読み崩れた断片   `時NEXO` → `nexo`（鍵 `nexongames` より短い）
+            #   URLの行         `kimusubitokyo`（鍵 `kimusubi` より長い）
+            #
+            # 以前は**いちばん長いもの**を採っていたので、断片は避けられたが
+            # URLの行を社名にしていた（実データ 18枚目）。鍵と**字数がいちばん
+            # 近いもの**を採ると、どちらも避けられる。
             matches: list[tuple[int, int, str]] = []
             for index, line in enumerate(cleaned):
                 if index in used:
                     continue
                 candidate = re.sub(r"[^a-z0-9]", "", line.lower())
                 if len(candidate) >= 4 and (candidate.startswith(key) or key.startswith(candidate)):
-                    matches.append((len(candidate), index, line))
+                    matches.append((abs(len(candidate) - len(key)), index, line))
             if matches:
-                _, index, line = max(matches)
-                fields["company_name"] = line
+                _, index, line = min(matches)
+                fields["company_name"] = drop_unmatched_prefix(line, key)
                 confidence["company_name"] = 0.6
                 used.add(index)
 
@@ -1347,6 +1430,12 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             continue
         if _is_hiragana_only(cleaned[following]):
             continue  # ふりがなの続き。氏名ではない
+        # 漢字はどれも1文字につき1つ以上のかなで読むので、ふりがなは読む
+        # 氏名より短くならない。実データ 19枚目では、ロゴの標語
+        # `みらいのために`（7文字）を `霧給調整事業専門相談員`（11文字）の
+        # ふりがなとして採り、せい『みら』／ めい『いのために』にしていた。
+        if len(line) < len(cleaned[following]):
+            continue
         if not _looks_like_person_name(cleaned[following], fields["email"]):
             continue
         name_index = following
@@ -1511,6 +1600,18 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 used.add(index)
                 used.add(following)
                 break
+            # 前の行がひらがなの文なら、この行はその文の続きであって
+            # ふりがなではない。実データ 19枚目のロゴの標語
+            #
+            #     ひと、くらし、
+            #     みらいのために      ← せい『みら』／ めい『いのために』にしていた
+            #
+            # 「氏名の行に接していること」を条件にしてはいけない。OCRの行の
+            # 順番は印字の順番と違い、合成サンプルでは氏名とふりがなが4行
+            # 離れている（実際にこれで試して、ふりがなの正答率が 65%→50% に
+            # 落ちた）。見るのは前の行だけにする。
+            if index > 0 and _is_hiragana_sentence(cleaned[index - 1]):
+                continue
             last, first = split_person_name(spaced_lines[index])
             fields["last_name_kana"], fields["first_name_kana"] = last, first
             confidence["last_name_kana"] = 0.7
