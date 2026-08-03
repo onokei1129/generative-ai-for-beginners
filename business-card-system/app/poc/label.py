@@ -154,6 +154,29 @@ def _log_failure(what: str) -> None:
     _log_text(what, traceback.format_exc())
 
 
+def _log_step(what: str) -> None:
+    """いま何をしているかを1行だけ記録に残す。
+
+    実テストで、特定の名刺を開くと**サーバー自体が応答しなくなる**（5・6枚目、
+    そのあと8枚目）。重い処理は別プロセスに出してあるので子が落ちても親は
+    生き残るはずで、子を1つ保つ形にしても直らなかった。
+
+    落ちると Python 側には何も残らない。例外も traceback も出ないので
+    `_log_failure` は動かない。そこで**始める前に**書いておく。記録の最後の
+    行が「どの名刺の、どの工程で止まったか」を示す。
+
+    書けなくても本筋を止めない（記録は手がかりであって、目的ではない）。
+    """
+    import datetime
+
+    stamp = datetime.datetime.now().strftime("%m/%d %H:%M:%S")
+    try:
+        with LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp}  {what}\n")
+    except Exception:  # noqa: BLE001 - 記録できなくても本筋を止めない
+        pass
+
+
 def _log_text(what: str, body: str) -> None:
     """本文を指定して記録する（子プロセス側の traceback を残すのに使う）。"""
     import datetime
@@ -458,6 +481,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
 
             # 描画は子プロセスに任せる。ここが落ちてもサーバーは生き残る
             # （`run_in_child` の説明を参照）。1ページだけ読むのも子の側。
+            _log_step(f"開始 画像の表示 {path.name}")
             with tempfile.TemporaryDirectory() as work:
                 out = Path(work) / "page.jpg"
                 try:
@@ -469,6 +493,8 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                         {"error": f"画像を表示できません: {type(exc).__name__}: {exc}"},
                         status_code=415,
                     )
+                finally:
+                    _log_step(f"完了 画像の表示 {path.name}")
             return Response(content=data, media_type="image/jpeg")
         return FileResponse(path)
 
@@ -580,6 +606,8 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         # どの工程で落ちたかを残す。工程名が無いと、画像の読み込みなのか
         # OCRなのか切り分けられず、原因の報告だけで何往復もすることになる。
         step = "準備"
+        # 落ちても手がかりが残るよう、**始める前に**書く（`_log_step` を参照）。
+        _log_step(f"開始 OCR {path.name}")
         try:
             try:
                 step = "OCR（別プロセス）"
@@ -598,6 +626,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             _remember(path.name, result)
             return result
         finally:
+            _log_step(f"完了 OCR {path.name}")
             # 成功・失敗どちらでも待ち手を解放する。ここを漏らすと、
             # 待っている側が上限（180秒）まで固まる。
             with _cache_lock:
