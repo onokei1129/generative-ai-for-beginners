@@ -401,6 +401,9 @@ NOT_A_NAME_WORDS = (
     "worldwide",
     "region",
     "regional",
+    # `Republic of Korea` の `Korea` は上にあるが、OCRが空白を落として
+    # `ofKorea` になると語として一致しない（実テスト 20枚目）。手前で止める。
+    "republic",
     # 会社の形態を表す語。`has_company_keyword` は `Inc.` や `GmbH` を見るが
     # `Acme Ltd` `ACME CORP` は素通りし、姓『Ltd』名『Acme』になっていた。
     "corp",
@@ -998,6 +1001,16 @@ def is_building_line(text: str) -> bool:
 # 全大文字（`ACME` `SOLUTIONS`）は社名の形なので外す。
 NAME_WORD_RE = re.compile(r"^[A-ZÀ-Þ][a-zà-ÿ'’\-]{1,19}$")
 
+# 行政区画の接尾辞。住所にしか出てこない（`Gyeonggi-do` `Chiyoda-ku`
+# `Bundang-gu` `Seongnam-si` `Bundang-ro`）。
+#
+# 氏名の判定で読点を許したところ、`Gyeonggi-do, Republic ofKorea` が
+# 姓『Gyeonggi-do』名『Republic ofKorea』になっていた（実テスト 20枚目）。
+# ハイフンそのものは氏名にもあるので（`Smith-Jones`）、接尾辞で見分ける。
+ADMIN_DIVISION_RE = re.compile(
+    r"[A-Za-z]-(?:do|ku|gu|si|shi|ro|dong|cho|machi|ken|fu|gun)\b", re.IGNORECASE
+)
+
 # 氏名を探す範囲。名刺の上部に限る（下のほうの語を氏名にしないため）。
 NAME_PAIR_SEARCH_LINES = 5
 
@@ -1277,10 +1290,13 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     # 語数の上限は4。スペイン語圏の氏名は父方・母方の姓を並べるため長い
     # （実データ: `ANA FERNANDEZ DEL RIO`）。3語までにしていて空になっていた。
     # 最初の語の直後の読点だけ許す（`Jeong, Sun Ho` 実テスト 23枚目）。
-    # 2つ目以降にも読点がある行は住所（`Gangnam-gu, Seoul, Korea,`）なので通さない。
     if not re.fullmatch(
         r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*,?(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,3}", latin
     ):
+        return False
+    # 行政区画の接尾辞があれば住所の行。読点を許したことで
+    # `Gyeonggi-do, Republic ofKorea` が氏名になっていた（実テスト 20枚目）。
+    if ADMIN_DIVISION_RE.search(latin):
         return False
     lowered = latin.lower()
     if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
@@ -1877,6 +1893,21 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 name_index = index
                 name_from_segment = segment
                 break
+
+    # 和英が併記されている場合、漢字のほうを使う（実テスト 24枚目）。
+    #
+    #     代表取締役　星 山 孝 明     ← 役職の語を含むので氏名として見つからない
+    #     Hoshiyama Takaaki           ← こちらが採られ、姓『Takaaki』になっていた
+    #
+    # 英字の氏名は「名 姓」の順として扱うが、日本の名刺のローマ字は「姓 名」の
+    # 順で書くことが多く、形だけでは決められない。漢字が読めているなら、
+    # そちらを使えばよい（英字は補助の表記）。
+    if (
+        title_name is not None
+        and _has_japanese(title_name[1])
+        and (name_index is None or not _has_japanese(spaced_lines[name_index]))
+    ):
+        name_index = None
 
     if name_index is None and title_name is not None:
         # 役職と同じ行に印字されていた氏名
