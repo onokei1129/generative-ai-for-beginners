@@ -130,6 +130,62 @@ _GROUPS = (
 )
 
 
+# 住所は「読めた分だけ入る」項目で、失敗のしかたは欠落。読み崩れは
+# `looks_like_address` が先に落としているので、残ったものの中では長いほうが
+# 情報が多い。実データ 17枚目では、EasyOCR の `Chiyoda-Ku TokyoJnPAN`（断片）
+# が tesseract の全体を押しのけていた。
+#
+# 合成サンプル20枚では、長いほうを採っても正答率は変わらない（どちらも65%）。
+_LONGEST_WINS = ("address",)
+
+# 電話・携帯・FAX は「同じ番号」を別の欄に入れてはいけない。
+# 実データ 21枚目の `Cell +82-10-8933-1438` は、EasyOCR が携帯、tesseract が
+# 電話と判定し、項目ごとに採るため両方に同じ番号が入っていた。
+_PHONE_KEYS = ("tel", "mobile", "fax")
+
+
+def _prefer_longest(results: list[dict], fields: dict, confidence: dict) -> None:
+    for key in _LONGEST_WINS:
+        best = ""
+        best_score = None
+        for parsed in results:
+            value = ((parsed.get("fields") or {}).get(key) or "").strip()
+            if len(value) > len(best):
+                best = value
+                best_score = (parsed.get("confidence") or {}).get(key)
+        if best:
+            fields[key] = best
+            if best_score is not None:
+                confidence[key] = best_score
+
+
+def _drop_repeated_numbers(fields: dict, confidence: dict) -> None:
+    """同じ番号が複数の欄にあれば、根拠の強い欄だけに残す。
+
+    根拠の強さは確信度で見る（ラベルを見て決めたものは 0.85、番号の頭だけ
+    で決めたものは 0.6〜0.7）。同じなら電話・携帯・FAX の順で残す。
+    """
+    seen: dict[str, str] = {}
+    for key in _PHONE_KEYS:
+        value = (fields.get(key) or "").strip()
+        if not value:
+            continue
+        digits = re.sub(r"\D", "", value)
+        if not digits:
+            continue
+        kept = seen.get(digits)
+        if kept is None:
+            seen[digits] = key
+            continue
+        if (confidence.get(key) or 0) > (confidence.get(kept) or 0):
+            fields[kept] = ""
+            confidence.pop(kept, None)
+            seen[digits] = key
+        else:
+            fields[key] = ""
+            confidence.pop(key, None)
+
+
 def _merge_groups(results: list[dict], fields: dict, confidence: dict) -> None:
     for group in _GROUPS:
         best: dict | None = None
@@ -181,6 +237,8 @@ def merge_fields(results: list[dict]) -> dict:
             provisional.discard(key) if good else provisional.add(key)
 
     _merge_groups(results, fields, confidence)
+    _prefer_longest(results, fields, confidence)
+    _drop_repeated_numbers(fields, confidence)
     return {"fields": fields, "confidence": confidence, "method": "rule"}
 
 
