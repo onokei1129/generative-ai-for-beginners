@@ -29,6 +29,7 @@ OCRの下書きをそのまま正解にすると、測定値が実際より良�
 from __future__ import annotations
 
 import argparse
+import atexit
 import glob
 import json
 import os
@@ -128,6 +129,10 @@ ONE_CARD = Path(__file__).resolve().parent / "one_card.py"
 # 1枚にかける上限。これを超えたら子を打ち切る（待ち続けるより空欄のほうがよい）。
 CHILD_TIMEOUT = 120
 
+# 作り直した子の1枚目だけは長めに待つ。EasyOCR のモデルの読み込みが入るため
+# （実測で 1回目 99.3秒 / 2回目 12.4秒。2回目も毎回読み直していた頃の値）。
+FIRST_CALL_TIMEOUT = 300
+
 
 class ChildFailed(RuntimeError):
     """子プロセスが失敗した。終了コードと標準エラーを添える。"""
@@ -146,9 +151,13 @@ def _log_failure(what: str) -> None:
     `print` 自体が UnicodeEncodeError を出す。それが握られていない場所で
     起きると、元の失敗ではなくそちらが表に出て、原因が分からなくなる。
     """
+    _log_text(what, traceback.format_exc())
+
+
+def _log_text(what: str, body: str) -> None:
+    """本文を指定して記録する（子プロセス側の traceback を残すのに使う）。"""
     import datetime
 
-    body = traceback.format_exc()
     stamp = datetime.datetime.now().strftime("%m/%d %H:%M:%S")
     text = f"\n===== {stamp}  {what} =====\n{body}"
     try:
@@ -163,37 +172,204 @@ def _log_failure(what: str) -> None:
         pass
 
 
+class _Worker:
+    """重い処理を任せる子プロセス。1つを保ち続ける。
+
+    標準出力・標準エラーの2本は、それぞれ裏方が読み続ける。読まずに放っておくと
+    パイプ（既定で64KB）が埋まった時点で、子は書き込みのところで止まる。
+    1枚ごとに作り直していた頃は最後にまとめて読めばよかったが、常駐させる
+    以上は読み続けるしかない。標準エラーには、子が失敗を返すたびに traceback
+    の全文が流れる（poc/one_card.py の serve）。
+    """
+
+    def __init__(self) -> None:
+        import collections
+        import subprocess
+
+        # 子の標準出力・標準エラーを UTF-8 に固定する。Windows の日本語環境では
+        # 既定が cp932 で、Python が出す traceback もそちらの文字コードで届く。
+        # 結果そのものは子が UTF-8 のバイトで書く（poc/one_card.py の emit_line）。
+        self.process = subprocess.Popen(
+            [sys.executable, str(ONE_CARD), "serve"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        self.replies: queue.Queue[bytes | None] = queue.Queue()
+        # 落ちたときに理由を示せるよう、直近の標準エラーだけ持っておく。
+        self.errors: collections.deque[str] = collections.deque(maxlen=40)
+        self.used = False
+        threading.Thread(target=self._read_replies, daemon=True).start()
+        threading.Thread(target=self._read_errors, daemon=True).start()
+
+    def _read_replies(self) -> None:
+        for line in self.process.stdout:
+            self.replies.put(line)
+        # 標準出力が閉じた＝子が終わった。待っている側を起こす。
+        self.replies.put(None)
+
+    def _read_errors(self) -> None:
+        for line in self.process.stderr:
+            self.errors.append(line.decode("utf-8", "replace").rstrip())
+
+    def alive(self) -> bool:
+        return self.process.poll() is None
+
+    def last_error(self) -> str:
+        for line in reversed(self.errors):
+            if line.strip():
+                return line.strip()
+        return f"終了コード {self.process.poll()}"
+
+    def drain_errors_into_log(self, what: str) -> None:
+        """溜まっている標準エラーを記録へ移す。移した分は捨てる。
+
+        捨てないと、次に失敗したときに前回ぶんまで一緒に出て、どこからが
+        今回なのか分からなくなる。
+        """
+        lines: list[str] = []
+        while self.errors:
+            lines.append(self.errors.popleft())
+        if any(line.strip() for line in lines):
+            _log_text(what, "\n".join(lines))
+
+    def ask(self, mode: str, args: list[str]) -> dict:
+        request = json.dumps({"mode": mode, "args": args}, ensure_ascii=False)
+        try:
+            self.process.stdin.write(request.encode("utf-8") + b"\n")
+            self.process.stdin.flush()
+        except OSError as exc:
+            # 既に落ちている子への書き込み。`BrokenPipeError` とだけ出しても
+            # 何も分からないので、子が最後に残した理由を添える。
+            raise ChildFailed(f"子プロセスへ渡せませんでした（{self.last_error()}）") from exc
+
+        # 最初の1枚だけは長めに待つ。EasyOCR のモデルの読み込みが入るため。
+        limit = CHILD_TIMEOUT if self.used else FIRST_CALL_TIMEOUT
+        self.used = True
+        line = self.replies.get(timeout=limit)
+        if line is None:
+            raise ChildFailed(f"子プロセスが終了しました（{self.last_error()}）")
+        # bytes のまま渡す（json は UTF-8 として読む）。ここで文字へ直すと、
+        # 直し方を間違えたときに JSON の構文エラーとして出てきて原因が見えない。
+        reply = json.loads(line)
+        if not reply.get("ok"):
+            raise ChildFailed(str(reply.get("error") or "理由が分かりませんでした"))
+        return reply.get("result") or {}
+
+    def stop(self) -> None:
+        try:
+            self.process.stdin.close()
+        except Exception:  # noqa: BLE001 - 既に閉じている場合がある
+            pass
+        try:
+            self.process.wait(timeout=5)
+        except Exception:  # noqa: BLE001 - 応答しなければ待たない
+            self.kill()
+
+    def kill(self) -> None:
+        try:
+            self.process.kill()
+            self.process.wait(timeout=5)
+        except Exception:  # noqa: BLE001 - 後始末で本筋を止めない
+            pass
+
+
+_worker: _Worker | None = None
+
+# 頼みごとを1件ずつ順に渡すための錠。**片付ける側はこれを待たない**。
+# 待つ作りにすると、OCRの最中に Ctrl-C やウィンドウを閉じたときに、その1枚が
+# 終わるまで（最長300秒）止まって見える。落とせば待っている側は
+# 「子プロセスが終了しました」を受け取って進めるので、待つ理由がない。
+_worker_lock = threading.Lock()
+
+
+def _take_worker() -> _Worker | None:
+    """いまの子を手放して返す。次に頼まれたときに作り直される。"""
+    global _worker
+    current, _worker = _worker, None
+    return current
+
+
+def stop_worker() -> None:
+    """子プロセスを片付ける（終了時とテストの前後）。"""
+    current = _take_worker()
+    if current is not None:
+        current.stop()
+
+
+def kill_worker() -> None:
+    """子プロセスを即座に落とす。C のライブラリが落ちた状態を作るのに使う。"""
+    current = _take_worker()
+    if current is not None:
+        current.kill()
+
+
+def worker_pid() -> int | None:
+    """いま動いている子プロセスの番号。作り直されたかを見るのに使う。"""
+    current = _worker
+    return current.process.pid if current is not None and current.alive() else None
+
+
+atexit.register(stop_worker)
+
+
 def run_in_child(args: list[str]) -> dict:
-    """PDFの描画とOCRを別プロセスで行う。
+    """PDFの描画とOCRを別プロセスで行う。子は1つを保ち続ける。
 
     実テスト（222枚）で、ラベル入力の画面が2度、途中で応答しなくなった。
     PDFの描画（pypdfium2）とOCR（tesseract）は C のライブラリを呼ぶため、
     ここが落ちるとプロセスごと消え、Python 側には何も残らない。同じ入口で
-    動かしている限り、1枚で落ちるとそのあとの全部が止まる。
+    動かしている限り、1枚で落ちるとそのあとの全部が止まる。別プロセスに
+    出せば、落ちるのは子だけ。画面には「この1枚は失敗」と出て、次へ進める。
 
-    別プロセスに出せば、落ちるのは子だけ。画面には「この1枚は失敗」と出て、
-    次の名刺へ進める。1枚ごとに子が終わるので、抱えた画像も確実に解放される。
+    はじめは1枚ごとに子を作り直していた。併用構成（EasyOCR + tesseract）を
+    既定にしたあと、実測で**1枚あたり 1.4GB / 12秒**かかっている。毎回
+    モデルを読み直すためで、先読みの裏方と重なると同時に2つ動く。実テストの
+    5・6枚目でサーバーが応答しなくなったのは、これが原因の候補にあたる。
+
+    子を1つ保てば、モデルの読み込みは1回で済み、同時に2つ動くこともない。
+    落ちたら次の呼び出しで作り直すので、1枚だけ失敗して先へ進める点は同じ。
     """
-    import subprocess
+    if not args:
+        raise ChildFailed("指定がありません")
+    mode, rest = args[0], [str(a) for a in args[1:]]
 
-    # 子の標準出力・標準エラーを UTF-8 に固定する。Windows の日本語環境では
-    # 既定が cp932 で、Python が出す traceback もそちらの文字コードで届く。
-    # 結果そのものは子が UTF-8 のバイトで書く（poc/one_card.py の emit）。
-    completed = subprocess.run(
-        [sys.executable, str(ONE_CARD), *args],
-        capture_output=True,
-        timeout=CHILD_TIMEOUT,
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", "replace").strip().splitlines()
-        reason = detail[-1] if detail else f"終了コード {completed.returncode}"
-        raise ChildFailed(f"{reason}（終了コード {completed.returncode}）")
-    if not completed.stdout:
-        return {}
-    # bytes のまま渡す（json は UTF-8 として読む）。ここで文字へ直すと、
-    # 直し方を間違えたときに JSON の構文エラーとして出てきて原因が見えない。
-    return json.loads(completed.stdout)
+    # 1件ずつ順に渡す。同時に2枚を頼めないので、抱える画像も1枚分で済む。
+    with _worker_lock:
+        global _worker
+        worker = _worker
+        if worker is None or not worker.alive():
+            if worker is not None:
+                worker.kill()
+            worker = _worker = _Worker()
+
+        def drop() -> None:
+            # 片付ける側は錠を待たないので、その間に別の子へ差し替わっていることが
+            # ある。自分が使っていた子のときだけ手放す。
+            global _worker
+            if _worker is worker:
+                _worker = None
+            worker.kill()
+
+        try:
+            return worker.ask(mode, rest)
+        except ChildFailed:
+            # 画面に出せるのは1行だけ。子が書いた traceback の全文はここでしか
+            # 拾えない（子は常駐しているので、終了を待ってまとめて読む形にできない）。
+            worker.drain_errors_into_log(f"子プロセス（{mode}）")
+            # 1枚の失敗（ファイルが無いなど）で子を捨てない。生きているなら使い続ける。
+            if not worker.alive():
+                drop()
+            raise
+        except queue.Empty as exc:
+            # 返事が来ない子は、あとから返してくる。次の名刺の返事として
+            # 読み違えるので、ここで捨てる。
+            drop()
+            raise ChildFailed(f"{CHILD_TIMEOUT}秒たっても返事がありませんでした") from exc
+        except Exception as exc:  # noqa: BLE001 - 経路そのものが壊れた場合
+            drop()
+            raise ChildFailed(f"{type(exc).__name__}: {exc}") from exc
 
 
 def build_app(directory: Path, prefill: bool) -> FastAPI:

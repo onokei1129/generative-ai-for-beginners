@@ -8,11 +8,15 @@ PDFの描画（pypdfium2）とOCR（tesseract）は C のライブラリを呼�
 同じ入口で動かしている限り、1枚の名刺で落ちると**そのあとの全部が止まる**。
 
 別プロセスに出せば、落ちるのは子だけで済む。画面には「この1枚は失敗」と
-出て、次の名刺へ進める。1枚ごとに子が終わるので、抱えた画像も確実に解放
-される。
+出て、次の名刺へ進める。
 
 ここでは子プロセスを**実際に動かして**確かめる。中身を読むだけでは、
 落ちたときに親が生き残るかどうかは分からない。
+
+なお、子は名刺ごとに作り直すのをやめ、**1つを保ち続ける**形になった
+（理由と測定値は tests/test_label_persistent_worker.py）。このファイルが
+確かめるのは一度きりの呼び出し（`ocr` / `image`）で、常駐（`serve`）と
+同じ `dispatch` を通る。どちらの入口でも壊れないことに意味がある。
 """
 
 from __future__ import annotations
@@ -192,14 +196,19 @@ class TestTheScreenOnlyCallsTheChild:
 
     def test_the_child_is_run_with_the_same_python(self):
         """venv の外の python を呼ぶと、必要な部品が入っていない。"""
-        assert "[sys.executable, str(ONE_CARD), *args]" in self.source()
+        assert "[sys.executable, str(ONE_CARD)" in self.source()
 
     def test_there_is_a_time_limit(self):
-        """待ち続けるより、空欄にして次へ進めるほうがよい。"""
+        """待ち続けるより、空欄にして次へ進めるほうがよい。
+
+        子は常駐するようになったので、上限は `subprocess.run` ではなく
+        **返事を待つところ**に置いている（poc/label.py の `_Worker.ask`）。
+        """
         text = self.source()
 
         assert "CHILD_TIMEOUT = 120" in text
-        assert "timeout=CHILD_TIMEOUT" in text
+        assert "limit = CHILD_TIMEOUT" in text
+        assert "self.replies.get(timeout=limit)" in text
 
     def test_the_exit_code_reaches_the_screen(self):
         """落ちた理由が分かるよう、終了コードと標準エラーを添えること。"""
