@@ -48,7 +48,12 @@ def address(lines: list[str]) -> str:
 
 class TestAWrappedAddressIsJoined:
     def test_the_real_card_that_came_back_empty(self):
-        """7枚目の体裁。3行に分かれて印字されている。"""
+        """7枚目の体裁。3行に分かれて印字されている。
+
+        末尾の `06267` は住所に残していたが、利用者の報告を受けて郵便番号の
+        欄へ入れるようにした（tests/test_parser_foreign_postal_code.py）。
+        ここでは折り返しのつなぎだけを見る。
+        """
         got = address([
             "NEXON GAMES",
             "2621, Nambusunhwan-ro,",
@@ -57,7 +62,7 @@ class TestAWrappedAddressIsJoined:
             "Sangeon Lee   T +82.2.6421.7777",
         ])
 
-        assert got == "2621, Nambusunhwan-ro, Gangnam-gu, Seoul, Korea, 06267"
+        assert got == "2621, Nambusunhwan-ro, Gangnam-gu, Seoul, Korea,"
 
     @pytest.mark.parametrize("comma", [",", "、", "，"])
     def test_the_join_follows_any_comma(self, comma: str):

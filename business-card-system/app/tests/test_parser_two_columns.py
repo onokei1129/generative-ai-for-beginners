@@ -243,7 +243,8 @@ class TestTheRealOcrTextOfCardSeven:
             ("company_name", "NEXON GAMES"),
             ("department_name", "Planning & Coordination Dept"),
             ("title", "Team Member"),
-            ("address", "2621, Nambusunhwan-ro, Gangnam-gu, Seoul, Korea, 06267"),
+            ("address", "2621, Nambusunhwan-ro, Gangnam-gu, Seoul, Korea,"),
+            ("postal_code", "06267"),
             ("tel", "+82.2.6421.7777"),
             ("fax", "+82.2.569.6448"),
             ("mobile", "+82.10.3661.0778"),
@@ -260,9 +261,15 @@ class TestTheRealOcrTextOfCardSeven:
         for key in ("last_name", "first_name", "company_name", "department_name", "title"):
             assert "時NEX" not in got[key]
 
-    def test_the_postal_code_stays_in_the_address(self):
-        """`06267` は韓国の5桁。日本の3桁-4桁の欄には入れず、住所に残す。"""
+    def test_the_postal_code_goes_into_its_own_field(self):
+        """`06267` は韓国の5桁。
+
+        以前はここで「日本の3桁-4桁の欄には入れず、住所に残す」としていたが、
+        実テストで**郵便番号が取れていない**という報告を受けたため改めた。
+        利用者から見れば、名刺に印字された郵便番号は郵便番号の欄に入るのが
+        当たり前で、日本の形かどうかは関係がない。
+        """
         got = self.result()
 
-        assert got["postal_code"] == ""
-        assert got["address"].endswith("06267")
+        assert got["postal_code"] == "06267"
+        assert not got["address"].endswith("06267")

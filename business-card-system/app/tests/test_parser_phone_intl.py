@@ -38,17 +38,27 @@ class TestPicksUpInternationalNumbers:
         assert fields(line)["tel"] == expected
 
     def test_tel_and_fax_on_one_line(self):
+        """`+81` は国内表記へ直す（tests/test_parser_japanese_international_phone.py）。"""
         got = fields("TEL +81 3-1234-5678  FAX +81 3-1234-5679")
 
-        assert got["tel"] == "+81 3-1234-5678"
-        assert got["fax"] == "+81 3-1234-5679"
+        assert got["tel"] == "03-1234-5678"
+        assert got["fax"] == "03-1234-5679"
 
     def test_japanese_mobile_with_country_code_is_a_mobile(self):
         """`+81 90-…` は日本の携帯。ラベルが無くても固定電話に入れないこと。"""
-        assert fields("+81 90-1234-5678")["mobile"] == "+81 90-1234-5678"
+        assert fields("+81 90-1234-5678")["mobile"] == "090-1234-5678"
 
     def test_number_is_kept_as_printed(self):
-        """表示は名刺の記載どおり（要件§8）。整形した値で上書きしないこと。"""
+        """他国の番号は名刺の記載どおり。整形した値で上書きしないこと。
+
+        以前ここに「要件§8」と書いていたが、§8（OCR外部クラウドサービス）に
+        記載どおりに保存せよという定めは無い。あるのは「OCR結果は自動確定せず、
+        利用者が確認・修正した後に登録する」という確認の手順のほう。
+
+        日本の番号を国際表記のままにしていたのはその読み違いで、実テスト
+        9枚目で利用者が正解として入力したのは `070-1508-9897` だった。
+        国番号の扱いが国ごとに違う他国の番号だけ、記載どおりに残す。
+        """
         assert fields("TEL +7 495 123-45-67")["tel"] == "+7 495 123-45-67"
 
 

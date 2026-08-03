@@ -372,9 +372,20 @@ TITLE_TAIL_WORDS = (
 )
 
 
+# 横棒に見えて、日本語の語の中には出てこない文字。ASCII のハイフンへ寄せる。
+#
+# NFKC は全角の `－` を直すが、これらは直さない。郵便番号・電話番号の判定は
+# ASCII の `-` を見ているため、寄せておかないと**読めているのに空欄**になる
+# （実テスト 9枚目。画面には `テ150‐0022` と出るのに郵便番号が入らない）。
+#
+# **`ー`（U+30FC 長音記号）は入れないこと。**「ヒューマックス」のように日本語の
+# 語の一部として現れる。郵便番号・電話番号の側で個別に見ている今のやり方を変えない。
+DASH_TO_HYPHEN = str.maketrans(dict.fromkeys("‐‑‒–—―−", "-"))
+
+
 def normalize(text: str) -> str:
-    """全角英数字・記号を半角へ寄せる。"""
-    return unicodedata.normalize("NFKC", text or "").strip()
+    """全角英数字・記号を半角へ寄せ、横棒をハイフンへそろえる。"""
+    return unicodedata.normalize("NFKC", text or "").translate(DASH_TO_HYPHEN).strip()
 
 
 def join_spaced_letters(text: str) -> str:
@@ -595,6 +606,10 @@ def strip_leading_noise(text: str) -> str:
     return tail.strip()
 
 
+# 階数だけの語。`8F` `12F` `B1F` `3階`。住所の末尾で落とさないために使う。
+FLOOR_TOKEN_RE = re.compile(r"[Bb]?\d{1,3}\s*(?:[FfＦ]|階)")
+
+
 def trim_ocr_noise(text: str, keep_house_number: bool = False) -> str:
     """日本語の項目の前後に付いた短い英数字・記号を落とす。
 
@@ -608,6 +623,10 @@ def trim_ocr_noise(text: str, keep_house_number: bool = False) -> str:
 
     と番地が消えていた。`7-18` は4文字でノイズの上限にちょうど当たる。
     `1-1-1` は5文字で残るため、番地の桁数しだいで消えたり残ったりしていた。
+
+    階数も同じ形をしている。`○○タワー 12F` の `12F` は3文字でノイズと
+    見分けが付かず、住所から階が消えていた（`5階` は「階」が日本語なので
+    残り、`8F` は消える、という一貫しない結果になっていた）。
     """
     if not _has_japanese(text):
         return text
@@ -618,7 +637,9 @@ def trim_ocr_noise(text: str, keep_house_number: bool = False) -> str:
     while tokens and noise(tokens[0]):
         tokens.pop(0)
     while tokens and noise(tokens[-1]):
-        if keep_house_number and is_house_number_only(tokens[-1]):
+        if keep_house_number and (
+            is_house_number_only(tokens[-1]) or FLOOR_TOKEN_RE.fullmatch(tokens[-1])
+        ):
             break
         tokens.pop()
     return " ".join(tokens)
@@ -763,6 +784,19 @@ def strip_postal_prefix(text: str) -> str:
     return POSTAL_JUNK_RE.sub("", text).strip()
 
 
+# 海外の郵便番号。日本の形（3桁-4桁）が取れなかったときだけ見る。
+#
+# 実データ 8枚目（韓国）の `06267` は単独の行にあり、日本の形と違うため
+# 郵便番号にならないうえ、英字の住所の折り返しとしてつながれて
+# `... Seoul, Korea, 06267` になっていた。
+#
+# **数字だけの行**に限る。5〜6桁だけを見るのは、4桁だと年号・部屋番号と
+# 見分けが付かないため（豪州・デンマーク等の4桁は取れない）。7桁を外すのは、
+# 日本の郵便番号をハイフン無しで書いた形と紛れるため。誤った番号を入れるより
+# 空欄のほうがよい（空欄なら入力する人が気づく）。
+FOREIGN_POSTAL_RE = re.compile(r"^\d{5,6}$")
+
+
 # 住所らしさの最低限。読み崩れた断片を住所に入れないための歯止め。
 #
 # 実データ（8枚目）では住所が `〒4 らの - の９の` になっていた。`〒150-0022`
@@ -798,6 +832,53 @@ def is_house_number_only(text: str) -> bool:
     if re.fullmatch(r"\d{3}-\d{4}", compact):
         return False  # 郵便番号
     return len(re.sub(r"\D", "", compact)) <= 8
+
+
+# 建物を示す語。住所の続きとして次の行につながるかの判定に使う。
+BUILDING_KEYWORDS = (
+    "ビル",
+    "ビルヂング",
+    "ビルディング",
+    "タワー",
+    "センター",
+    "プラザ",
+    "ハイツ",
+    "コーポ",
+    "マンション",
+    "レジデンス",
+    "アパート",
+    "ハウス",
+    "館",
+)
+
+# 階数の書き方。`8F` `3階` `B1F`。
+FLOOR_RE = re.compile(r"(?:^|[\s\d])[Bb]?\d{1,3}\s*(?:[FfＦ]\b|階)")
+
+
+def is_building_line(text: str) -> bool:
+    """建物名・階数だけの行か。住所の続きとしてつなぐ判定に使う。
+
+    日本の名刺では住所が2行に分かれる。
+
+        東京都渋谷区恵比寿南1-1-1
+        ヒューマックス恵比寿ビル8F     ← これ
+
+    日本語の住所は行末に読点が無いため「次へ続く」印が無く、英字の住所用の
+    つなぎも番地だけの行のつなぎも当たらない（実テスト 9枚目）。
+
+    **会社名を巻き込まないこと。** 巻き込むと住所に社名が入るうえ、会社名の
+    判定からもその行が消えて両方が壊れる。連絡先（電話・メール・URL）も同じ。
+    """
+    line = normalize(text).strip()
+    if not line or has_company_keyword(line):
+        return False
+    if "@" in line or URL_RE.search(for_web_match(line)):
+        return False
+    if len(re.sub(r"\D", "", line)) >= 9:  # 電話番号（他の判定と同じ基準）
+        return False
+    if POSTAL_RE.search(line):
+        return False
+    return any(word in line for word in BUILDING_KEYWORDS) or bool(FLOOR_RE.search(line))
 
 
 def looks_like_address(text: str) -> bool:
@@ -910,6 +991,25 @@ def domestic_digits(value: str) -> str:
     if text.startswith("+") and digits.startswith("81"):
         return "0" + digits[2:]
     return digits
+
+
+# 日本の番号の国際表記。`+81` のあとの区切りごと `0` に置き換える。
+# `(0)`（国内でかけるときだけ 0 を付ける、という慣習表記）も一緒に落とす。
+JP_INTERNATIONAL_RE = re.compile(r"^\+\s*81[\s\-.]*(?:\(\s*0\s*\)[\s\-.]*)?")
+
+
+def to_domestic_form(value: str) -> str:
+    """日本の番号が国際表記なら国内表記に直す。それ以外はそのまま返す。
+
+    実テスト 9枚目の名刺には `+81-70-1508-9897` と印字されており、利用者が
+    正解として入力したのは `070-1508-9897` だった。同じ番号なので、印字の
+    ままにする理由がない。区切り（ハイフン・空白）は印字どおりに残す。
+
+    **他国の番号は直さない。** 国番号を落として 0 を付けるのは日本の規則で、
+    韓国の `+82-10-3661-0778`（実テスト 8枚目）に当てはめると別の番号になる。
+    """
+    replaced, count = JP_INTERNATIONAL_RE.subn("0", normalize(value).strip())
+    return replaced if count else value
 
 
 def normalize_phone(value: str) -> str:
@@ -1186,7 +1286,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         matches = list(PHONE_RE.finditer(line))
 
         for match in matches:
-            number = match.group(0).strip(" \t-ー－.")
+            number = to_domestic_form(match.group(0).strip(" \t-ー－."))
             digits = domestic_digits(number)
             if len(digits) < 9:
                 continue
@@ -1235,6 +1335,22 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 confidence["address"] = 0.7
                 address_index = index
             used.add(index)
+
+    # 日本の形が取れなかった場合の、海外の郵便番号。
+    #
+    # 住所を組み立てる前に済ませること。英字の住所は行末の読点で「次へ続く」と
+    # 判断してつなぐため（`wrapped_blocks`）、先に印を付けておかないと
+    # `Korea,` の次にある `06267` まで住所に入る（実データ 8枚目）。
+    if not fields["postal_code"]:
+        for index, line in enumerate(cleaned):
+            if index in used:
+                continue
+            if FOREIGN_POSTAL_RE.match(line.strip()):
+                fields["postal_code"] = line.strip()
+                # 日本の形（0.95）より弱い根拠。数字の並びだけで決めているため。
+                confidence["postal_code"] = 0.6
+                used.add(index)
+                break
 
     if not fields["address"]:
         for index, line in enumerate(cleaned):
@@ -1323,6 +1439,20 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         fields["address"] = f"{fields['address']}{normalize(cleaned[nxt]).strip()}"
         used.add(nxt)
         address_index = nxt
+
+    # 建物名が次の行に回った場合につなぐ（実テスト 9枚目）。
+    #
+    #     東京都渋谷区恵比寿南1-1-1
+    #     ヒューマックス恵比寿ビル8F     ← 番地までしか住所に入っていなかった
+    #
+    # 1行だけにする。2行以上つなぐと、たまたま建物らしい語を含む別の項目まで
+    # 巻き込む。名刺の住所で建物が2行に分かれることはまずない。
+    if address_index is not None and address_index + 1 < len(cleaned):
+        nxt = address_index + 1
+        if nxt not in used and is_building_line(cleaned[nxt]):
+            fields["address"] = f"{fields['address']} {normalize(cleaned[nxt]).strip()}"
+            used.add(nxt)
+            address_index = nxt
 
     # 会社名
     for index, line in enumerate(cleaned):
