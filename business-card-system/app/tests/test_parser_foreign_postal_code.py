@@ -97,3 +97,53 @@ class TestNumbersThatAreNotPostalCodes:
 
         assert not got["postal_code"]
         assert got["tel"] == "03-1234-5678"
+
+
+class TestThePostalCodeAtTheHeadOfTheAddress:
+    """実テスト 10枚目（ロシア）。郵便番号が住所の先頭に印字されている。
+
+        125167, Moscow,
+        Leningradsky prospekt 39, bld. 79
+
+    番地が先頭に来る住所（`2621, Nambusunhwan-ro,` 実テスト 8枚目）と
+    形が同じなので、**5〜6桁のときだけ**郵便番号として外す。韓国の番地
+    `2621` は4桁なので当たらない。
+    """
+
+    def test_the_postal_code_is_taken(self):
+        got = parse_fields([
+            "German Kurnikov",
+            "125167, Moscow,",
+            "Leningradsky prospekt 39, bld. 79",
+        ])["fields"]
+
+        assert got["postal_code"] == "125167"
+
+    def test_the_address_keeps_the_rest(self):
+        got = parse_fields([
+            "German Kurnikov",
+            "125167, Moscow,",
+            "Leningradsky prospekt 39, bld. 79",
+        ])["fields"]
+
+        assert got["address"].startswith("Moscow")
+        assert "125167" not in got["address"]
+
+    def test_a_house_number_at_the_head_is_kept(self):
+        """実テスト 8枚目。`2621` は番地であって郵便番号ではない。"""
+        got = parse_fields([
+            "NEXON GAMES",
+            "2621, Nambusunhwan-ro,",
+            "Gangnam-gu, Seoul, Korea,",
+            "06267",
+        ])["fields"]
+
+        assert got["postal_code"] == "06267"
+        assert got["address"].startswith("2621, Nambusunhwan-ro")
+
+    def test_a_five_digit_house_number_without_a_comma_is_kept(self):
+        """`12345 Main Street` の番地は外さない（読点が無い）。"""
+        got = parse_fields(["John Smith", "12345 Main Street, Springfield"])["fields"]
+
+        assert not got["postal_code"]
+        assert got["address"].startswith("12345")

@@ -237,7 +237,7 @@ def main() -> int:
             # 入っていなくても取込は動く。ただし精度は落ちるので、
             # 「動いている」と誤解しないよう理由を書いて先へ進む。
             print(f"  [ -- ] {name}  ← 使えません")
-            print("         tesseract だけで動きます（項目正答率 74.9% → 68.0%）。")
+            print("         tesseract だけで動きます（項目正答率 75.3% → 68.0%）。")
             print("         入れる場合: pip install -r requirements-combined.txt")
             continue
         print(f"  [ NG ] {name}  ← {label}")

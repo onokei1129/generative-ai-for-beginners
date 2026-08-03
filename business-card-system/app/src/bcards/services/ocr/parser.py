@@ -340,6 +340,45 @@ NOT_A_NAME_WORDS = (
     "department",
     "dept",
     "team",
+    # 国・地域の語。役職・部署では担当範囲としてよく出るが（`Head of Japan |
+    # APAC`・`日本支社`）、人名にはまず現れない。
+    #
+    # 実データ 20枚目では、印字は `Representative in Japan` なのに easyocr が
+    # `Represenialivein Japan` と読み崩し、姓『Japan』名『Represenialivein』
+    # として登録していた。`representative` は下の語彙に入っているが、読み崩れた
+    # 側は一致しない。**読み崩れる語をすべて数え上げることはできない**ので、
+    # 崩れにくい短い語のほうを見る。
+    "japan",
+    "korea",
+    "china",
+    "taiwan",
+    "asia",
+    "pacific",
+    "apac",
+    "emea",
+    "europe",
+    "america",
+    "americas",
+    "global",
+    "international",
+    "worldwide",
+    "region",
+    "regional",
+    # 会社の形態を表す語。`has_company_keyword` は `Inc.` や `GmbH` を見るが
+    # `Acme Ltd` `ACME CORP` は素通りし、姓『Ltd』名『Acme』になっていた。
+    "corp",
+    "corporation",
+    "ltd",
+    "limited",
+    "llc",
+    "llp",
+    "inc",
+    "incorporated",
+    "company",
+    "holdings",
+    "gmbh",
+    "plc",
+    "pte",
 )
 
 # 住所のラベル。`Add 〒580-0021 大阪府…` のように住所と同じ行に印字される。
@@ -381,6 +420,13 @@ TITLE_TAIL_WORDS = (
 # **`ー`（U+30FC 長音記号）は入れないこと。**「ヒューマックス」のように日本語の
 # 語の一部として現れる。郵便番号・電話番号の側で個別に見ている今のやり方を変えない。
 DASH_TO_HYPHEN = str.maketrans(dict.fromkeys("‐‑‒–—―−", "-"))
+
+# 住所の先頭に置かれた海外の郵便番号（`125167, Moscow,` 実テスト 10枚目）。
+#
+# 番地が先頭に来る住所（`2621, Nambusunhwan-ro,` 実テスト 8枚目）と形が同じ
+# なので、**5〜6桁で、直後に読点がある**ときだけ外す。韓国の番地 `2621` は
+# 4桁なので当たらず、`12345 Main Street` は読点が無いので当たらない。
+LEADING_POSTAL_RE = re.compile(r"^(\d{5,6})\s*,\s*")
 
 
 def normalize(text: str) -> str:
@@ -657,12 +703,37 @@ def join_house_number(text: str) -> str:
     return HOUSE_NUMBER_TAIL_RE.sub(r"\1", text)
 
 
+def _name_halves_are_whole(parts: list[str]) -> bool:
+    """段に切ったときの**最後の断片**が、名として成り立つ長さか。
+
+    `藤   し` は「伊藤 しの」の読み崩れで、`し` は名ではない。一方
+    `迎　　　亮一` の `亮一` は名。姓が1文字（`迎`）のことはあるが、
+    右端が1文字の断片なら氏名の途中ではなく段の切れ目とみなす。
+
+    `冨田   修` のように名が1文字の氏名はここで段に切られるが、姓と名が
+    別の行として読まれた場合の規則が拾い直す。
+    """
+    return len(parts) < 2 or len(re.sub(r"\s+", "", parts[-1])) >= 2
+
+
 def split_columns(line: str) -> list[str]:
     """左右2段組みの行を、段ごとに分ける（`COLUMN_GAP_RE` の説明を参照）。
 
     段が1つしか無い行はそのまま返す。
+
+    **行全体が氏名として読めるなら切らない。** 名刺は姓と名のあいだを大きく
+    空けて印字することが多く（`オロブスキー    スタニスラフ`・`迎　　　亮一`）、
+    その空白は段組みの見分けと同じ形をしている。切ると氏名が半分になり、
+    残った `オロブスキー` をさらに姓と名に分けて 姓『オロ』名『ブスキー』に
+    なっていた（実テスト 20枚目）。
+
+    2段組みの行はここに当たらない。右段に連絡先や社名が来るため、行全体が
+    氏名の形にならない（`Sangeon Lee   T +82.2.6421.7777` は数字を含む）。
     """
+
     parts = [part.strip() for part in COLUMN_GAP_RE.split(line.strip())]
+    if _looks_like_person_name(line) and _name_halves_are_whole(parts):
+        return [line.strip()]
     parts = [part for part in parts if part]
     return parts if len(parts) > 1 else [line]
 
@@ -879,6 +950,40 @@ def is_building_line(text: str) -> bool:
     if POSTAL_RE.search(line):
         return False
     return any(word in line for word in BUILDING_KEYWORDS) or bool(FLOOR_RE.search(line))
+
+
+# 2行に分かれた氏名の1語ぶん。先頭が大文字で、残りは小文字。
+# 全大文字（`ACME` `SOLUTIONS`）は社名の形なので外す。
+NAME_WORD_RE = re.compile(r"^[A-ZÀ-Þ][a-zà-ÿ'’\-]{1,19}$")
+
+# 氏名を探す範囲。名刺の上部に限る（下のほうの語を氏名にしないため）。
+NAME_PAIR_SEARCH_LINES = 5
+
+
+def name_over_two_lines(lines: list[str], used: set[int]) -> tuple[int, str, str] | None:
+    """続いた2行が2行に分かれた氏名なら `(先頭の行, 名, 姓)` を返す。
+
+    大きな活字の名刺では姓と名が別の行になる（`German` / `Kurnikov`
+    実テスト 10枚目）。1行1語なので、1行を氏名として見る規則には当たらない。
+
+    社名も1語ずつ2行になることがあるため、条件を絞る。**残る危険**は
+    `Acme` `Solutions` のように大文字小文字の形が氏名と同じ社名で、これは
+    形だけでは見分けられない。緩めるときは実データで確かめること。
+    """
+    for index in range(min(len(lines) - 1, NAME_PAIR_SEARCH_LINES)):
+        if index in used or index + 1 in used:
+            continue
+        first = normalize(lines[index]).strip()
+        second = normalize(lines[index + 1]).strip()
+        if not (NAME_WORD_RE.match(first) and NAME_WORD_RE.match(second)):
+            continue
+        if has_company_keyword(first) or has_company_keyword(second):
+            continue
+        lowered = f"{first} {second}".lower()
+        if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
+            continue
+        return index, first, second
+    return None
 
 
 def looks_like_address(text: str) -> bool:
@@ -1426,6 +1531,16 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         used.add(previous)
         address_index = previous
 
+    # 住所の先頭に郵便番号が置かれている場合（`125167, Moscow,` 実テスト 10枚目）。
+    # 住所を組み立てたあとに見る。組み立て前だと、折り返しでつながる前の
+    # 断片しか見えない。
+    if not fields["postal_code"] and fields["address"]:
+        match = LEADING_POSTAL_RE.match(fields["address"])
+        if match:
+            fields["postal_code"] = match.group(1)
+            confidence["postal_code"] = 0.6
+            fields["address"] = fields["address"][match.end() :].strip()
+
     # 番地だけが次の行に回った場合につなぐ。
     #
     # 日本語の住所は読点で終わらないので、折り返しの印が無い。実データ
@@ -1707,6 +1822,17 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             fields["first_name"] = cleaned[following]
             confidence["first_name"] = 0.6
             used.add(following)
+
+    # 氏名が2行に分かれて印字されている場合（`German` / `Kurnikov` 実テスト 10枚目）。
+    # 他のどの規則でも取れなかったときだけ見る。
+    if not fields["last_name"] and not fields["first_name"]:
+        pair = name_over_two_lines(cleaned, used)
+        if pair is not None:
+            index, given, family = pair
+            fields["first_name"], fields["last_name"] = given, family
+            # 1行で読めた氏名（0.7）より弱い根拠。行のつながりだけで決めている。
+            confidence["last_name"] = confidence["first_name"] = 0.5
+            used.update((index, index + 1))
 
     # ふりがな（ひらがなだけの行）
     #

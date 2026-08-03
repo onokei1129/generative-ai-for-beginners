@@ -63,11 +63,16 @@ pa ES 13   125167, Moscow,
         assert got["last_name"] != "にロニ"
         assert got["first_name"] != "エニ"
 
-    def test_an_empty_name_is_the_right_answer_here(self):
-        """読めていない以上、作れない。空欄にして人に任せる。"""
+    def test_the_name_split_over_two_lines_is_assembled(self):
+        """以前はここを空欄が正解としていた。
+
+        `German` と `Kurnikov` は別々の行にあり、1行を氏名として見る規則では
+        拾えないため「読めていない以上、作れない」としていた。実テストで
+        氏名が空のまま残るという報告を受け、続いた2行から組み立てるように
+        した（tests/test_parser_name_over_two_lines.py）。
+        """
         got = self.fields()
-        assert got["last_name"] == ""
-        assert got["first_name"] == ""
+        assert (got["last_name"], got["first_name"]) == ("Kurnikov", "German")
 
     def test_the_fields_that_were_read_are_still_taken(self):
         got = self.fields()
