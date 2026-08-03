@@ -183,6 +183,8 @@ TITLE_KEYWORDS = (
     # 無いため行ごと氏名になり、姓が『Kudishov Executive Producer』だった。
     "Executive",
     "Producer",
+    # 実データ 20枚目の `Representative in Japan`。
+    "Representative",
     "Founder",
     "Partner",
     "Evangelist",
@@ -421,6 +423,15 @@ def pick_title(line: str, keyword: str) -> str:
 
     if line == keyword:
         return line
+    # 役職の語の前が、語と違う字種なら読み崩れ。そこから後ろだけを採る。
+    #
+    # 複合した役職は1つの字種で書く（`Executive Producer` `シニアエンジニア`）。
+    # 実データ 20枚目では、tesseract が `ん い Representative in Japan` と
+    # 読み、`んい` ごと役職にしていた。
+    position = line.find(keyword)
+    head = line[:position].strip()
+    if head and _has_japanese(head) != _has_japanese(keyword):
+        line = line[position:].strip()
     # 「シニアエンジニア」「エグゼクティブ・プロデューサー」のように、
     # 役職の語に修飾が付いた形は全体が役職名。行が短ければそのまま残す。
     #
@@ -1174,14 +1185,16 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             else:
                 position, kind = labelled[-1]
                 score = 0.85
-                # ラベルとこの番号の間に別の番号が挟まっているなら、そのラベルは
-                # 前の番号のもの（`TEL 03-…／090-…` のような並び）。この場合だけ
-                # 先頭3桁で見直す。ラベルが直に付いている番号は、ラベルを信じる
-                # （`Tel 050-…` を携帯にしないため）。
-                borrowed = any(
-                    other.start() > position and other.end() <= match.start() for other in matches
-                )
-                if borrowed and kind == "tel" and digits[:3] in MOBILE_PREFIXES:
+                # 090・080・070 は携帯にしか割り当てられない番号なので、
+                # ラベルが `TEL` や `PHONE` でも携帯として扱う。
+                #
+                # 実データ 20枚目は `PHONE 携帯 070 4100 5747` で、`携帯` が
+                # `捕帯` と読まれてラベルにならず、残った `PHONE` を信じて
+                # 電話の欄に入れていた。
+                #
+                # `050`（IP電話）は固定側にもあるため、ラベルを信じたまま
+                # （`Tel 050-…` を携帯にしない）。
+                if kind == "tel" and digits[:3] in MOBILE_PREFIXES:
                     kind = "mobile"
                     score = 0.7
             if not fields[kind]:
