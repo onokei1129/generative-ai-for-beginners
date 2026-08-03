@@ -148,10 +148,14 @@ def serve() -> int:
             request = json.loads(line)
             reply = {"ok": True, "result": dispatch(request.get("mode", ""), request.get("args") or [])}
         except Exception as exc:  # noqa: BLE001 - 失敗も返事として返す
-            # 返事に入れられるのは1行だけ。全文は標準エラーへ書く。親が読んで
-            # `ラベル入力ログ.txt` へ移す（poc/label.py の drain_errors_into_log）。
-            warn(traceback.format_exc())
-            reply = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            # traceback は**返事に入れて**渡す。標準エラーへ書くだけだと、親は
+            # 標準出力と標準エラーを別々の裏方で読むため、返事のほうが先に
+            # 届いて記録が空になることがある（実際にテストで再現した）。
+            reply = {
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "traceback": traceback.format_exc(),
+            }
         emit_line(reply)
 
 

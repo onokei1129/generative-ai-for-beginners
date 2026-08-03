@@ -254,6 +254,10 @@ class _Worker:
         # 直し方を間違えたときに JSON の構文エラーとして出てきて原因が見えない。
         reply = json.loads(line)
         if not reply.get("ok"):
+            # 画面に出せるのは1行だけ。全文は返事に入って届くので記録へ移す。
+            detail = reply.get("traceback")
+            if detail:
+                _log_text(f"子プロセス（{mode}）", str(detail))
             raise ChildFailed(str(reply.get("error") or "理由が分かりませんでした"))
         return reply.get("result") or {}
 
@@ -355,9 +359,10 @@ def run_in_child(args: list[str]) -> dict:
         try:
             return worker.ask(mode, rest)
         except ChildFailed:
-            # 画面に出せるのは1行だけ。子が書いた traceback の全文はここでしか
-            # 拾えない（子は常駐しているので、終了を待ってまとめて読む形にできない）。
-            worker.drain_errors_into_log(f"子プロセス（{mode}）")
+            # 子が落ちた場合は返事が来ないので、標準エラーに残ったものを拾う
+            # （1枚ごとの失敗の traceback は返事に入って `ask` が記録済み）。
+            if not worker.alive():
+                worker.drain_errors_into_log(f"子プロセスが落ちました（{mode}）")
             # 1枚の失敗（ファイルが無いなど）で子を捨てない。生きているなら使い続ける。
             if not worker.alive():
                 drop()
@@ -661,6 +666,45 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             path.unlink()
         return JSONResponse({"ok": True})
 
+    @app.post("/api/inspect/{name}")
+    def api_inspect(name: str) -> JSONResponse:
+        """この1枚の読み取りをファイルに書き出す。
+
+        実テストで、画面の写真から不具合を再現しようとして**何度も食い違った**。
+        OCRが読んだ文字は目で書き写すには長く、`テ`と`了`、`一`と`ー`、`9`と`９`、
+        `-`(ASCII) と `‐`(U+2010) のような1文字の違いがそのまま結果を変える。
+        写真では区別が付かない。
+
+        ファイルにして渡せるようにすれば、同じ文字で再現できる。
+        """
+        path = directory / name
+        if not path.is_file() or path.parent.resolve() != directory.resolve():
+            return JSONResponse({"error": "見つかりません"}, status_code=404)
+
+        out = directory / f"読み取り-{path.name}.txt"
+        try:
+            values, error, ocr_text = _ocr_draft(path)
+        except Exception as exc:  # noqa: BLE001 - 失敗も書き出す（それが手がかりになる）
+            _log_failure(f"この1枚を調べる（{name}）")
+            values, error, ocr_text = {}, f"{type(exc).__name__}: {exc}", ""
+
+        lines = [
+            f"名刺: {path.name}",
+            f"版: {_version()}",
+            "",
+            "--- OCRが読んだ文字 ---",
+            ocr_text or "（読めた文字がありませんでした）",
+            "",
+            "--- 取り出した項目 ---",
+        ]
+        if error:
+            lines.append(f"失敗: {error}")
+        for key in FIELD_KEYS:
+            lines.append(f"{LABELS[key]}: {values.get(key, '')}")
+        # UTF-8 で書く。cp932 では `ソ` などが壊れる（poc/one_card.py の emit を参照）。
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return JSONResponse({"ok": True, "path": str(out)})
+
     @app.post("/api/not-a-card/{name}")
     def api_not_a_card(name: str) -> JSONResponse:
         """名刺でないものを一覧から外す。
@@ -810,7 +854,12 @@ PAGE = """
            入力欄の下（14項目ぶん下）だと画面外で気づけない。 -->
       <p class="notcard-row">
         <button type="button" id="notcard">これは名刺ではない（一覧から外す）</button>
+        <!-- 項目がおかしいときに、その1枚の読み取りをそのまま渡せるようにする。
+             画面の写真では `テ`と`了`、`9`と`９` の違いが分からず、
+             再現しようとして何度も食い違った。 -->
+        <button type="button" id="inspect">この1枚を調べる（読み取りを書き出す）</button>
       </p>
+      <p class="kbd" id="inspected"></p>
     </div>
   </div>
   <div>
@@ -1107,6 +1156,21 @@ document.getElementById('notcard').onclick = async () => {
   }
   await show(Math.min(at, state.files.length - 1));
   document.getElementById('saved').textContent = '一覧から外しました';
+};
+// この1枚の読み取りをファイルに書き出す。項目がおかしいときの報告に使う。
+document.getElementById('inspect').onclick = async () => {
+  const file = state.files[state.index];
+  const note = document.getElementById('inspected');
+  note.textContent = 'OCRで読んでいます…';
+  try {
+    const res = await fetch('/api/inspect/' + encodeURIComponent(file.name), {method: 'POST'});
+    const data = await res.json();
+    note.textContent = data.path
+      ? '書き出しました: ' + data.path + '　このファイルを送ってください。'
+      : '書き出せませんでした: ' + (data.error || '');
+  } catch (err) {
+    note.textContent = '書き出せませんでした: ' + err;
+  }
 };
 // 保存済みの札は下書きを作っていないので、欄を開いたときにだけ読みに行く。
 // 保存した値の誤りに気づいたとき、何をどう読み違えたのかを見るための欄。
