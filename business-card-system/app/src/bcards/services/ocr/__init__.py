@@ -116,6 +116,39 @@ def _has_expected_shape(key: str, value: str) -> bool:
     return True if shape is None else bool(shape.match(value.strip()))
 
 
+# 1行を分けて作る項目。別々のエンジンから寄せ集めると、1人の名前にならない。
+#
+# 実データ 13枚目では、EasyOCR が飾りを `町こ` と読んで姓に入れ、名は空、
+# tesseract は `HIDEYA KOBAYASHI` を正しく読んでいた。項目ごとに採ると
+# 姓『町こ』／ 名『HIDEYA』という別人ができあがる。
+#
+# まとめて片方から採る。どちらを採るかは埋まった数の多いほうで決める
+# （姓も名も読めているエンジンのほうが確からしい）。同数なら先のエンジン。
+_GROUPS = (
+    ("last_name", "first_name"),
+    ("last_name_kana", "first_name_kana"),
+)
+
+
+def _merge_groups(results: list[dict], fields: dict, confidence: dict) -> None:
+    for group in _GROUPS:
+        best: dict | None = None
+        best_filled = -1
+        for parsed in results:
+            values = parsed.get("fields") or {}
+            filled = sum(1 for key in group if (values.get(key) or "").strip())
+            if filled > best_filled:
+                best, best_filled = parsed, filled
+        if best is None:
+            continue
+        values = best.get("fields") or {}
+        scores = best.get("confidence") or {}
+        for key in group:
+            fields[key] = values.get(key, "")
+            if scores.get(key) is not None:
+                confidence[key] = scores[key]
+
+
 def merge_fields(results: list[dict]) -> dict:
     """先に挙げた結果の値を優先し、空のときだけ次の結果の値を使う。
 
@@ -147,6 +180,7 @@ def merge_fields(results: list[dict]) -> dict:
                 del confidence[key]
             provisional.discard(key) if good else provisional.add(key)
 
+    _merge_groups(results, fields, confidence)
     return {"fields": fields, "confidence": confidence, "method": "rule"}
 
 

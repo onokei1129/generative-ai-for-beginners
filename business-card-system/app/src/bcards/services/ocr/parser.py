@@ -169,6 +169,15 @@ TITLE_KEYWORDS = (
     "Specialist",
     "Researcher",
     "Consultant",
+    # 実データ 14枚目の `Alex Kudishov ▪ Executive Producer`。役職の語が
+    # 無いため行ごと氏名になり、姓が『Kudishov Executive Producer』だった。
+    "Executive",
+    "Producer",
+    "Founder",
+    "Partner",
+    "Evangelist",
+    "Designer",
+    "Producer",
 )
 
 DEPARTMENT_KEYWORDS = (
@@ -599,6 +608,54 @@ def strip_phone_parts(text: str) -> str:
     for label in sorted(labels, key=len, reverse=True):
         without_numbers = re.sub(re.escape(label), " ", without_numbers, flags=re.IGNORECASE)
     return re.sub(r"[\s:：/|｜（）()]+", " ", without_numbers).strip()
+
+
+def spaced_prefix(spaced: str, count: int) -> str:
+    """空白を残した行から、先頭 count 文字（空白を数えない）を取り出す。
+
+    `spaced_suffix` の裏返し。氏名が先、役職が後ろの行で氏名側を取り直す。
+    """
+    taken = 0
+    for index, character in enumerate(spaced):
+        if character.isspace():
+            continue
+        taken += 1
+        if taken == count:
+            return spaced[: index + 1].strip()
+    return spaced.strip()
+
+
+# 氏名と役職のあいだに置かれる区切り。OCRでは落ちたり別の字になったりする。
+_ROLE_SEPARATORS = " \t・･·|｜/／-–—,、"
+
+
+def split_name_before_role(line: str, email: str = "") -> tuple[str, str] | None:
+    """`Alex Kudishov ▪ Executive Producer` を氏名と役職に分ける。
+
+    役職の語のうち**いちばん前**にあるものから後ろを役職とする。`Executive
+    Producer` のように役職が2語のとき、後ろの語だけを見ると `Executive` が
+    氏名側に残る。
+
+    前が氏名らしくなければ何も返さない（役職だけの行を壊さないため）。
+
+    分けるのは**英字で、語が分かれている**氏名に限る。日本語の役職は
+    修飾語を前に付けて1語で書くため（`シニアエンジニア` `担当部長`）、
+    同じ規則を当てると前半を氏名にしてしまう。実際に切ってしまい、
+    既存のテスト2件で捕まえた。
+    """
+    positions = [line.find(word) for word in TITLE_KEYWORDS if word in line]
+    if not positions:
+        return None
+    start = min(positions)
+    name_part = line[:start].strip(_ROLE_SEPARATORS)
+    role = line[start:].strip(_ROLE_SEPARATORS)
+    if not name_part or not role:
+        return None
+    if _has_japanese(name_part) or not re.search(r"\s", name_part):
+        return None
+    if not _looks_like_person_name(name_part, email):
+        return None
+    return name_part, role
 
 
 def spaced_suffix(spaced: str, count: int) -> str:
@@ -1250,6 +1307,13 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                     # 空白を数えない字数で位置を決める（`John Smith` は10文字）
                     letters = len(re.sub(r"\s+", "", tail))
                     title_name = (tail, spaced_suffix(spaced_lines[index], letters))
+                elif split := split_name_before_role(candidate, fields["email"]):
+                    # 氏名が先、役職が後ろの行（`Alex Kudishov ▪ Executive Producer`）。
+                    # 英語の名刺ではこちらが普通で、上の分岐（役職が先）の裏返し。
+                    name_part, role = split
+                    fields["title"] = role
+                    letters = len(re.sub(r"\s+", "", name_part))
+                    title_name = (name_part, spaced_prefix(spaced_lines[index], letters))
                 else:
                     fields["title"] = pick_title(candidate, keyword)
                 confidence["title"] = 0.8
