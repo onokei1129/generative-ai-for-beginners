@@ -154,6 +154,56 @@ def _log_failure(what: str) -> None:
     _log_text(what, traceback.format_exc())
 
 
+# C のライブラリが落ちた瞬間の位置を書く先。
+CRASH_PATH = Path(__file__).resolve().parent / "落ちた記録.txt"
+
+# `faulthandler` に渡したファイルは開いたまま持っておくこと。
+# 閉じられると（回収されると）記録が無効になる。
+_CRASH_FILE = None
+
+
+def enable_crash_report() -> None:
+    """落ちた瞬間を記録に残す。
+
+    Python の例外なら `_log_failure` が拾える。しかし **C のライブラリが
+    落ちるとプロセスはその場で消える**ため、`except` も `finally` も通らない。
+    PDFの描画（pypdfium2）・OCR（tesseract）・EasyOCR（PyTorch）はどれも C を
+    呼ぶので、ここが落ちると Python 側には何も残らない。
+
+    実テストで、サーバーが応答しなくなったときに記録が空のまま終わっていた
+    （5・6枚目、8枚目、「前へ」で戻ったとき）。手がかりが1つも無い状態だった。
+
+    書けなくても起動は止めない。記録は手がかりであって、目的ではない。
+    """
+    import faulthandler
+
+    global _CRASH_FILE
+    try:
+        _CRASH_FILE = CRASH_PATH.open("a", encoding="utf-8")
+        faulthandler.enable(file=_CRASH_FILE, all_threads=True)
+    except Exception:  # noqa: BLE001 - 記録できなくても本筋を止めない
+        pass
+
+
+def report_last_crash() -> None:
+    """前回落ちた記録が残っていれば、起動時に在り処を知らせる。
+
+    利用者は「サーバーが応答していません」を見て黒い画面を開き直す。その
+    ときに出しておかないと、せっかく残した手がかりが読まれないまま終わる。
+    """
+    try:
+        if not CRASH_PATH.exists() or not CRASH_PATH.read_text(encoding="utf-8").strip():
+            return
+    except Exception:  # noqa: BLE001 - 読めなくても起動を止めない
+        return
+    print()
+    print("【前回、途中で落ちた記録があります】")
+    print(f"  {CRASH_PATH}")
+    print("  このファイルと、下の記録を送っていただけると原因を追えます。")
+    print(f"  {LOG_PATH}")
+    print()
+
+
 def _log_step(what: str) -> None:
     """いま何をしているかを1行だけ記録に残す。
 
@@ -1233,6 +1283,10 @@ boot();
 
 
 def main() -> int:
+    # 前回の記録を先に知らせる（有効にすると追記で混ざるため、その前に読む）。
+    report_last_crash()
+    # いちばん先に有効にする。落ちるのは重い処理の最中とは限らない。
+    enable_crash_report()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("directory", help="名刺画像の入っているフォルダ")
     parser.add_argument("--port", type=int, default=8100)

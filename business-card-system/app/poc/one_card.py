@@ -36,11 +36,21 @@ tesseract）を既定にしたあと、実測で**1枚あたり 1.4GB / 12秒**�
 
 from __future__ import annotations
 
+import faulthandler
 import io
 import json
 import sys
 import traceback
 from pathlib import Path
+
+# C のライブラリが落ちた瞬間の位置を標準エラーへ書く。
+#
+# PDFの描画（pypdfium2）・OCR（tesseract）・EasyOCR（PyTorch）はどれも C を
+# 呼ぶ。ここが落ちるとプロセスはその場で消え、`except` も `finally` も通らない
+# ため、`serve` の失敗の返事すら出せない。**それが唯一の手がかりになる。**
+#
+# 親は標準エラーを読み続けているので、記録（ラベル入力ログ.txt）へ移される。
+faulthandler.enable(all_threads=True)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
