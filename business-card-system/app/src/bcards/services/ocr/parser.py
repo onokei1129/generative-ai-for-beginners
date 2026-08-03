@@ -1276,7 +1276,11 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     latin = normalize(line).strip()
     # 語数の上限は4。スペイン語圏の氏名は父方・母方の姓を並べるため長い
     # （実データ: `ANA FERNANDEZ DEL RIO`）。3語までにしていて空になっていた。
-    if not re.fullmatch(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,3}", latin):
+    # 最初の語の直後の読点だけ許す（`Jeong, Sun Ho` 実テスト 23枚目）。
+    # 2つ目以降にも読点がある行は住所（`Gangnam-gu, Seoul, Korea,`）なので通さない。
+    if not re.fullmatch(
+        r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*,?(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\-]*){1,3}", latin
+    ):
         return False
     lowered = latin.lower()
     if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
@@ -1309,6 +1313,26 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     #   `ceo@omorobot.com`       と `SEOKHOON YOON` → omorobot に無い     → 氏名
     domain = email.split("@", 1)[1].lower()
     return not all(word in domain for word in words)
+
+
+# 韓国の姓のローマ字表記。**姓が先に印字されているか**を見分けるためだけに使う。
+#
+# 実テスト 21枚目の `Yeo Seunghwan` は 姓『Seunghwan』名『Yeo』と逆になって
+# いた。英字の氏名は「名 姓」の順として扱っているが、韓国の名刺はどちらの
+# 並びもあり、形だけでは決められない（8枚目は `Sangeon Lee` で姓が後ろ）。
+#
+# **西洋の人名と紛れる語は入れないこと。** `Kim`・`Lee`・`Park`・`Han`・
+# `Song`・`Oh` は英語圏の人名にもあるため、入れると `Kim Anderson` の姓が
+# `Kim` になる。姓が後ろにある書き方は今までどおりの規則で正しく取れるので、
+# 語彙に入れる必要もない。
+KOREAN_SURNAMES = frozenset(
+    {
+        "yeo", "choi", "hwang", "kwon", "jeong", "jung", "chung", "baek",
+        "byun", "ryu", "shim", "sohn", "yoon", "yun", "jang", "jeon",
+        "kang", "kwak", "gwak", "noh", "paik", "pyo", "hyun", "seok",
+        "shin", "joo", "nam",
+    }
+)
 
 
 def split_person_name(full: str) -> tuple[str, str]:
@@ -1351,7 +1375,21 @@ def split_person_name(full: str) -> tuple[str, str]:
         # ラテン文字の氏名は「名 姓」の順で印字される。実データ（7枚目）の
         # `Sangeon Lee` を、日本語と同じ「姓 名」とみて 姓=Sangeon としていた。
         # 姓は最後の語。残りを名にする。
-        if not _has_japanese(text) and re.fullmatch(r"[A-Za-zÀ-ÿ .'\-]+", text):
+        if not _has_japanese(text) and re.fullmatch(r"[A-Za-zÀ-ÿ ,.'\-]+", text):
+            # 読点で区切られていれば、その前が姓（`Jeong, Sun Ho` 実テスト 23枚目）。
+            # 言語を問わない書き方なので、いちばん確かな手がかり。
+            head, comma, tail = text.partition(",")
+            if comma and head.strip() and tail.strip():
+                return head.strip(), " ".join(tail.split())
+            # 韓国の名刺は姓が先のこともある（`Yeo Seunghwan` 実テスト 21枚目）。
+            # 姓が後ろの書き方（`Sangeon Lee` 実テスト 8枚目）と形は同じなので、
+            # 韓国の姓の語が**前にあるとき**だけ入れ替える。
+            if (
+                len(parts) == 2
+                and parts[0].lower() in KOREAN_SURNAMES
+                and parts[1].lower() not in KOREAN_SURNAMES
+            ):
+                return parts[0], parts[1]
             given = [parts[0]]
             rest = list(parts[1:])
             # `John A. Smith` の `A.` は中間名の頭文字。名のほうに残す。
