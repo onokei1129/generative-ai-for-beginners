@@ -394,39 +394,59 @@ class _Worker:
             pass
 
 
-_worker: _Worker | None = None
+# 子プロセスは2つに分ける。
+#
+#   ocr    ……  読み取り（tesseract と EasyOCR）。重い。1件ずつ順に渡す。
+#   image  ……  PDFの1ページを絵にするだけ。読み取り機のモデルを使わない。
+#
+# 分ける前は同じ1つを取り合っていた。OCRと次の2枚の先読みが先に順番を取ると
+# 画像はその後ろで待つことになり、実テストの21枚目では**欄は新しい名刺なのに
+# 画像だけ前の名刺のまま**という状態が続いた。別の名刺を見ながら入力できて
+# しまうので、見た目だけの話ではない。
+LANES = ("ocr", "image")
 
-# 頼みごとを1件ずつ順に渡すための錠。**片付ける側はこれを待たない**。
-# 待つ作りにすると、OCRの最中に Ctrl-C やウィンドウを閉じたときに、その1枚が
-# 終わるまで（最長300秒）止まって見える。落とせば待っている側は
-# 「子プロセスが終了しました」を受け取って進めるので、待つ理由がない。
-_worker_lock = threading.Lock()
+_workers: dict[str, _Worker | None] = {lane: None for lane in LANES}
+
+# 頼みごとを1件ずつ順に渡すための錠（列ごとに1つ）。**片付ける側はこれを
+# 待たない**。待つ作りにすると、OCRの最中に Ctrl-C やウィンドウを閉じた
+# ときに、その1枚が終わるまで（最長300秒）止まって見える。落とせば待って
+# いる側は「子プロセスが終了しました」を受け取って進めるので、待つ理由がない。
+_worker_locks: dict[str, threading.Lock] = {lane: threading.Lock() for lane in LANES}
 
 
-def _take_worker() -> _Worker | None:
+def lane_for(mode: str) -> str:
+    """その頼みごとをどちらの子に渡すか。"""
+    return "image" if mode == "image" else "ocr"
+
+
+def lane_lock(lane: str) -> threading.Lock:
+    return _worker_locks[lane]
+
+
+def _take_worker(lane: str) -> _Worker | None:
     """いまの子を手放して返す。次に頼まれたときに作り直される。"""
-    global _worker
-    current, _worker = _worker, None
+    current, _workers[lane] = _workers[lane], None
     return current
 
 
-def stop_worker() -> None:
-    """子プロセスを片付ける（終了時とテストの前後）。"""
-    current = _take_worker()
-    if current is not None:
-        current.stop()
+def stop_worker(lane: str | None = None) -> None:
+    """子プロセスを片付ける（終了時とテストの前後）。既定では両方。"""
+    for name in (LANES if lane is None else (lane,)):
+        current = _take_worker(name)
+        if current is not None:
+            current.stop()
 
 
-def kill_worker() -> None:
+def kill_worker(lane: str = "ocr") -> None:
     """子プロセスを即座に落とす。C のライブラリが落ちた状態を作るのに使う。"""
-    current = _take_worker()
+    current = _take_worker(lane)
     if current is not None:
         current.kill()
 
 
-def worker_pid() -> int | None:
+def worker_pid(lane: str = "ocr") -> int | None:
     """いま動いている子プロセスの番号。作り直されたかを見るのに使う。"""
-    current = _worker
+    current = _workers[lane]
     return current.process.pid if current is not None and current.alive() else None
 
 
@@ -468,20 +488,19 @@ def run_in_child(args: list[str]) -> dict:
     mode, rest = args[0], [str(a) for a in args[1:]]
 
     # 1件ずつ順に渡す。同時に2枚を頼めないので、抱える画像も1枚分で済む。
-    with _worker_lock:
-        global _worker
-        worker = _worker
+    lane = lane_for(mode)
+    with _worker_locks[lane]:
+        worker = _workers[lane]
         if worker is None or not worker.alive():
             if worker is not None:
                 worker.kill()
-            worker = _worker = _Worker()
+            worker = _workers[lane] = _Worker()
 
         def drop() -> None:
             # 片付ける側は錠を待たないので、その間に別の子へ差し替わっていることが
             # ある。自分が使っていた子のときだけ手放す。
-            global _worker
-            if _worker is worker:
-                _worker = None
+            if _workers[lane] is worker:
+                _workers[lane] = None
             worker.kill()
 
         try:
@@ -949,6 +968,7 @@ PAGE = """
   .ocrbox pre { background: #f6f7f9; border: 1px solid #e0e3e8; border-radius: 4px;
                 padding: 8px; margin: 6px 0 0; max-height: 260px; overflow: auto;
                 white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  .imgwait { font-size: 13px; color: #666; padding: 24px 10px; text-align: center; }
   .imgerror:empty { display: none; }
   .imgerror { font-size: 13px; padding: 8px 10px; border-radius: 4px; margin: 8px 0;
               background: #fff4e5; border: 1px solid #ffd8a8; color: #8a5300; }
@@ -1021,7 +1041,8 @@ PAGE = """
     <div class="panel imgwrap">
       <p class="filename" id="filename">—</p>
       <img id="image" alt="名刺画像" onclick="this.classList.toggle('zoom')"
-           onerror="showImageError()">
+           onerror="showImageError()" onload="document.getElementById('imgwait').style.display='none'">
+      <div id="imgwait" class="imgwait" style="display:none">画像を読み込んでいます…</div>
       <div id="imgerror" class="imgerror"></div>
       <details id="ocrbox" class="ocrbox">
         <summary>OCRが読んだ文字を見る（項目が空のときの手がかり）</summary>
@@ -1118,6 +1139,7 @@ function fieldHtml(key) {
 async function showImageError() {
   const box = document.getElementById('imgerror');
   const file = state.files[state.index];
+  document.getElementById('imgwait').style.display = 'none';
   box.textContent = '画像を表示できません。原因を調べています…';
 
   let reason = null;
@@ -1152,8 +1174,15 @@ async function show(i) {
   document.getElementById('filename').textContent = file.name;
   document.getElementById('imgerror').textContent = '';
   document.getElementById('ocrtext').textContent = '';
-  document.getElementById('image').src = '/api/image/' + encodeURIComponent(file.name);
-  document.getElementById('image').classList.remove('zoom');
+  // 前の名刺の画像を消してから頼む。`src` を差し替えるだけでは**新しい画像が
+  // 届くまで前の画像が出たまま**になる。欄は先に返るので、その間ずれて見える
+  // ——実テストの21枚目では、欄が『高岡 徹』なのに画像は前の名刺のままだった。
+  // 別の名刺を見ながら入力できてしまうので、見た目だけの話ではない。
+  const img = document.getElementById('image');
+  img.removeAttribute('src');
+  img.classList.remove('zoom');
+  document.getElementById('imgwait').style.display = '';
+  img.src = '/api/image/' + encodeURIComponent(file.name);
   document.getElementById('saved').textContent = '';
   clearMarks();
 

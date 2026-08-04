@@ -99,7 +99,7 @@ class TestClosingDoesNotWaitForTheCard:
 
         label.run_in_child(["ocr", str(card)])
 
-        with label._worker_lock:
+        with label.lane_lock("ocr"):
             started = time.time()
             label.stop_worker()
             took = time.time() - started
