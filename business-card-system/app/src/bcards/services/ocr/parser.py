@@ -776,7 +776,20 @@ def _name_halves_are_whole(parts: list[str]) -> bool:
     `冨田   修` のように名が1文字の氏名はここで段に切られるが、姓と名が
     別の行として読まれた場合の規則が拾い直す。
     """
-    return len(parts) < 2 or len(re.sub(r"\s+", "", parts[-1])) >= 2
+    if len(parts) < 2:
+        return True
+    if len(re.sub(r"\s+", "", parts[-1])) < 2:
+        return False
+    # 片側だけで姓と名が揃っているなら、大きいほうの空白は段の切れ目。
+    #
+    #     回山山口   高橋 佳広     ← 左はロゴの読み崩れ（実テスト 29枚目）
+    #
+    # 氏名の空白は姓と名のあいだの1か所だけで、二重にはならない。
+    # `オロブスキー    スタニスラフ` は片側だけでは氏名にならないので、
+    # これまでどおり切らない。
+    return not any(
+        re.search(r"\s", part) and _looks_like_person_name(part) for part in parts
+    )
 
 
 def split_columns(line: str) -> list[str]:
@@ -1883,7 +1896,12 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 # 区切りが残っていれば、かなのほうが名刺の印字に近いので優先する
                 # （`ユン ソクン` `パトリシオ　バスケス`）。空白は cleaned では
                 # 消えているため、空白を残した spaced_lines のほうを見る。
-                if _is_kana_only(line) and not re.search(r"\s", spaced_lines[index]):
+                #
+                # 漢字の行も同じ。区切りが無ければ姓と名に割る位置は決め
+                # られず、`絵師` のような2文字の語は姓だけが埋まって終わる
+                # （実テスト 29枚目）。同じ読み取りの中に区切りのある
+                # `高橋 佳広` があるなら、そちらを先に見る。
+                if not re.search(r"\s", spaced_lines[index]):
                     if katakana_name is None:
                         katakana_name = index
                     continue
@@ -2047,6 +2065,11 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             if index > 0 and _is_hiragana_sentence(cleaned[index - 1]):
                 continue
             last, first = split_person_name(spaced_lines[index])
+            # 姓の読みが1文字の氏名は無い。1文字になるのは、ひらがなに見えた
+            # 絵柄の読み崩れ（実テスト 29枚目の `だ こう`）。ふりがなが空欄
+            # なら入力する人が気づくが、誤った読みは気づかれずに登録される。
+            if len(last) < 2:
+                continue
             fields["last_name_kana"], fields["first_name_kana"] = last, first
             confidence["last_name_kana"] = 0.7
             used.add(index)

@@ -204,6 +204,48 @@ def report_last_crash() -> None:
     print()
 
 
+def cards_that_crashed(log_path: Path) -> set[str]:
+    """記録の中で「開始」だけが残っている名刺を返す。
+
+    `_log_step` は工程の前後に1行ずつ書く。「完了」が無いものは、その名刺の
+    処理中に落ちたということ。
+
+        08/03 13:12:46  開始 OCR あぶない.pdf
+        ← 「完了」が無い＝ここで落ちた
+
+    開き直しても同じ名刺から始まるため、また落ちて先へ進めない（実テストの
+    19枚目）。次は触らないようにして、その1枚を飛ばせるようにする。
+
+    名前に空白が入る（`(会社名)_雷 日.pdf`）ので、工程名のあとは行末まで
+    まとめて名前として扱う。
+    """
+    try:
+        text = log_path.read_text(encoding="utf-8")
+    except Exception:  # noqa: BLE001 - 記録が無くても起動を止めない
+        return set()
+
+    started: set[str] = set()
+    for line in text.splitlines():
+        if CLEAN_EXIT_MARK in line:
+            # ここまでは正常に終わっている。処理中だった名刺は、落ちたので
+            # はなく閉じられただけ。
+            started.clear()
+            continue
+        for mark, keep in (("開始 ", True), ("完了 ", False)):
+            at = line.find(mark)
+            if at < 0:
+                continue
+            rest = line[at + len(mark) :].strip()
+            # 工程名（`OCR` `画像の表示`）と名前のあいだは空白1つ。
+            _, _, name = rest.partition(" ")
+            name = name.strip()
+            if not name:
+                break
+            started.add(name) if keep else started.discard(name)
+            break
+    return started
+
+
 def _log_step(what: str) -> None:
     """いま何をしているかを1行だけ記録に残す。
 
@@ -391,6 +433,19 @@ def worker_pid() -> int | None:
 atexit.register(stop_worker)
 
 
+# 正常に終わったときだけ書ける印。C の側で落ちると Python は動かないので、
+# この行は残らない。`cards_that_crashed` はこれを見て、閉じただけの中断と
+# 本当に落ちたのとを分ける。
+CLEAN_EXIT_MARK = "--- 終了 ---"
+
+
+def _log_clean_exit() -> None:
+    _log_step(CLEAN_EXIT_MARK)
+
+
+atexit.register(_log_clean_exit)
+
+
 def run_in_child(args: list[str]) -> dict:
     """PDFの描画とOCRを別プロセスで行う。子は1つを保ち続ける。
 
@@ -452,6 +507,24 @@ def run_in_child(args: list[str]) -> dict:
 
 def build_app(directory: Path, prefill: bool) -> FastAPI:
     app = FastAPI(title="正解ラベル入力", docs_url=None, redoc_url=None)
+
+    # 前回落ちた名刺。開き直しても同じ名刺から始まるため、触らずに飛ばせる
+    # ようにする（`cards_that_crashed` を参照）。起動時に1回だけ読む。
+    _crashed = cards_that_crashed(LOG_PATH)
+
+    def _crashed_reason(name: str) -> str | None:
+        """前回この名刺で落ちていれば、その旨を返す。無ければ None。
+
+        原因はまだ分かっていない。分かるまでの間、**この1枚だけ触らない**
+        ようにして、残りの作業を進められるようにする。
+        """
+        if name not in _crashed:
+            return None
+        return (
+            "前回この名刺の処理中にサーバーが落ちました。原因が分かるまで"
+            "自動では読み取りません。画像を見て手で入力するか、次へ進んで"
+            "ください。"
+        )
 
     # OCRは1枚あたり数秒かかるため、結果を覚えておき、次の分は裏で先に処理する。
     #
@@ -522,6 +595,13 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         if not path.is_file() or path.parent.resolve() != directory.resolve():
             return JSONResponse({"error": "見つかりません"}, status_code=404)
         if path.suffix.lower() in (".pdf", ".heic", ".tif", ".tiff"):
+            # 前回落ちた名刺は変換もしない。落ちた工程がOCRか変換かは
+            # 記録からは分からないため、子プロセスを使う側を両方止める。
+            # そのまま表示できる形式（png・jpg）は下の `FileResponse` で
+            # 出るので、手入力のために画像を見ることはできる。
+            crashed = _crashed_reason(name)
+            if crashed:
+                return JSONResponse({"error": crashed}, status_code=415)
             # ブラウザが表示できない形式はJPEGに変換して返す。
             # 失敗しても壊れた画像アイコンだけを出さず、理由を返す
             # （実テストで1枚だけ画像が出ず、原因が分からない状態になった）。
@@ -581,6 +661,9 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         ここも例外を出さない。原因は本文に入れて返す（画面がJSONとして
         読めないと、何が起きたのか分からないまま報告の往復になる）。
         """
+        crashed = _crashed_reason(name)
+        if crashed:
+            return JSONResponse({"ocr_text": crashed})
         try:
             _, error, ocr_text = _ocr_draft(directory / name)
         except Exception as exc:
@@ -611,6 +694,18 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 "source": "未入力",
                 "kind": "empty",
                 "prefilled": [],
+            })
+
+        crashed = _crashed_reason(name)
+        if crashed:
+            # 先読みは進めておく。この1枚を飛ばした先はすぐ見られる。
+            _warm_next(name)
+            return JSONResponse({
+                "values": {key: "" for key in FIELD_KEYS},
+                "source": crashed,
+                "kind": "error",
+                "prefilled": [],
+                "ocr_text": "",
             })
 
         values, error, ocr_text = _ocr_draft(path)
@@ -709,6 +804,10 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             return
         index = names.index(name)
         for nxt in names[index + 1 : index + 3]:
+            # 落ちた名刺は先読みでも触らない。触れば、利用者が見ていない
+            # ところで落ちる。
+            if _crashed_reason(nxt):
+                continue
             with _cache_lock:
                 if nxt in _ocr_cache:
                     continue
