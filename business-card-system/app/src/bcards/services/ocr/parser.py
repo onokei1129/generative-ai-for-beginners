@@ -439,7 +439,31 @@ NOT_A_NAME_WORDS = (
     "gmbh",
     "plc",
     "pte",
+    # 日本の会社の種類をラテン文字で示すもの。`G.K.` は合同会社、
+    # `K.K.` は株式会社。実テスト 8枚目では、社名 `Causal Foundry G.K.` が
+    # 2行に分かれて読まれ、姓『Foundry GK』名『Causal』になっていた。
+    # 点は `normalize` で残るので、点無しの形も併せて挙げる。
+    "gk",
+    "g.k.",
+    "kk",
+    "k.k.",
 )
+
+
+def has_not_a_name_word(lowered: str) -> bool:
+    """氏名にならない語が含まれるか（`NOT_A_NAME_WORDS`）。
+
+    語の切れ目で見る。`hp` を単純な部分一致で探すと `graphpad` に当たる。
+    ただし `g.k.` のように記号で終わる語は、後ろに切れ目が立たない
+    （`\\b` は英数字と非英数字の境目にしか置かれない）。そういう語は
+    前だけを縛る。
+    """
+    for word in NOT_A_NAME_WORDS:
+        head = r"\b" if word[0].isalnum() else ""
+        tail = r"\b" if word[-1].isalnum() else ""
+        if re.search(rf"{head}{re.escape(word)}{tail}", lowered):
+            return True
+    return False
 
 # 住所のラベル。`Add 〒580-0021 大阪府…` のように住所と同じ行に印字される。
 # 英字の語は後ろに文字が続くものを除く（`Addison Road` を `ison Road` に
@@ -1078,7 +1102,7 @@ def name_over_two_lines(lines: list[str], used: set[int]) -> tuple[int, str, str
         if has_company_keyword(first) or has_company_keyword(second):
             continue
         lowered = f"{first} {second}".lower()
-        if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
+        if has_not_a_name_word(lowered):
             continue
         return index, first, second
     return None
@@ -1342,7 +1366,7 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     if ADMIN_DIVISION_RE.search(latin):
         return False
     lowered = latin.lower()
-    if any(re.search(rf"\b{word}\b", lowered) for word in NOT_A_NAME_WORDS):
+    if has_not_a_name_word(lowered):
         return False
     # 印字された氏名は先頭が大文字（`German Kurnikov` `SEOKHOON YOON`）。
     # 小文字で始まるものは読み崩れの断片。実データ 10枚目では、メールの行の
