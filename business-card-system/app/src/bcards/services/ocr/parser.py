@@ -318,7 +318,9 @@ SINGLE_LETTER_LABELS = {"t": "tel", "f": "fax", "c": "mobile", "m": "mobile"}
 SINGLE_LETTER_LABEL_RE = re.compile(r"(?:^|(?<=[^A-Za-z0-9]))([TFCMtfcm])\s*(?=[+(]|\d)")
 # `HP` は handphone。韓国・台湾・東南アジアの名刺で携帯の意味で使われる。
 # 実データ（韓国の方の名刺）で `HP 070-9385-4004` を携帯と見分けられていなかった。
-MOBILE_LABELS = ("mobile", "携帯", "cell", "ｍｏｂｉｌｅ", "hp", "h.p")
+# `携` は読み崩れやすい（実テスト 20枚目で `捕帯`）。`帯` のほうは崩れにくく、
+# 名刺で電話番号の近くに出る `帯` は携帯以外にほぼ無いので、これも見る。
+MOBILE_LABELS = ("mobile", "携帯", "帯", "cell", "ｍｏｂｉｌｅ", "hp", "h.p")
 
 # 携帯の先頭3桁。050 はIP電話（固定）なので入れない。
 # 実データで `Tel 050-3110-2873` を携帯として扱い、先に入っていた携帯に
@@ -773,12 +775,13 @@ def _name_halves_are_whole(parts: list[str]) -> bool:
     `迎　　　亮一` の `亮一` は名。姓が1文字（`迎`）のことはあるが、
     右端が1文字の断片なら氏名の途中ではなく段の切れ目とみなす。
 
-    `冨田   修` のように名が1文字の氏名はここで段に切られるが、姓と名が
-    別の行として読まれた場合の規則が拾い直す。
+    ただし**漢字1文字の名**は実在する（徹・修・誠）。かなと漢字で分ける。
+    `し` は名ではないが、`徹` は名（実テスト 21枚目 `高 岡   徹`）。
     """
     if len(parts) < 2:
         return True
-    if len(re.sub(r"\s+", "", parts[-1])) < 2:
+    tail = re.sub(r"\s+", "", parts[-1])
+    if len(tail) < 2 and not re.fullmatch(r"[一-鿿]", tail):
         return False
     # 片側だけで姓と名が揃っているなら、大きいほうの空白は段の切れ目。
     #
@@ -787,9 +790,18 @@ def _name_halves_are_whole(parts: list[str]) -> bool:
     # 氏名の空白は姓と名のあいだの1か所だけで、二重にはならない。
     # `オロブスキー    スタニスラフ` は片側だけでは氏名にならないので、
     # これまでどおり切らない。
-    return not any(
-        re.search(r"\s", part) and _looks_like_person_name(part) for part in parts
-    )
+    #
+    # 字づめが広いと**姓の中の字と字も空いて読まれる**（`高 岡   徹`）。
+    # これは姓と名の並びではないので、両側が2文字以上のときだけ数える。
+    return not any(_is_a_whole_name_by_itself(part) for part in parts)
+
+
+def _is_a_whole_name_by_itself(part: str) -> bool:
+    """その断片だけで姓と名が揃っているか（どちらも2文字以上）。"""
+    if not re.search(r"\s", part) or not _looks_like_person_name(part):
+        return False
+    halves = [half for half in re.split(r"\s+", part.strip()) if half]
+    return len(halves) >= 2 and all(len(half) >= 2 for half in halves)
 
 
 def split_columns(line: str) -> list[str]:
@@ -1516,6 +1528,10 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     for index, line in enumerate(cleaned):
         label_positions = find_labels(line)
         matches = list(PHONE_RE.finditer(line))
+        # そのラベルが受け持った番号の数。1つのラベルで2つ並べる名刺がある
+        # （`TEL 03-1234-5678 / 090-1234-5678`）。ラベルが指しているのは
+        # 最初の1つだけなので、2つ目からは番号の形で見分ける。
+        taken: dict[int, int] = {}
 
         for match in matches:
             number = to_domestic_form(match.group(0).strip(" \t-ー－."))
@@ -1529,18 +1545,24 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             else:
                 position, kind = labelled[-1]
                 score = 0.85
-                # 090・080・070 は携帯にしか割り当てられない番号なので、
-                # ラベルが `TEL` や `PHONE` でも携帯として扱う。
-                #
-                # 実データ 20枚目は `PHONE 携帯 070 4100 5747` で、`携帯` が
-                # `捕帯` と読まれてラベルにならず、残った `PHONE` を信じて
-                # 電話の欄に入れていた。
-                #
-                # `050`（IP電話）は固定側にもあるため、ラベルを信じたまま
-                # （`Tel 050-…` を携帯にしない）。
-                if kind == "tel" and digits[:3] in MOBILE_PREFIXES:
+                taken[position] = taken.get(position, 0) + 1
+                if taken[position] > 1 and digits[:3] in MOBILE_PREFIXES:
+                    # このラベルはもう前の番号に使われている。2つ目以降は
+                    # 番号の形で見分ける。
                     kind = "mobile"
                     score = 0.7
+                # **印字されたラベルを、番号の形より先に見る。**
+                #
+                # 090・080・070 は携帯に割り当てられた番号だが、名刺に
+                # `TEL 070-9338-4365` と刷ってあれば電話である（実テスト
+                # 21枚目）。番号の形でラベルを覆すと、名刺のとおりに登録
+                # できず、入力する人が毎回入れ替えることになる。
+                #
+                # 20枚目の `PHONE 携帯 070 4100 5747` は `携帯` が `捕帯` と
+                # 読まれてラベルにならず、残った `PHONE` を信じていた。
+                # そちらは `帯` もラベルとして見ることで直している
+                # （`MOBILE_LABELS` を参照）。ラベルの読み落としは、
+                # ラベルの側で直すのが筋。
             if not fields[kind]:
                 fields[kind] = number
                 confidence[kind] = score
@@ -2097,6 +2119,28 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
     if fields["address"] and not looks_like_address(fields["address"]):
         fields["address"] = ""
         confidence.pop("address", None)
+
+    # 何も読めなかった名刺から氏名を作らない。
+    #
+    # 縦書きの名刺（実テスト 22枚目）は、どちらの読み取り機も意味のある文字を
+    # 1つも取れない。それでも 姓『蟹』名『麗』が出ていた——1文字＋1文字の
+    # 並びは氏名の形に見えるが、絵柄や罫線の読み崩れはいくらでもこの形になる。
+    #
+    # 見分けの手がかりは「ほかに何も取れていない」こと。メール・電話・
+    # 郵便番号・会社名のどれか1つでも取れていれば、その名刺は読めている。
+    # 何も無いのに1文字＋1文字だけが取れているなら、形が似ただけ。
+    #
+    # 空欄なら入力する人が気づく。誤った氏名は気づかれずに登録される。
+    if len(fields["last_name"]) == 1 and len(fields["first_name"]) == 1:
+        # ふりがなも「読めている」証拠に数える。`林 修`＋`はやし おさむ` は
+        # 1文字＋1文字だが、読みが漢字より長く付いているので読み崩れではない。
+        if not any(fields[key] for key in ("email", "tel", "mobile", "fax",
+                                           "postal_code", "address", "company_name",
+                                           "department_name", "title", "url",
+                                           "last_name_kana", "first_name_kana")):
+            fields["last_name"] = fields["first_name"] = ""
+            confidence.pop("last_name", None)
+            confidence.pop("first_name", None)
 
     leftovers =[line for index, line in enumerate(cleaned) if index not in used]
     fields["note"] = "\n".join(leftovers)

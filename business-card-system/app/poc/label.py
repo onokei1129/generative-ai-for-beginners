@@ -958,7 +958,11 @@ PAGE = """
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   .panel { background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; padding: 14px; }
   .imgwrap { position: sticky; top: 64px; }
-  .imgwrap img { width: 100%; border: 1px solid #dfe3e8; border-radius: 6px; cursor: zoom-in; background:#fff; }
+  /* 縦長の名刺（実テスト 22枚目）は、横幅いっぱいに広げると縦にはみ出し、
+     毎回スクロールしないと下半分が読めない。画面の高さに収め、縦横の比は
+     保つ。細部は画像を押せば拡大する。 */
+  .imgwrap img { width: 100%; max-height: calc(100vh - 210px); object-fit: contain;
+                 border: 1px solid #dfe3e8; border-radius: 6px; cursor: zoom-in; background:#fff; }
   .imgwrap img.zoom { position: fixed; inset: 8px; width: auto; height: auto;
                       max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
                       margin: auto; z-index: 100; cursor: zoom-out; box-shadow: 0 8px 40px rgba(0,0,0,.4); }

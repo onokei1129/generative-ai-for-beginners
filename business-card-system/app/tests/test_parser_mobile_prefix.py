@@ -1,13 +1,24 @@
-"""090・080・070 で始まる番号は携帯（実テスト 20枚目）。
+"""読み崩れた `携帯` をラベルとして拾う（実テスト 20枚目）。
 
     印字   PHONE 携帯 070 4100 5747
     読み   PHONE 捕帯 070 4100 5747      ← `携帯` が `捕帯` に化けた
 
 `携帯` がラベルとして拾えず、残った `PHONE` を信じて電話の欄に入れていた。
 
-日本の 090・080・070 は携帯にしか割り当てられない。固定電話がこの番号
-で始まることはないので、ラベルが何であれ携帯として扱ってよい。
-`050`（IP電話）は固定側にもあるため、ラベルを信じたままにする。
+## はじめは番号の形で覆していた。取り下げた
+
+「090・080・070 は携帯にしか割り当てられないので、ラベルが何であれ携帯」
+としていた。21枚目で誤りが出た。
+
+    印字   TEL 070-9338-4365      ← 正解は**電話**
+
+名刺に `TEL` と刷ってあれば電話である。番号の形でラベルを覆すと、名刺の
+とおりに登録できず、入力する人が毎回入れ替えることになる。
+
+ラベルの読み落としは、**ラベルの側で直す**のが筋。`携` は崩れやすいが
+`帯` は崩れにくく、名刺で電話番号の近くに出る `帯` は携帯以外にほぼ無い
+ので、`帯` もラベルとして見る。これで20枚目は携帯のまま、21枚目は電話に
+なる。
 """
 
 from __future__ import annotations
@@ -24,11 +35,29 @@ from bcards.services.ocr import merge_fields, parse_fields  # noqa: E402
 
 
 @pytest.mark.parametrize("prefix", ["090", "080", "070"])
-def test_a_mobile_prefix_wins_over_the_label(prefix: str):
+def test_the_printed_label_wins_over_the_prefix(prefix: str):
+    """`TEL` と刷ってあれば電話。番号の形では覆さない（21枚目）。"""
     got = parse_fields([f"TEL {prefix}-1234-5678"])["fields"]
+
+    assert got["tel"] == f"{prefix}-1234-5678"
+    assert not got["mobile"]
+
+
+@pytest.mark.parametrize("prefix", ["090", "080", "070"])
+def test_a_broken_mobile_label_is_still_a_mobile_label(prefix: str):
+    """`携帯` が崩れても `帯` で拾う（20枚目）。"""
+    got = parse_fields([f"PHONE 捕帯 {prefix}-1234-5678"])["fields"]
 
     assert got["mobile"] == f"{prefix}-1234-5678"
     assert not got["tel"]
+
+
+@pytest.mark.parametrize("prefix", ["090", "080", "070"])
+def test_an_unlabelled_number_is_read_from_its_prefix(prefix: str):
+    """ラベルが無ければ、これまでどおり番号の形で見分ける。"""
+    got = parse_fields([f"{prefix}-1234-5678"])["fields"]
+
+    assert got["mobile"] == f"{prefix}-1234-5678"
 
 
 def test_an_ip_phone_still_follows_the_label():
