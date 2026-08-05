@@ -257,6 +257,10 @@ DEPARTMENT_KEYWORDS = (
     "室",
     # 官公庁の組織名（実データ 19枚目の `沖縄労働局 職業安定部`）。
     # 人の姓名にこれらの字は入らないので、氏名として拾わせない。
+    #
+    # なお `局` `庁` `署` は**組織の名前**の終わりでもある。ここに残すのは
+    # 氏名として拾わせないためで、会社名と部署の切り分けは
+    # `split_office_and_department` が行う。
     "局",
     "庁",
     "署",
@@ -269,6 +273,62 @@ DEPARTMENT_KEYWORDS = (
 )
 
 ADDRESS_HINTS = ("都", "道", "府", "県", "市", "区", "町", "村", "丁目", "番地", "-")
+
+
+# 官公庁の組織名の終わりを示す字。会社の名刺でいう `株式会社` にあたる。
+# 都道府県庁・市役所などは COMPANY_KEYWORDS 側に既にある。
+#
+# `本部` は入れない。会社の部署名でもあるため、`営業本部 第一営業部 部長` が
+# 組織名『営業本部』に切られてしまう。
+OFFICE_SUFFIXES = ("労働局", "局", "庁", "署", "省")
+
+# 組織名のうしろに部署が続くときの切れ目。
+#     沖縄労働局 職業安定部
+#         ↑ ここで切る
+OFFICE_SPLIT_RE = re.compile(
+    r"^(?P<office>.{2,}?(?:" + "|".join(OFFICE_SUFFIXES) + r"))[ 　]+(?P<rest>\S.*)$"
+)
+
+
+def is_office_name(line: str) -> bool:
+    """行まるごとが官公庁の組織名か（`沖縄労働局`）。
+
+    部署の語で終わる行（`情報システム室` `営業本部`）は部署なので外す。
+    `本部` は組織名にも部署にも使われるため、ここでは組織名と見ない。
+    """
+    text = line.strip()
+    if not text or has_company_keyword(text) or re.search(r"[ 　]", text):
+        return False
+    return len(text) >= 3 and text.endswith(("労働局", "局", "庁", "署", "省"))
+
+
+def split_office_and_department(line: str) -> tuple[str, str] | None:
+    """官公庁の行を、組織名と部署に分ける。分けられなければ None。
+
+    会社の名刺なら `株式会社サンプル 営業本部` は会社名と部署に分かれる。
+    官公庁でも同じように分かれるべきだが、`局` を部署の語に入れてあるため
+    行まるごとが部署になり、**組織名の欄が空**になっていた（実テスト 18枚目
+    `沖縄労働局 職業安定部`）。
+
+    切るのは、空白のうしろが部署の語のときだけ。`沖縄労働局 那覇支所` の
+    ように部署でないものが続く場合や、空白が無い場合は触らない。
+    """
+    match = OFFICE_SPLIT_RE.match(line.strip())
+    if match is None:
+        return None
+    office, rest = match.group("office").strip(), match.group("rest").strip()
+    if not office or not rest:
+        return None
+    # 組織名のうしろに来るのは部署。`部` `課` `室` で終わるものは、一覧に
+    # 無い名前（`労働基準部`）でも部署として扱う。
+    if not rest.endswith(("部", "課", "室", "係", "科", "所")) and not any(
+        word in rest for word in DEPARTMENT_KEYWORDS
+    ):
+        return None
+    # 会社の名刺はこれまでどおり。`株式会社` などが入る行はここで扱わない。
+    if has_company_keyword(office):
+        return None
+    return office, rest
 
 
 def has_company_keyword(line: str) -> bool:
@@ -1788,6 +1848,22 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             confidence["company_name"] = 0.9
             used.add(index)
             break
+        # 官公庁は法人格の語を持たない。組織名と部署が1行に並ぶので分ける
+        # （`沖縄労働局 職業安定部`。`split_office_and_department` を参照）。
+        split = split_office_and_department(spaced_lines[index])
+        if split is not None:
+            fields["company_name"], department = split
+            confidence["company_name"] = 0.75
+            fields["department_name"] = department
+            confidence["department_name"] = 0.75
+            used.add(index)
+            break
+        # 空白が無く、組織名だけの行。
+        if not fields["company_name"] and is_office_name(line):
+            fields["company_name"] = line
+            confidence["company_name"] = 0.75
+            used.add(index)
+            break
 
     # 法人格の語が無い社名（海外企業やロゴだけの表記）はメールのドメインで見つける。
     # 実データの `AONE GAMES` は `patricio@aonegames.com` と一致するが、
@@ -1840,7 +1916,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
 
     # 部署
     for index, line in enumerate(cleaned):
-        if index in used:
+        if index in used or fields["department_name"]:
             continue
         if any(keyword in line for keyword in DEPARTMENT_KEYWORDS):
             department, title = split_department_and_title(line)
