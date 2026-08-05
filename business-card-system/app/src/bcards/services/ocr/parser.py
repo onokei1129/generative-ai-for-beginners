@@ -1199,13 +1199,40 @@ def name_over_two_lines(lines: list[str], used: set[int]) -> tuple[int, str, str
     return None
 
 
+# 住所に出ない記号。これがあれば読み崩れ。
+NEVER_IN_ADDRESS_RE = re.compile(r"[=〕〔｜|\\_＝＿]")
+
+# 語の途中で小文字から大文字へ跳ぶ並び（`bEOO` `YfE` `szEZ`）。
+CASE_JUMP_RE = re.compile(r"[a-z][A-Z]")
+
+
+def looks_like_broken_text(text: str) -> bool:
+    """読み崩れの断片か。
+
+    目印は2つ。
+
+    - 住所に出ない記号（`=` `〕` `_` `|`）
+    - 語の途中で小文字から大文字へ跳ぶ並び。実在の綴り（`McDonald`）でも
+      起こるので、**2回以上**を条件にする
+    """
+    if NEVER_IN_ADDRESS_RE.search(text):
+        return True
+    return len(CASE_JUMP_RE.findall(text)) >= 2
+
+
 def looks_like_address(text: str) -> bool:
     """住所には地名が要る。
 
     弾くのは、漢字もカタカナも英単語も無いもの——数字・記号・ひらがなだけの
     断片。日本の住所は必ず漢字（東京都）かカタカナ（ヒューマックス）を含み、
     海外の住所は英単語を含む。ひらがなだけの住所は無い。
+
+    読み崩れの断片も弾く（`looks_like_broken_text` を参照）。実テスト 25枚目
+    （縦書き）では `bEOO-SEI= YfEと szEZ:i〕E7fとEr_井子_料` が入っていた。
+    `井` `子` `料` が散らばっているだけで「漢字が2つ以上」を満たしていた。
     """
+    if looks_like_broken_text(text):
+        return False
     if len(ADDRESS_WORD_RE.findall(text)) >= 2:
         return True
     if len(KANJI_RE.findall(text)) >= 2:
