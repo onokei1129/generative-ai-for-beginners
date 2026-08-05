@@ -81,6 +81,31 @@ class TestTurningTheImage:
         assert result["fields"]["company_name"] == "株式会社サンプル"
         assert len(seen) > 1, "1回しか読んでいない"
 
+    def test_a_card_that_is_unreadable_in_every_direction_costs_little(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """回しても読めない名刺で、重い読み取りを何度も走らせないこと。
+
+        実測（大きめの読めない画像）で、重い読み取りを3回走らせると **63秒**
+        かかった。1枚あたりの上限は120秒なので、実名刺（1回15〜18秒）では
+        打ち切りに達する。**下読みは軽い読み取り機だけ**で行い、そこで手応えが
+        あったときにだけ本読みする。
+        """
+        import bcards.services.ocr as ocr
+
+        heavy: list[str] = []
+
+        def fake(image: Image.Image, provider_name=None) -> tuple[OcrOutput, dict]:
+            if provider_name != ocr.PROBE_ENGINE:
+                heavy.append(provider_name or "")
+            return OcrOutput(provider="fake", api_version=None, text="蟹 麗"), parsed(last_name="蟹")
+
+        monkeypatch.setattr(ocr, "_recognize_once", fake)
+
+        ocr.recognize_card(Image.new("RGB", (1050, 640), "white"), provider_name="combined")
+
+        assert len(heavy) == 1, f"重い読み取りが {len(heavy)} 回走っている"
+
     def test_a_readable_card_is_read_only_once(self, monkeypatch: pytest.MonkeyPatch):
         """横書きの名刺は遅くならない。ここが要。"""
         import bcards.services.ocr as ocr

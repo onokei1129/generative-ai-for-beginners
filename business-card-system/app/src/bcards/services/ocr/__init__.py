@@ -282,6 +282,24 @@ def _recognize_combined(image: Image.Image) -> tuple[OcrOutput, dict]:
 SOLID_FIELDS = ("email", "tel", "mobile", "fax", "postal_code", "address",
                 "company_name", "url")
 
+# 回したあとの下読みに使う読み取り機。モデルの読み込みが要らず速い。
+# 向きが合っているかを見るだけなので、精度はここでは要らない。
+PROBE_ENGINE = "tesseract"
+
+# 下読みのときの画像の長辺。向きが合っているかを見るだけなので、
+# 元の大きさは要らない。縮めるほど速い。
+PROBE_MAX_SIDE = 1200
+
+
+def _shrink_for_probe(image: Image.Image) -> Image.Image:
+    """下読み用に縮める。小さい画像はそのまま。"""
+    longest = max(image.width, image.height)
+    if longest <= PROBE_MAX_SIDE:
+        return image
+    scale = PROBE_MAX_SIDE / longest
+    size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+    return image.resize(size, Image.LANCZOS)
+
 
 def looks_unreadable(parsed: dict) -> bool:
     """その読み取りが失敗しているか（`SOLID_FIELDS` がどれも取れていない）。"""
@@ -309,6 +327,11 @@ def recognize_card(image: Image.Image, provider_name: str | None = None) -> tupl
 
     回すかどうかは結果を見て決めるので、**読めた名刺は1回で終わり**。
     横書きの名刺は1枚も遅くならず、縦書きが何枚あるかを数えなくてよい。
+
+    回したときは、まず**軽い読み取り機だけ**で下読みする。実測（大きめの
+    読めない画像）で、重い読み取りを3回走らせると63秒かかった。1枚あたりの
+    上限は120秒なので、実名刺（1回15〜18秒）では打ち切りに達する。
+    下読みで手応えがあったときにだけ本読みする。
     """
     output, parsed = _recognize_once(image, provider_name)
     if not looks_unreadable(parsed):
@@ -318,10 +341,15 @@ def recognize_card(image: Image.Image, provider_name: str | None = None) -> tupl
     for angle in (270, 90):
         try:
             turned = image.rotate(angle, expand=True)
-            other_output, other = _recognize_once(turned, provider_name)
+            _, probe = _recognize_once(_shrink_for_probe(turned), PROBE_ENGINE)
         except Exception:  # noqa: BLE001 - 回して失敗しても元の結果で続ける
             continue
-        if not looks_unreadable(other):
-            return other_output, other
+        if looks_unreadable(probe):
+            continue
+        # この向きなら読める。ここで初めて本読みする。
+        try:
+            return _recognize_once(turned, provider_name)
+        except Exception:  # noqa: BLE001
+            continue
     # 回しても読めなかった。元の結果を返す（空にして帰らない）。
     return output, parsed
