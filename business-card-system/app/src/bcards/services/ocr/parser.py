@@ -450,6 +450,22 @@ NOT_A_NAME_WORDS = (
 )
 
 
+def email_backs_name(line: str, email: str) -> bool:
+    """その行の語が、メールアドレスの `@` より前に現れるか。
+
+    名刺のアドレスは氏名から作られることが多い（`eonlee@…` `ana@…`
+    `sachiko.hasegawa@…`）。読み崩れた断片と本物の氏名を形だけで
+    見分けられないとき、これが裏づけになる。
+
+    2文字以下の語は見ない（偶然当たる）。
+    """
+    if not email or "@" not in email:
+        return False
+    local = email.split("@", 1)[0].lower()
+    words = [word for word in re.split(r"[^0-9A-Za-zぁ-んァ-ヴ一-鿿]+", line) if len(word) >= 3]
+    return any(word.lower() in local for word in words)
+
+
 def has_not_a_name_word(lowered: str) -> bool:
     """氏名にならない語が含まれるか（`NOT_A_NAME_WORDS`）。
 
@@ -1923,6 +1939,7 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
         # 日本語の候補が無いときだけ英字を採るので、英語の名刺は変わらない。
         ascii_name: int | None = None
         katakana_name: int | None = None
+        japanese_name: int | None = None
         for index, line in enumerate(cleaned):
             if index in used or _is_hiragana_only(line):
                 continue
@@ -1951,10 +1968,31 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                     if katakana_name is None:
                         katakana_name = index
                     continue
-                name_index = index
-                break
+                if japanese_name is None:
+                    japanese_name = index
+                continue
             if ascii_name is None:
                 ascii_name = index
+        # 日本語の候補があっても、**メールアドレスが英字の候補だけを裏づけて
+        # いる**なら英字を採る。汚れや罫線が漢字・カタカナとして読まれ、それが
+        # 氏名になっていた（実テスト 4枚目 `心万』『心』／7枚目『巨』『メロ』）。
+        # 形だけでは読み崩れと本物の日本語の氏名を見分けられないが、
+        # `ana@causalfoundry.ai` `eonlee@nexongames.co.kr` は裏づけになる。
+        #
+        # 降ろすのは**3文字以下**の候補だけにする。`パトリシオ　バスケス` は
+        # ラテン文字と同じ人名の音写で、メールが片方しか裏づけられない
+        # （かなとラテン文字は文字が違うため）。長い候補まで降ろすと、
+        # 日本語で印字された氏名を捨ててしまう。
+        if japanese_name is not None and ascii_name is not None:
+            short = len(re.sub(r"\s+", "", cleaned[japanese_name])) <= 3
+            backed_ja = email_backs_name(cleaned[japanese_name], fields["email"])
+            backed_en = email_backs_name(cleaned[ascii_name], fields["email"])
+            if short and backed_en and not backed_ja:
+                japanese_name = None
+                katakana_name = None
+
+        if name_index is None:
+            name_index = japanese_name
         if name_index is None:
             name_index = ascii_name if ascii_name is not None else katakana_name
 
