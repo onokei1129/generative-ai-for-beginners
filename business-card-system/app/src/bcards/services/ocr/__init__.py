@@ -276,11 +276,52 @@ def _recognize_combined(image: Image.Image) -> tuple[OcrOutput, dict]:
     return merged, merge_fields(parsed_list)
 
 
-def recognize_card(image: Image.Image, provider_name: str | None = None) -> tuple[OcrOutput, dict]:
-    """OCRを実行し、項目分離まで行う。結果の確定は利用者の確認後（要件§8）。"""
+# 読めたと言える項目。氏名は入れない——読み崩れた1〜2文字が氏名の形に
+# 見えることがあり、それだけでは読めた証拠にならない（実テスト 22枚目は
+# 何も読めていないのに 姓『蟹』名『麗』が出ていた）。
+SOLID_FIELDS = ("email", "tel", "mobile", "fax", "postal_code", "address",
+                "company_name", "url")
+
+
+def looks_unreadable(parsed: dict) -> bool:
+    """その読み取りが失敗しているか（`SOLID_FIELDS` がどれも取れていない）。"""
+    values = parsed.get("fields") or {}
+    return not any((values.get(key) or "").strip() for key in SOLID_FIELDS)
+
+
+def _recognize_once(image: Image.Image, provider_name: str | None = None) -> tuple[OcrOutput, dict]:
+    """画像を1回だけ読む。"""
     if (provider_name or settings.ocr_provider or "mock").lower() == COMBINED:
         return _recognize_combined(image)
     provider = get_provider(provider_name)
     output = provider.recognize(image)
-    parsed = extract_fields(image, output)
+    return output, extract_fields(image, output)
+
+
+def recognize_card(image: Image.Image, provider_name: str | None = None) -> tuple[OcrOutput, dict]:
+    """OCRを実行し、項目分離まで行う。結果の確定は利用者の確認後（要件§8）。
+
+    **読めなかったときだけ、画像を回してもう一度読む。**
+
+    縦書きの名刺（実テスト 22枚目）は、どちらの読み取り機も意味のある文字を
+    1つも取れなかった。縦書きは紙ごと横倒しで取り込まれていることが多く、
+    90度回せばふつうの横書きとして読める。
+
+    回すかどうかは結果を見て決めるので、**読めた名刺は1回で終わり**。
+    横書きの名刺は1枚も遅くならず、縦書きが何枚あるかを数えなくてよい。
+    """
+    output, parsed = _recognize_once(image, provider_name)
+    if not looks_unreadable(parsed):
+        return output, parsed
+
+    # 右回り・左回りの両方を試す。どちらに倒れているかは分からない。
+    for angle in (270, 90):
+        try:
+            turned = image.rotate(angle, expand=True)
+            other_output, other = _recognize_once(turned, provider_name)
+        except Exception:  # noqa: BLE001 - 回して失敗しても元の結果で続ける
+            continue
+        if not looks_unreadable(other):
+            return other_output, other
+    # 回しても読めなかった。元の結果を返す（空にして帰らない）。
     return output, parsed
