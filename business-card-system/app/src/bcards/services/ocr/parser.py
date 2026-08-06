@@ -700,6 +700,56 @@ def split_department_and_title(line: str) -> tuple[str, str]:
     return line, ""
 
 
+# 続きの部署の行にだけ使う語。単独では部署と決められない。
+#
+# `Team` `Group` は部署にも役職にも出る（`Team Manager`）。最初の1行を
+# これで拾うと役職を部署にしてしまうので、**すでに部署と分かった行の
+# 隣にある**ときだけ続きとみなす。
+# `Office` `Unit` `Section` は入れない。`Office` は住所にも出るため
+# （`NOT_A_NAME_WORDS` に住所の語として入っている）、住所の行を部署に
+# つないでしまう。実測で部署の正答率が 65% → 50% に落ちた。
+DEPARTMENT_RUN_WORDS = DEPARTMENT_KEYWORDS + ("Team", "Group")
+
+
+def _is_department_run_line(line: str) -> bool:
+    """部署の続きになりうる行か。役職の語を含む行は続きにしない。"""
+    if not line.strip():
+        return False
+    if any(word in line for word in TITLE_KEYWORDS):
+        return False
+    return any(word in line for word in DEPARTMENT_RUN_WORDS)
+
+
+def _department_run(
+    lines: list[str], index: int, used: set[int]
+) -> tuple[list[str], list[str]]:
+    """部署の行の並びを、前後にたどって集める。
+
+    組織の階層を上から順に刷る名刺がある。1行しか取らないと**どの部署に
+    属するのか分からなくなる**（実テスト 22枚目は3行のうち最後の1行だけ）。
+
+        Store Business Management Team
+        Publishing&Platform ESD Business Division
+        Megaport Division Group
+
+    見つけた行が並びの途中のこともあるので、前にもさかのぼる。
+    """
+    before: list[str] = []
+    for at in range(index - 1, -1, -1):
+        if at in used or not _is_department_run_line(lines[at]):
+            break
+        before.insert(0, lines[at])
+        used.add(at)
+
+    after: list[str] = []
+    for at in range(index + 1, len(lines)):
+        if at in used or not _is_department_run_line(lines[at]):
+            break
+        after.append(lines[at])
+        used.add(at)
+    return before, after
+
+
 def find_labels(line: str) -> list[tuple[int, str]]:
     """行の中の電話ラベルの位置と種別を、現れる順に返す。
 
@@ -1893,6 +1943,11 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             fields["department_name"] = department
             confidence["department_name"] = 0.75
             used.add(index)
+            # 官公庁も階層を行で分けて刷る（`職業安定部` の下に
+            # `需給調整事業室`）。並びをたどってつなぐ。
+            _, after = _department_run(cleaned, index, used)
+            if after:
+                fields["department_name"] = " ".join([department, *after])
             break
         # 空白が無く、組織名だけの行。
         if not fields["company_name"] and is_office_name(line):
@@ -1964,6 +2019,21 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 fields["title"] = title
                 confidence["title"] = 0.8
             used.add(index)
+            # 続きの行も部署なら、つなぐ。組織の階層を上から順に刷る名刺が
+            # あり、1行しか取らないと**どの部署に属するのか分からなくなる**
+            # （実テスト 22枚目は3行のうち最後の1行だけだった）。
+            #
+            #     Store Business Management Team
+            #     Publishing&Platform ESD Business Division
+            #     Megaport Division Group
+            #
+            # 役職の行（`Team Manager`）は巻き込まない。`Team` は部署にも
+            # 役職にも出るので、役職の語を含む行で打ち切る。
+            before, after = _department_run(cleaned, index, used)
+            if before or after:
+                fields["department_name"] = " ".join(
+                    [*before, fields["department_name"], *after]
+                )
             break
 
     # 役職（部署の行から取れなかった場合）
