@@ -74,14 +74,36 @@ def run_ocr(path: Path) -> dict:
 
 
 def write_image(path: Path, out: Path) -> None:
-    from bcards.services.images import load_pages
+    """画面に出す画像を書き出す。**向きを直したものを出す。**
 
-    pages = load_pages(path.read_bytes(), path.name, limit=1)
-    if not pages:
-        raise RuntimeError("ページがありません")
+    横型の名刺を読み取り機に横向きに置くと、画像は90度回った状態で入って
+    くる。取り込みの仕組みはこれを直しているのに、画面に出す側は補正を
+    通しておらず、利用者には横倒しのまま見えていた。手で入力するときに
+    読みづらく、画像と欄を見比べられない。
+
+    OCRが見た画像と同じものを出すほうが、見比べるという作業に合っている。
+
+    補正に失敗しても画像は出す。出ないと手入力の手がかりが消える。
+    """
+    from bcards.services.images import load_pages, process_file
+
+    data = path.read_bytes()
+    shown = None
+    try:
+        cards = process_file(data, path.name, page_limit=1)
+        if cards:
+            shown = cards[0].image
+    except Exception:  # noqa: BLE001 - 補正できなくても元の画像を出す
+        shown = None
+
+    if shown is None:
+        pages = load_pages(data, path.name, limit=1)
+        if not pages:
+            raise RuntimeError("ページがありません")
+        shown = pages[0].image
 
     buffer = io.BytesIO()
-    pages[0].image.convert("RGB").save(buffer, format="JPEG", quality=85)
+    shown.convert("RGB").save(buffer, format="JPEG", quality=85)
     out.write_bytes(buffer.getvalue())
 
 

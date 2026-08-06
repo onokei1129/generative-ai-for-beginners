@@ -49,13 +49,23 @@ class TestDecidingItFailed:
             ("email", "taro@example.co.jp"),
             ("tel", "03-1234-5678"),
             ("postal_code", "100-0001"),
-            ("company_name", "株式会社サンプル"),
-            ("address", "東京都千代田区千代田1-1-1"),
         ],
     )
-    def test_one_solid_field_is_enough(self, key: str, value: str):
-        """1つでも取れていれば、その名刺は読めている。回さない。"""
+    def test_one_checkable_field_is_enough(self, key: str, value: str):
+        """形を確かめられる項目が1つでも取れていれば、その名刺は読めている。"""
         assert not looks_unreadable(parsed(**{key: value}))
+
+    @pytest.mark.parametrize("key", ["company_name", "address"])
+    def test_free_text_is_not_evidence(self, key: str):
+        """住所と会社名は証拠に数えない。
+
+        はじめは数えていた。実テスト 25枚目（縦書き）で、読み崩れが住所欄に
+        入るたびに「読めた」と判定され、回して読み直す仕掛けが止まっていた。
+        歯止めを足しても別のゴミが通る（`bEOO-SEI=…` → `soipms OOWVN IVQNV8`）。
+        自由な文字列は証拠にしないのが筋。詳しくは
+        `test_ocr_readable_needs_a_checkable_field.py`。
+        """
+        assert looks_unreadable(parsed(**{key: "株式会社サンプル"}))
 
 
 class TestTurningTheImage:

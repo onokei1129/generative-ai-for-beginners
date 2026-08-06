@@ -1234,7 +1234,16 @@ def looks_like_address(text: str) -> bool:
     if looks_like_broken_text(text):
         return False
     if len(ADDRESS_WORD_RE.findall(text)) >= 2:
-        return True
+        # 英字だけの断片は、語数だけでは住所と見分けられない（実テスト
+        # 25枚目の `soipms OOWVN IVQNV8`）。**番地か区切りの読点**を求める。
+        # 実データの海外住所はどれも読点を含む。
+        #
+        #     8F, First Tower, 55, Bundang-ro, ...
+        #     2621, Nambusunhwan-ro, Gangnam-gu, Seoul, Korea
+        #     Santa Beatriz 111 of 1008, Providencia. Santiago de Chile
+        if re.search(r"[,、，]", text) or re.search(r"\d{2,}", text):
+            return True
+        return False
     if len(KANJI_RE.findall(text)) >= 2:
         return True
     return len(KATAKANA_RE.findall(text)) >= 3

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import io
+import re
 import sys
 from pathlib import Path
 
@@ -114,8 +115,16 @@ class TestTheLabelScreenPassesTheLimit:
             encoding="utf-8"
         )
 
-        assert "load_pages(path.read_bytes(), path.name, limit=1)" in source
-        assert "process_file(path.read_bytes(), path.name, page_limit=1)" in source
+        # 呼び出しの書き方ではなく、**枚数を絞る指定**があることを見る。
+        # 引数の渡し方を変えただけで落ちると、直すたびに手が止まる。
+        # 引数の中にも括弧が入る（`path.read_bytes()`）ので、1段だけ入れ子を許す。
+        calls = re.findall(
+            r"(?:load_pages|process_file)\(((?:[^()]|\([^()]*\))*)\)", source, re.S
+        )
+
+        assert calls, "読み込みの呼び出しが見つからない"
+        for arguments in calls:
+            assert "limit=1" in arguments, f"1ページに絞っていない: {arguments}"
 
 
 class TestServerDownIsNotReportedAsOneCard:
