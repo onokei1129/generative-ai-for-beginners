@@ -68,6 +68,35 @@ class TestTheShownImageIsUpright:
         assert shown.width > shown.height
 
 
+class TestTheShownImageStaysCheap:
+    """表示のために重い補正を通さない。
+
+    はじめは取り込みの補正を丸ごと通した。実測で
+
+        load_pages のみ    0.2秒 / 最大RSS  94MB
+        process_file 全部  6.0秒 / 最大RSS 249MB
+
+    となり、これがOCRの子プロセスと**同時に**動く。実テストでサーバーが
+    落ちた。表示に要るのは向きだけで、輪郭の切り出し・傾き補正・明るさ補正は
+    要らない。
+    """
+
+    def test_the_heavy_pipeline_is_not_used(self):
+        source = (APP / "poc" / "one_card.py").read_text(encoding="utf-8")
+        body = source[source.index("def write_image") : source.index("def emit")]
+
+        # 呼び出しの形で見る。説明の中に名前が出るのは構わない。
+        assert "process_file(" not in body, "表示のために重い補正を通している"
+
+    def test_only_the_orientation_is_fixed(self):
+        source = (APP / "poc" / "one_card.py").read_text(encoding="utf-8")
+        body = source[source.index("def write_image") : source.index("def emit")]
+
+        assert "upright" in body
+        for heavy in ("deskew", "enhance", "detect_card_quads"):
+            assert heavy not in body, f"{heavy} は表示には要らない"
+
+
 class TestItStillWorksWhenNothingCanBeRead:
     def test_a_blank_page_is_still_shown(self, tmp_path: Path):
         """補正できなくても画像は出す。出ないと手入力の手がかりが消える。"""

@@ -81,25 +81,29 @@ def write_image(path: Path, out: Path) -> None:
     通しておらず、利用者には横倒しのまま見えていた。手で入力するときに
     読みづらく、画像と欄を見比べられない。
 
-    OCRが見た画像と同じものを出すほうが、見比べるという作業に合っている。
+    直すのは**向きだけ**にする。はじめは取り込みの補正を丸ごと通したが、
+    実測で重すぎた。
+
+        load_pages のみ    0.2秒 / 最大RSS  94MB
+        process_file 全部  6.0秒 / 最大RSS 249MB
+
+    輪郭の切り出し・傾き補正・明るさ補正は表示のためには要らないうえ、
+    これがOCRの子プロセスと**同時に**動く。実テストでサーバーが落ちた。
 
     補正に失敗しても画像は出す。出ないと手入力の手がかりが消える。
     """
-    from bcards.services.images import load_pages, process_file
+    from bcards.services.images import load_pages, orient_landscape
+    from bcards.services.orientation import upright
 
-    data = path.read_bytes()
-    shown = None
+    pages = load_pages(path.read_bytes(), path.name, limit=1)
+    if not pages:
+        raise RuntimeError("ページがありません")
+
+    shown = pages[0].image
     try:
-        cards = process_file(data, path.name, page_limit=1)
-        if cards:
-            shown = cards[0].image
-    except Exception:  # noqa: BLE001 - 補正できなくても元の画像を出す
-        shown = None
-
-    if shown is None:
-        pages = load_pages(data, path.name, limit=1)
-        if not pages:
-            raise RuntimeError("ページがありません")
+        shown, _ = upright(shown)
+        shown, _ = orient_landscape(shown)
+    except Exception:  # noqa: BLE001 - 直せなくても元の画像を出す
         shown = pages[0].image
 
     buffer = io.BytesIO()
