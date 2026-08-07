@@ -1414,6 +1414,127 @@ boot();
 """
 
 
+# 見張り役が使う値。
+#
+# 立ち上げ直しの上限。ここを超えたら諦める。直後に死ぬ状態で無限に繰り返すと、
+# 画面には何も出ないまま計算機だけが回り続ける。
+MAX_RESTARTS = 5
+
+# これより長く動いていたら、落ちても数え直す。別の原因とみなす。
+LONG_ENOUGH_SECONDS = 120.0
+
+# 見張り役を通さずにサーバーだけを動かすときの目印。子はこれを見て、
+# 自分が見張り役を立てないようにする。
+SERVER_ENV = "BCARDS_LABEL_SERVER"
+
+
+def should_restart(exit_code: int) -> bool:
+    """その終わり方なら立ち上げ直すか。
+
+    0 は利用者が終わらせた。2 は使い方の誤り（フォルダが無いなど）で、
+    立ち上げ直しても同じ。130 は Ctrl-C。それ以外は不本意な死とみなす。
+    負の値はシグナルで殺されたということ（メモリ不足など）。
+    """
+    return exit_code not in (0, 2, 130)
+
+
+def keep_going(deaths: int, ran_seconds: float) -> bool:
+    """立ち上げ直しを続けるか。
+
+    直後に死ぬのが続くなら諦める。しばらく動いてから落ちたなら、原因は
+    別とみなして数え直す（実テストでは何十枚か進んでから落ちている）。
+    """
+    if ran_seconds >= LONG_ENOUGH_SECONDS:
+        return True
+    return deaths <= MAX_RESTARTS
+
+
+def record_server_death(exit_code: int, error_lines: list[str]) -> None:
+    """サーバーの死因を記録に残す。
+
+    **これまで手がかりが取れなかったのは、落ちたのが記録を書く当人だった
+    ため。** 見張り役は別プロセスなので、子が消えても書ける。
+    """
+    how = (
+        f"外から強制終了されました（シグナル {-exit_code}）。"
+        "メモリ不足の可能性があります"
+        if exit_code < 0
+        else f"終了コード {exit_code} で終わりました"
+    )
+    _log_step(f"サーバーが落ちました: {how}")
+    for line in error_lines[-20:]:
+        _log_step(f"  | {line.rstrip()}")
+
+
+def supervise(argv: list[str]) -> int:
+    """サーバーを子として動かし、落ちたら立ち上げ直す。
+
+    実テストで入力画面のサーバーが何度も落ちている。原因は特定できていない
+    （親は実測で 62〜65MB しか使わないので、親が自分の重さで死んでいるので
+    はない）。原因究明を待つあいだ、利用者が毎回作業を中断して立ち上げ直す
+    のを避ける。
+
+    あわせて死因を記録に残す。ここが唯一、子が消えても書ける場所。
+    """
+    import collections
+    import subprocess
+    import time
+
+    deaths = 0
+    while True:
+        environment = dict(os.environ, **{SERVER_ENV: "1"})
+        started = time.monotonic()
+        tail: collections.deque[str] = collections.deque(maxlen=40)
+        try:
+            child = subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve()), *argv],
+                stderr=subprocess.PIPE,
+                env=environment,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except Exception as exc:  # noqa: BLE001 - 立ち上げられないなら諦める
+            print(f"サーバーを起動できませんでした: {exc}", file=sys.stderr)
+            return 1
+
+        try:
+            assert child.stderr is not None
+            for line in child.stderr:
+                sys.stderr.write(line)
+                tail.append(line)
+            code = child.wait()
+        except KeyboardInterrupt:
+            # 利用者が止めた。子にも伝えて、立ち上げ直さない。
+            child.terminate()
+            try:
+                child.wait(timeout=10)
+            except Exception:  # noqa: BLE001
+                child.kill()
+            return 0
+
+        if not should_restart(code):
+            return code
+
+        ran = time.monotonic() - started
+        record_server_death(code, list(tail))
+        deaths = 1 if ran >= LONG_ENOUGH_SECONDS else deaths + 1
+        if not keep_going(deaths, ran):
+            print(
+                "\nサーバーが繰り返し落ちるため、立ち上げ直しをやめました。\n"
+                f"  {LOG_PATH}\n"
+                "  このファイルを送っていただけると原因を追えます。",
+                file=sys.stderr,
+            )
+            return 1
+
+        print(
+            f"\nサーバーが落ちたので立ち上げ直します（{deaths}回目）。"
+            "入力した内容は保存されています。画面をそのまま使えます。\n",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     # 前回の記録を先に知らせる（有効にすると追記で混ざるため、その前に読む）。
     report_last_crash()
@@ -1489,4 +1610,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # 見張り役として起動し、サーバーは子として動かす。子は目印を見て、
+    # そのままサーバーになる（`supervise` の説明を参照）。
+    if os.environ.get(SERVER_ENV):
+        raise SystemExit(main())
+    raise SystemExit(supervise(sys.argv[1:]))
