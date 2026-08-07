@@ -459,11 +459,21 @@ atexit.register(stop_worker)
 CLEAN_EXIT_MARK = "--- 終了 ---"
 
 
-def _log_clean_exit() -> None:
+def note_clean_stop() -> None:
+    """正常に終わったという印を書く。
+
+    これを書くと、それより前の「開始だけ」の記録は落ちたことにならない
+    （`cards_that_crashed` を参照）。
+
+    **見張り役から呼ぶ。** 後始末（atexit）だけに頼っていたが、見張り役は
+    止めるときに `terminate()` を使い、これは atexit を走らせずに終わる。
+    そのため印が書かれず、一度落ちた名刺の印が永久に残っていた（実テストの
+    3枚目）。見張り役は生きているので、そちらで書くほうが確実。
+    """
     _log_step(CLEAN_EXIT_MARK)
 
 
-atexit.register(_log_clean_exit)
+atexit.register(note_clean_stop)
 
 
 def run_in_child(args: list[str]) -> dict:
@@ -540,9 +550,9 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         if name not in _crashed:
             return None
         return (
-            "前回この名刺の処理中にサーバーが落ちました。原因が分かるまで"
-            "自動では読み取りません。画像を見て手で入力するか、次へ進んで"
-            "ください。"
+            "この名刺は、前回の起動で処理中にサーバーが落ちました（いまは"
+            "動いていて、画面は使えます）。原因が分かるまで自動では読み取り"
+            "ません。画像を見て手で入力するか、次へ進んでください。"
         )
 
     # OCRは1枚あたり数秒かかるため、結果を覚えておき、次の分は裏で先に処理する。
@@ -614,13 +624,15 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         if not path.is_file() or path.parent.resolve() != directory.resolve():
             return JSONResponse({"error": "見つかりません"}, status_code=404)
         if path.suffix.lower() in (".pdf", ".heic", ".tif", ".tiff"):
-            # 前回落ちた名刺は変換もしない。落ちた工程がOCRか変換かは
-            # 記録からは分からないため、子プロセスを使う側を両方止める。
-            # そのまま表示できる形式（png・jpg）は下の `FileResponse` で
-            # 出るので、手入力のために画像を見ることはできる。
-            crashed = _crashed_reason(name)
-            if crashed:
-                return JSONResponse({"error": crashed}, status_code=415)
+            # 前回落ちた名刺でも**画像は出す**。
+            #
+            # はじめは変換も止めていた。落ちた工程がOCRか変換かは記録から
+            # 分からないため、という理由だった。しかし画像が出ないと
+            # **手で入力もできない**うえ、画面が壊れて見える（実テストで
+            # 「サーバーが落ちている」と受け取られた）。
+            #
+            # 画像の変換はOCRとは別の子プロセスで、落ちてもサーバーは
+            # 生き残る。止める理由がない。
             # ブラウザが表示できない形式はJPEGに変換して返す。
             # 失敗しても壊れた画像アイコンだけを出さず、理由を返す
             # （実テストで1枚だけ画像が出ず、原因が分からない状態になった）。
@@ -1511,9 +1523,13 @@ def supervise(argv: list[str]) -> int:
                 child.wait(timeout=10)
             except Exception:  # noqa: BLE001
                 child.kill()
+            # 正常に終わった印は**こちらで書く**。`terminate()` は子の
+            # 後始末を走らせないため、子に任せると書かれない。
+            note_clean_stop()
             return 0
 
         if not should_restart(code):
+            note_clean_stop()
             return code
 
         ran = time.monotonic() - started
