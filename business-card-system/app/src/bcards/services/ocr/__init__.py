@@ -9,6 +9,7 @@ from PIL import Image
 from ...config import settings
 from .base import OcrOutput, OcrProvider
 from .llm_extractor import get_llm_extractor
+from .parser import email_backs_name as parser_email_backs_name
 from .parser import parse_fields
 from .providers import (
     AzureDocumentIntelligenceProvider,
@@ -186,13 +187,50 @@ def _drop_repeated_numbers(fields: dict, confidence: dict) -> None:
             confidence.pop(key, None)
 
 
+# 読み崩れとみなす長さ。これより長い日本語の氏名は、裏づけが無くても降ろさない。
+#
+# 日本語の名刺では、メールがローマ字の氏名を裏づけることが多い
+# （`sachiko.hasegawa@gree.net`）。裏づけだけで選ぶと正しい漢字の氏名を
+# 押しのけるので、短いものだけを対象にする。
+#
+#     巨メロ     3文字  → 降ろす（実テスト 7枚目）
+#     竹廣乃葉   4文字  → 残す（実テスト 16枚目）
+SHORT_ENOUGH_TO_DOUBT = 3
+
+
+def _email_backs_group(parsed: dict, group: tuple, email: str) -> bool:
+    """その氏名を、併合後のメールが裏づけるか。"""
+    values = parsed.get("fields") or {}
+    return any(
+        parser_email_backs_name(values.get(key) or "", email) for key in group
+    )
+
+
+def _too_short_to_trust(parsed: dict, group: tuple) -> bool:
+    values = parsed.get("fields") or {}
+    joined = "".join((values.get(key) or "").strip() for key in group)
+    return bool(joined) and len(joined) <= SHORT_ENOUGH_TO_DOUBT
+
+
 def _merge_groups(results: list[dict], fields: dict, confidence: dict) -> None:
+    email = (fields.get("email") or "").strip()
     for group in _GROUPS:
         best: dict | None = None
         best_filled = -1
         for parsed in results:
             values = parsed.get("fields") or {}
             filled = sum(1 for key in group if (values.get(key) or "").strip())
+            # 埋まった数が同じでも、**メールが裏づけるほうが確からしい**。
+            # ただし降ろすのは短い候補だけ（`SHORT_ENOUGH_TO_DOUBT` を参照）。
+            if (
+                filled == best_filled
+                and best is not None
+                and _too_short_to_trust(best, group)
+                and not _email_backs_group(best, group, email)
+                and _email_backs_group(parsed, group, email)
+            ):
+                best = parsed
+                continue
             if filled > best_filled:
                 best, best_filled = parsed, filled
         if best is None:
