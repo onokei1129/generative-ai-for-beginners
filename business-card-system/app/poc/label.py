@@ -231,6 +231,11 @@ def cards_that_crashed(log_path: Path) -> set[str]:
             # はなく閉じられただけ。
             started.clear()
             continue
+        if START_MARK in line:
+            # 起動の印。**「開始 」という語を含むので、先に外しておく**
+            # （外さないと版の文字列が名刺の名前として拾われる）。
+            # 前回の途中で止まった名刺は、立ち上げ直しても消さない。
+            continue
         for mark, keep in (("開始 ", True), ("完了 ", False)):
             at = line.find(mark)
             if at < 0:
@@ -457,6 +462,23 @@ atexit.register(stop_worker)
 # この行は残らない。`cards_that_crashed` はこれを見て、閉じただけの中断と
 # 本当に落ちたのとを分ける。
 CLEAN_EXIT_MARK = "--- 終了 ---"
+
+# 起動したときに書く印。**動いている版もここに残す。**
+#
+# 実テストの記録（1048行・8日ぶん）を調べたとき、どの版で動いていたのかが
+# 分からず、どの修正が入った状態の話なのかを切り分けられなかった。印が
+# 無いと、ある時点の記録が「立ち上げ直した」のか「そのまま続いている」のか
+# も読めない。この2つは原因の切り分けに直結する。
+START_MARK = "--- 開始 ---"
+
+
+def note_start() -> None:
+    """起動したことと、動いている版を記録へ残す。
+
+    `cards_that_crashed` はこの印では何も消さない。前回の起動の途中で
+    止まった名刺は、立ち上げ直したあとも「落ちた名刺」のままにする。
+    """
+    _log_step(f"{START_MARK} 版 {_RUNNING_VERSION}")
 
 
 def note_clean_stop() -> None:
@@ -1591,6 +1613,8 @@ def main() -> int:
     report_last_crash()
     # いちばん先に有効にする。落ちるのは重い処理の最中とは限らない。
     enable_crash_report()
+    # どの版が動き出したかを記録に残す。あとから記録を読むときの起点になる。
+    note_start()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("directory", help="名刺画像の入っているフォルダ")
     parser.add_argument("--port", type=int, default=8100)
