@@ -81,17 +81,61 @@ class TestRotatesWhenNeeded:
         assert applied == degrees
 
 
-class TestDoesNotRotateWhenUnsure:
-    """誤って回す害のほうが大きいので、迷ったら回さない。"""
+def _osd_varies(monkeypatch, *, big: tuple, small: tuple) -> None:
+    """画像の大きさで答えが変わる向き検出を作る。
 
-    def test_low_confidence_is_ignored(self, monkeypatch):
-        _osd(monkeypatch, rotate=90, conf=orientation.MIN_CONFIDENCE - 0.1)
+    判定は長辺1600と1100の2つの大きさで見る。その2つで答えが割れる状況を
+    作るために、渡された画像の大きさで返す値を変える。
+    """
+    import pytesseract
+
+    def answer(image, *args, **kwargs):
+        rotate, conf = big if max(image.size) >= 1400 else small
+        return {"rotate": rotate, "orientation_conf": conf}
+
+    monkeypatch.setattr(pytesseract, "image_to_osd", answer)
+
+
+class TestDoesNotRotateWhenUnsure:
+    """誤って回す害のほうが大きいので、迷ったら回さない。
+
+    ただし「迷った」の測り方を、1回の確信度から**大きさを変えても答えが
+    同じか**に改めた。実テスト25枚目（431x706 の小さい取り込み）で、
+    正しい答え 270度 が確信度 0.87 で見送られていた。大きさを変えて見ると
+    確信度は 0.87〜2.66 と下限（2.0）の周りで揺れるのに、**角度はどの
+    大きさでも 270 のまま**だった。1回の確信度より、答えが大きさに依らない
+    ことのほうが確かな手がかりになる。
+
+    誤って回す害への歯止めは残っている——**答えが割れたら回さない**。
+    """
+
+    def test_a_split_answer_is_not_used(self, monkeypatch):
+        """確信度が足りず、大きさを変えると答えも変わるなら、回さない。"""
+        _osd_varies(
+            monkeypatch,
+            big=(90, orientation.MIN_CONFIDENCE - 0.1),
+            small=(180, orientation.MIN_CONFIDENCE - 0.1),
+        )
         source = _marked(100, 50)
 
         result, degrees = orientation.upright(source)
 
         assert degrees == 0
         assert (result.width, result.height) == (100, 50)
+
+    def test_the_same_answer_twice_is_used(self, monkeypatch):
+        """確信度が足りなくても、大きさを変えて同じ答えなら回す（25枚目）。"""
+        _osd_varies(
+            monkeypatch,
+            big=(90, orientation.MIN_CONFIDENCE - 0.1),
+            small=(90, orientation.MIN_CONFIDENCE - 0.5),
+        )
+        source = _marked(100, 50)
+
+        result, degrees = orientation.upright(source)
+
+        assert degrees == 90
+        assert (result.width, result.height) == (50, 100)
 
     def test_zero_rotation_leaves_image_untouched(self, monkeypatch):
         """縦書き名刺はここに入る（OSDは縦書きを正立と判定する）。"""

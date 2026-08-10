@@ -14,7 +14,9 @@ PoCで分かっている（ocr-poc-report.md 4.2「不採用」）。OSDは字�
 向きを読むため、縦書き名刺は正立と判定される。PoCサンプル16枚
 （縦書きの scan/photo を含む）は全て回転0度と判定されることを確認済み。
 
-判定を誤って回すと損害が大きいため、確信度が低い回転は採用しない。
+判定を誤って回すと損害が大きいため、確信度が低い回転は採用しない。ただし
+確信度は取り込みの解像度で揺れる。低い場合は大きさを変えてもう一度見て、
+**角度が一致すれば採る**（`detect_rotation_on_page` を参照）。割れたら回さない。
 """
 
 from __future__ import annotations
@@ -24,11 +26,16 @@ from PIL import Image, ImageChops
 # 回転を採用する確信度の下限。
 # 実測: 正立の名刺 10.2 / 90度回った名刺 4.2 / 縦書き名刺 1.3〜6.0（いずれも0度と判定）。
 # 0度と判定された場合は何もしないので、この下限が効くのは「回す」と判定したときだけ。
+#
+# ここに届かなくても、大きさを変えて同じ角度が出れば採る。取り込みの解像度が
+# 低いと確信度が下限の周りで揺れるため（実テスト25枚目 0.87〜2.66）。
 MIN_CONFIDENCE = 2.0
 
 # 取り込んだページから向きを見るときの大きさ。`detect_rotation_on_page` を参照。
-PAGE_PROBE_MAX_SIDE = 1600
-PAGE_PROBE_RETRY_MAX_SIDE = 2600
+# 縮めるだけでなく**足りなければ伸ばす**。実テスト25枚目は 431x706 しかなく、
+# 原寸のままでは確信度 0.87（下限 2.0 に届かず見送り）だった。
+PAGE_PROBE_SIDE = 1600
+PAGE_PROBE_SIDE_AGAIN = 1100
 
 # 無地とみなす明るさの差。取り込みの汚れを拾わない程度に離す。
 BLANK_TOLERANCE = 30
@@ -74,13 +81,14 @@ def trim_blank_edges(image: Image.Image) -> Image.Image:
     return image.crop(box) if box else image
 
 
-def _fit_within(image: Image.Image, max_side: int) -> Image.Image:
-    side = max(image.size)
-    if side <= max_side:
+def _resize_to_side(image: Image.Image, side: int) -> Image.Image:
+    """長辺を `side` に合わせる。**大きすぎれば縮め、小さすぎれば伸ばす。**"""
+    longest = max(image.size)
+    if longest == side or longest == 0:
         return image
-    scale = max_side / side
+    scale = side / longest
     return image.resize(
-        (max(1, int(image.width * scale)), max(1, int(image.height * scale))),
+        (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
         Image.LANCZOS,
     )
 
@@ -111,23 +119,52 @@ def detect_rotation_on_page(image: Image.Image) -> tuple[int, float]:
 
         400px 判定不能 / 600px (180, 2.38) / 1000px (180, 8.34) / 2560px (180, 9.8)
 
-    それでも判定不能だった場合だけ、縮めずにもう一度見る。失敗したときに
-    だけ時間を払う。
+    小さすぎるページは伸ばす
+    ------------------------
+    実テスト25枚目は **431x706 しかなかった**。取り込みの解像度が低い名刺で、
+    原寸のままでは確信度が下限に届かない。答えのほうは合っている:
+
+        長辺 706  (270, 0.87)  見送り  ← 原寸
+        長辺1000  (270, 2.59)  採用
+        長辺1400  (270, 2.06)  採用
+        長辺1800  (270, 2.66)  採用
+        長辺2200  (270, 1.95)  見送り
+        長辺2800  (270, 2.44)  採用
+
+    **角度はどの大きさでも 270 で変わらないのに、確信度だけが下限の周りで
+    揺れている。** 1回の確信度で決めると、同じ名刺が採用されたり見送られたり
+    する。そこで、確信度が足りないときは**別の大きさでもう一度見て、角度が
+    一致すれば採る**。答えが大きさに依らないことのほうが、1回の確信度より
+    確かな手がかりになる。
+
+    0度と判定されたときは何もしないので、この念押しが効くのは「回す」と
+    判定したときだけ。縦書き名刺は0度と判定されるため巻き添えにならない。
     """
     trimmed = trim_blank_edges(image)
 
-    degrees, confidence = detect_rotation(_fit_within(trimmed, PAGE_PROBE_MAX_SIDE))
-    if confidence > 0.0:
+    degrees, confidence = detect_rotation(_resize_to_side(trimmed, PAGE_PROBE_SIDE))
+    if degrees == 0 or confidence >= MIN_CONFIDENCE:
         return degrees, confidence
 
-    if max(trimmed.size) <= PAGE_PROBE_MAX_SIDE:
-        return degrees, confidence  # これ以上大きくできない
-    return detect_rotation(_fit_within(trimmed, PAGE_PROBE_RETRY_MAX_SIDE))
+    # 確信度が足りない。別の大きさで同じ答えになるなら採る。
+    again, again_confidence = detect_rotation(
+        _resize_to_side(trimmed, PAGE_PROBE_SIDE_AGAIN)
+    )
+    if again == degrees:
+        return degrees, max(confidence, again_confidence, MIN_CONFIDENCE)
+    return degrees, confidence
 
 
 def upright(image: Image.Image) -> tuple[Image.Image, int]:
-    """90度単位で回った画像を正立させる。回さなかった場合は0度を返す。"""
-    degrees, confidence = detect_rotation(image)
+    """90度単位で回った画像を正立させる。回さなかった場合は0度を返す。
+
+    判定は `detect_rotation_on_page` に任せる。原寸をそのまま渡すと、
+    取り込みの解像度が低い名刺で確信度が下限に届かず、**正しい答えを
+    見送る**。実テスト25枚目（431x706）がこれで、向きが直らないまま
+    OCRに渡り、読めないので回してやり直す、を繰り返して1枚に141.9秒
+    かかっていた（子プロセスの制限は120秒なので打ち切られる）。
+    """
+    degrees, confidence = detect_rotation_on_page(image)
     if degrees == 0 or confidence < MIN_CONFIDENCE:
         return image, 0
     # OSDの rotate は「この角度だけ回すと正立する（時計回り）」。

@@ -199,6 +199,53 @@ class TestACardInsideAPageIsStillDetected:
         assert confidence > 0.0, "ページの中の名刺を判定できていない"
 
 
+class TestASmallScanIsStillDetected:
+    """取り込みの解像度が低い名刺も直す。
+
+    実テスト25枚目は **431x706 しかなかった**。原寸のままだと確信度が下限
+    （2.0）に届かず、正しい答えを見送っていた。答えのほうは合っている:
+
+        長辺 706  (270, 0.87)  見送り  ← 原寸
+        長辺1000  (270, 2.59)  採用
+        長辺1400  (270, 2.06)  採用
+        長辺1800  (270, 2.66)  採用
+        長辺2200  (270, 1.95)  見送り
+        長辺2800  (270, 2.44)  採用
+
+    **角度はどの大きさでも 270 のまま、確信度だけが下限の周りで揺れている。**
+    1回の確信度で決めると、同じ名刺が採用されたり見送られたりする。小さい
+    ページは伸ばして見て、確信度が足りなければ別の大きさで念を押す。
+
+    実物で確かめた結果、431x706 のページが 706x431 の横長に正立し、1.04秒。
+    （名刺そのものは個人情報のため取り込まない。ここでは同じ条件——小さくて
+    確信度が届かないページ——を合成で作る。）
+    """
+
+    @pytest.mark.skipif(not HAS_TESSERACT, reason="向き検出（OSD）に tesseract が要ります")
+    def test_a_small_sideways_card_is_turned_back(self, tmp_path: Path):
+        card = a_card_with_text()
+        small = card.rotate(90, expand=True)
+        small = small.resize((round(small.width * 0.42), round(small.height * 0.42)))
+        assert max(small.size) < 500, "小さい取り込みになっていない"
+
+        source = tmp_path / "small.png"
+        small.save(source)
+        out = tmp_path / "page.jpg"
+        write_image(source, out)
+
+        shown = Image.open(out)
+        assert shown.width > shown.height, "小さい取り込みを直せていない"
+
+    def test_the_probe_can_enlarge(self):
+        """縮めるだけでなく伸ばす。小さいページはこれが無いと直せない。"""
+        from bcards.services import orientation
+
+        small = Image.new("RGB", (200, 130), "white")
+        grown = orientation._resize_to_side(small, 1600)
+
+        assert max(grown.size) == 1600
+
+
 class TestTheShownImageStaysCheap:
     """表示のために重い補正を通さない。
 
