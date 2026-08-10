@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import contextlib
 import glob
 import json
 import os
@@ -38,6 +39,7 @@ import sys
 import threading
 import traceback
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -557,7 +559,17 @@ def run_in_child(args: list[str]) -> dict:
 
 
 def build_app(directory: Path, prefill: bool) -> FastAPI:
-    app = FastAPI(title="正解ラベル入力", docs_url=None, redoc_url=None)
+    # 立ち上がったときに走らせるもの。中身は下のほうで足す（温める処理は、
+    # このあとに作る先読みの仕掛けを使うため）。
+    at_start: list[Callable[[], None]] = []
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_: FastAPI):
+        for hook in at_start:
+            hook()
+        yield
+
+    app = FastAPI(title="正解ラベル入力", docs_url=None, redoc_url=None, lifespan=lifespan)
 
     # 前回落ちた名刺。開き直しても同じ名刺から始まるため、触らずに飛ばせる
     # ようにする（`cards_that_crashed` を参照）。起動時に1回だけ読む。
@@ -971,6 +983,39 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             _ocr_cache.pop(name, None)
         return JSONResponse({"ok": True, "moved": moved, "to": str(destination)})
 
+    def warm_up_at_start() -> None:
+        """立ち上げたらすぐ、1枚目のOCRを裏で始める。
+
+        先読みは「利用者が名刺を開いたら、その次の2枚を進める」作りなので、
+        **1枚目だけは誰も温めていなかった**。EasyOCR のモデルの読み込みが
+        そこに乗る。実測（この機械）:
+
+            easyocr（1回目・モデル読み込み込み）  16.2秒
+            tesseract                              2.1秒
+            併用ぜんぶ（2回目・温まった状態）      3.5秒
+
+        1枚目だけ十数秒かかり、画面は空欄のまま進まない。実テストでも最初に
+        「立ち上げ時に既にサーバが落ちている」と報告されており、記録にも
+        1枚目の画像だけが残って途切れた起動がある（08/04 12:00:57）。
+
+        起動と同時に始めれば、利用者がブラウザを開いて画面を見るまでの
+        あいだに済む。失敗しても起動は止めない——先読みは速くするための
+        仕掛けで、無くても動く。
+        """
+        try:
+            first = next(
+                (p for p in image_files() if not _crashed_reason(p.name)), None
+            )
+        except Exception:  # noqa: BLE001 - 温められなくても起動する
+            return
+        if first is None:
+            return
+        if not _warm_started.is_set():
+            _warm_started.set()
+            threading.Thread(target=_warm_worker, daemon=True).start()
+        _warm_queue.put(first)
+
+    at_start.append(warm_up_at_start)
     return app
 
 
