@@ -94,9 +94,28 @@ def write_image(path: Path, out: Path) -> None:
     4.5〜5.6秒かかっていた（利用者の環境でも約5秒）。向きが分かればよい
     だけなので、解像度は要らない。回すのは原寸の画像。
 
+    縦型の名刺を横倒しにしないこと
+    ------------------------------
+    はじめは検出のあとに `orient_landscape`（縦長なら90度回して横長にする）
+    も通していた。**これが縦型の名刺を横倒しにする。** 実測:
+
+        縦書きの縦型名刺 1240x1754
+          → 向きの検出は 0度（正しい。回す必要なし）
+          → orient_landscape が -90度回す
+          → 画面には 1754x1240 の横倒しで出る
+
+    名刺の形だけを見て回す判定は、縦書き名刺を巻き添えにすることが
+    PoCの時点で分かっていた（services/orientation の説明を参照）。
+    表示でも同じで、日本語の縦型名刺は**縦長のままが正しい**。
+
+    向きの検出（OSD）だけで、読み取り機に横向きに置かれた名刺は戻せる
+    （横型を90度回して置いた画像に対し、OSDは 270度と答える）。検出が
+    効かなかった名刺は取り込んだままの向きで出る——**回しすぎて読めなく
+    するより良い**。
+
     補正に失敗しても画像は出す。出ないと手入力の手がかりが消える。
     """
-    from bcards.services.images import load_pages, orient_landscape
+    from bcards.services.images import load_pages
     from bcards.services.ocr import shrink_for_probe
     from bcards.services.orientation import MIN_CONFIDENCE, detect_rotation
 
@@ -111,7 +130,6 @@ def write_image(path: Path, out: Path) -> None:
             # OSD の rotate は「この角度だけ時計回りに回すと正立する」。
             # PIL は反時計回りなので符号を反転する。
             shown = shown.rotate(-degrees, expand=True)
-        shown, _ = orient_landscape(shown)
     except Exception:  # noqa: BLE001 - 直せなくても元の画像を出す
         shown = pages[0].image
 

@@ -352,6 +352,17 @@ def _finish_card(
     PoC（ocr-poc-report.md）で、表示向けの強い補正（明るさ・影の除去、
     縦長から横長への回転）がOCRの項目正答率を10ポイント下げることが分かったため、
     OCRには切り出しと傾き補正のみを適用した画像を渡す。
+
+    縦長から横長への回転は**表示用からも外した**。名刺の形だけを見て回すため、
+    正しい向きの縦型名刺（日本語の縦書き名刺）が横倒しになる。実測:
+
+        縦書きの縦型名刺 1240x1754
+          → 向きの検出は 0度（正しい。回す必要なし）
+          → 縦長なので -90度回される
+          → 表示用は 1754x1240 の横倒しになる
+
+    90度単位の回転は `orientation.upright` が字の形から判定して直しており、
+    形だけの判定を重ねる必要はない。
     """
     corrections: dict[str, Any] = {"outline_detected": detected, "perspective_corrected": detected}
     ocr_image = image
@@ -364,9 +375,7 @@ def _finish_card(
         ocr_image, angle = deskew(ocr_image)
         corrections["deskew_angle"] = round(angle, 2)
 
-        display, rotated = orient_landscape(ocr_image)
-        corrections["rotated_to_landscape"] = rotated
-        display, brightness = enhance(display)
+        display, brightness = enhance(ocr_image)
         corrections.update(brightness)
         image = display
     return ProcessedCard(
