@@ -90,9 +90,11 @@ def write_image(path: Path, out: Path) -> None:
     輪郭の切り出し・傾き補正・明るさ補正は表示のためには要らないうえ、
     これがOCRの子プロセスと**同時に**動く。実テストでサーバーが落ちた。
 
-    向きの検出は**縮めた写しで**行う。原寸のままだと実測で1枚あたり
-    4.5〜5.6秒かかっていた（利用者の環境でも約5秒）。向きが分かればよい
-    だけなので、解像度は要らない。回すのは原寸の画像。
+    向きの検出は**余白を落とした縮小の写しで**行う。原寸のままだと実測で
+    1枚あたり 4.5〜5.6秒かかっていた（利用者の環境でも約5秒）。ただし
+    **ページごと縮めてはいけない**——名刺が小さくなりすぎて判定不能になり、
+    実テスト25枚目が逆さのまま出た（`detect_rotation_on_page` を参照）。
+    回すのは原寸の画像。
 
     縦型の名刺を横倒しにしないこと
     ------------------------------
@@ -116,8 +118,7 @@ def write_image(path: Path, out: Path) -> None:
     補正に失敗しても画像は出す。出ないと手入力の手がかりが消える。
     """
     from bcards.services.images import load_pages
-    from bcards.services.ocr import shrink_for_probe
-    from bcards.services.orientation import MIN_CONFIDENCE, detect_rotation
+    from bcards.services.orientation import MIN_CONFIDENCE, detect_rotation_on_page
 
     pages = load_pages(path.read_bytes(), path.name, limit=1)
     if not pages:
@@ -125,7 +126,7 @@ def write_image(path: Path, out: Path) -> None:
 
     shown = pages[0].image
     try:
-        degrees, confidence = detect_rotation(shrink_for_probe(shown))
+        degrees, confidence = detect_rotation_on_page(shown)
         if degrees and confidence >= MIN_CONFIDENCE:
             # OSD の rotate は「この角度だけ時計回りに回すと正立する」。
             # PIL は反時計回りなので符号を反転する。

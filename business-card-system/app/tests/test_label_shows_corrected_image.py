@@ -147,6 +147,58 @@ class TestAVerticalCardStaysVertical:
         assert "orient_landscape(" not in call, "形だけで回す判定が残っている"
 
 
+class TestACardInsideAPageIsStillDetected:
+    """取り込んだページの余白ごと縮めない。
+
+    向きの検出を「縮めた写しで行う」ようにして表示を速くしたところ、
+    **ページの余白ごと縮めていた**。名刺はページの一部でしかないため、
+    長辺1200に縮めるとA4のページでは名刺が400px程度になり、字が潰れて
+    判定不能になる。実測（A4に名刺1枚、300dpi）:
+
+        置き方   切り出した名刺の原寸    ページを1200に縮めた写し
+          0度            (0, 8.24)                  (0, 0.0)
+         90度          (270, 5.56)                  (0, 0.0)
+        180度           (180, 8.8)                  (0, 0.0)
+        270度           (90, 5.66)                  (0, 0.0)
+
+    実テスト25枚目（上下逆に取り込まれた名刺）が、画面では逆さのまま出た。
+    OCR側は切り出した名刺を見るので180度を検出でき、**同じ名刺で欄は正しい
+    のに画像だけ逆さ**という形で出た。
+    """
+
+    @pytest.mark.skipif(not HAS_TESSERACT, reason="向き検出（OSD）に tesseract が要ります")
+    def test_an_upside_down_card_on_a_page_is_turned_back(self, tmp_path: Path):
+        card = a_card_with_text()
+        page = Image.new("RGB", (2480, 3508), "white")
+        upside = card.rotate(180, expand=True)
+        page.paste(upside, ((2480 - upside.width) // 2, (3508 - upside.height) // 2))
+
+        source = tmp_path / "page.png"
+        page.save(source)
+        out = tmp_path / "page.jpg"
+        write_image(source, out)
+
+        # 180度は回しても大きさが変わらないので、**中身の向き**で確かめる。
+        # 出てきた画像をもう一度見て「もう回す必要が無い」と言えば正立している。
+        from bcards.services import orientation
+
+        again, confidence = orientation.detect_rotation_on_page(Image.open(out))
+        assert confidence > 0.0, "出てきた画像の向きを判定できない"
+        assert again == 0, f"まだ {again} 度傾いたまま出している"
+
+    @pytest.mark.skipif(not HAS_TESSERACT, reason="向き検出（OSD）に tesseract が要ります")
+    def test_the_page_is_not_shrunk_whole(self):
+        """余白を落としてから縮めていることを、呼び出しの形で確かめる。"""
+        from bcards.services import orientation
+
+        page = Image.new("RGB", (2480, 3508), "white")
+        card = a_card_with_text()
+        page.paste(card, ((2480 - card.width) // 2, (3508 - card.height) // 2))
+
+        degrees, confidence = orientation.detect_rotation_on_page(page)
+        assert confidence > 0.0, "ページの中の名刺を判定できていない"
+
+
 class TestTheShownImageStaysCheap:
     """表示のために重い補正を通さない。
 
