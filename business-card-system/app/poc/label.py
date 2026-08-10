@@ -619,11 +619,15 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         })
 
     @app.get("/api/image/{name}")
-    def api_image(name: str):
+    def api_image(name: str, turn: int = 0):
         path = directory / name
         if not path.is_file() or path.parent.resolve() != directory.resolve():
             return JSONResponse({"error": "見つかりません"}, status_code=404)
-        if path.suffix.lower() in (".pdf", ".heic", ".tif", ".tiff"):
+        # `turn` は利用者が押した「回す」の合計（時計回り、90度きざみ）。
+        # 向きの自動判定は外すことがあり、外した1枚は手入力にも使えない。
+        # 回した場合は、そのままでは出せない形式でなくても子に通して回す。
+        turn %= 360
+        if turn or path.suffix.lower() in (".pdf", ".heic", ".tif", ".tiff"):
             # 前回落ちた名刺でも**画像は出す**。
             #
             # はじめは変換も止めていた。落ちた工程がOCRか変換かは記録から
@@ -646,7 +650,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             with tempfile.TemporaryDirectory() as work:
                 out = Path(work) / "page.jpg"
                 try:
-                    run_in_child(["image", str(path), str(out)])
+                    run_in_child(["image", str(path), str(out), str(turn)])
                     data = out.read_bytes()
                 except Exception as exc:  # noqa: BLE001 - 画面に理由を出すため握る
                     _log_failure(f"画像の表示（{path.name}）")
@@ -985,6 +989,10 @@ PAGE = """
                 padding: 8px; margin: 6px 0 0; max-height: 260px; overflow: auto;
                 white-space: pre-wrap; word-break: break-all; font-size: 12px; }
   .imgwait { font-size: 13px; color: #666; padding: 24px 10px; text-align: center; }
+  /* 向きの自動判定が外した1枚を、その場で回す。画像のすぐ下に置く。 */
+  .turn { margin-left: 10px; font-size: 12px; padding: 3px 10px; cursor: pointer;
+          border: 1px solid #c9ced6; border-radius: 4px; background: #f6f7f9; }
+  .turn:hover { background: #e9ecf1; }
   .imgerror:empty { display: none; }
   .imgerror { font-size: 13px; padding: 8px 10px; border-radius: 4px; margin: 8px 0;
               background: #fff4e5; border: 1px solid #ffd8a8; color: #8a5300; }
@@ -1064,7 +1072,9 @@ PAGE = """
         <summary>OCRが読んだ文字を見る（項目が空のときの手がかり）</summary>
         <pre id="ocrtext"></pre>
       </details>
-      <p class="kbd">画像をクリックすると拡大します。</p>
+      <p class="kbd">画像をクリックすると拡大します。
+        <button type="button" class="turn" onclick="turnImage()">画像を90度回す</button>
+      </p>
       <!-- 「名刺ではない」は画像を見た時点で判断するので、画像のすぐ下に置く。
            入力欄の下（14項目ぶん下）だと画面外で気づけない。 -->
       <p class="notcard-row">
@@ -1102,7 +1112,10 @@ PAGE = """
   </div>
 </main>
 <script>
-let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set(), timer: null };
+// turns: 名刺ごとに利用者が回した角度（時計回りの合計）。向きの自動判定は
+// 外すことがあり、外した1枚は画像を見ながらの手入力ができない。押した分は
+// 名刺ごとに覚えて、前へ戻っても保つ。
+let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set(), timer: null, turns: {} };
 
 async function boot() {
   const meta = await (await fetch('/api/files')).json();
@@ -1160,7 +1173,7 @@ async function showImageError() {
 
   let reason = null;
   try {
-    const res = await fetch('/api/image/' + encodeURIComponent(file.name));
+    const res = await fetch(imageUrl(file.name));
     const body = await res.json();
     if (body && body.error) reason = body.error;
   } catch (e) { /* サーバーが応答していない可能性。下で確かめる */ }
@@ -1184,6 +1197,28 @@ async function showImageError() {
     + '（黒い画面の最後の行が原因の手がかりです）';
 }
 
+function imageUrl(name) {
+  const turn = state.turns[name] || 0;
+  return '/api/image/' + encodeURIComponent(name) + (turn ? '?turn=' + turn : '');
+}
+
+// 向きの自動判定が外した1枚を、その場で直す。
+//
+// 実テストでは、22枚目は直ったのに25枚目は外したまま、という状態になった。
+// 判定は名刺の汚れや地色で外れることがあり、外した画像は手入力にも使えない。
+// 押すごとに時計回りに90度。回した角度は名刺ごとに覚える。
+function turnImage() {
+  const file = state.files[state.index];
+  if (!file) return;
+  state.turns[file.name] = ((state.turns[file.name] || 0) + 90) % 360;
+  const img = document.getElementById('image');
+  document.getElementById('imgerror').textContent = '';
+  img.removeAttribute('src');
+  img.classList.remove('zoom');
+  document.getElementById('imgwait').style.display = '';
+  img.src = imageUrl(file.name);
+}
+
 async function show(i) {
   state.index = i;
   const file = state.files[i];
@@ -1198,7 +1233,7 @@ async function show(i) {
   img.removeAttribute('src');
   img.classList.remove('zoom');
   document.getElementById('imgwait').style.display = '';
-  img.src = '/api/image/' + encodeURIComponent(file.name);
+  img.src = imageUrl(file.name);
   document.getElementById('saved').textContent = '';
   clearMarks();
 

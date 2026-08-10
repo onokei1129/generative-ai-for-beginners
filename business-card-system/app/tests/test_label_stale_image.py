@@ -52,11 +52,14 @@ class TestThePreviousImageIsCleared:
     def test_the_source_is_removed_before_the_new_one_is_asked_for(self):
         # 名刺を切り替えるのは `show`。その中での順番を見る。
         body = label.PAGE[label.PAGE.index("async function show(i)") :]
+        # 頼む場所は `img.src` への代入で見る。URLの組み立て方（回した角度を
+        # 足すなど）は変わりうるが、**代入の順番**がこの試験の内容なので。
         clears = body.find("removeAttribute('src')")
-        asks = body.find("'/api/image/'")
+        asks = body.find("img.src =")
 
         assert clears >= 0, "前の画像を消していない"
-        assert 0 <= clears < asks, "消す前に新しい画像を頼んでいる"
+        assert asks >= 0, "新しい画像を頼んでいない"
+        assert clears < asks, "消す前に新しい画像を頼んでいる"
 
     def test_there_is_something_to_show_while_waiting(self):
         assert "imgwait" in label.PAGE

@@ -73,7 +73,7 @@ def run_ocr(path: Path) -> dict:
     }
 
 
-def write_image(path: Path, out: Path) -> None:
+def write_image(path: Path, out: Path, turn: int = 0) -> None:
     """画面に出す画像を書き出す。**向きを直したものを出す。**
 
     横型の名刺を読み取り機に横向きに置くと、画像は90度回った状態で入って
@@ -116,6 +116,13 @@ def write_image(path: Path, out: Path) -> None:
     するより良い**。
 
     補正に失敗しても画像は出す。出ないと手入力の手がかりが消える。
+
+    利用者が回す分（turn）
+    ----------------------
+    向きの検出は外すことがある。実テストでは、22枚目は直ったのに25枚目は
+    外したまま、という状態になった。**外した1枚を利用者が直せないと、その
+    名刺は手入力にも使えない。** 自動の判定に足す形で、時計回りの角度を
+    受け取る（90/180/270）。
     """
     from bcards.services.images import load_pages
     from bcards.services.orientation import MIN_CONFIDENCE, detect_rotation_on_page
@@ -133,6 +140,10 @@ def write_image(path: Path, out: Path) -> None:
             shown = shown.rotate(-degrees, expand=True)
     except Exception:  # noqa: BLE001 - 直せなくても元の画像を出す
         shown = pages[0].image
+
+    turn %= 360
+    if turn:
+        shown = shown.rotate(-turn, expand=True)
 
     buffer = io.BytesIO()
     shown.convert("RGB").save(buffer, format="JPEG", quality=85)
@@ -177,7 +188,8 @@ def dispatch(mode: str, args: list[str]) -> dict:
     if mode == "image":
         if len(args) < 2:
             raise BadRequest("出力先が要ります")
-        write_image(Path(args[0]), Path(args[1]))
+        turn = int(args[2]) if len(args) > 2 and args[2] else 0
+        write_image(Path(args[0]), Path(args[1]), turn)
         return {}
     if mode == "echo":
         # 受け渡しそのものを確かめるためだけの指定（cp932 の「ソ」問題など）。
