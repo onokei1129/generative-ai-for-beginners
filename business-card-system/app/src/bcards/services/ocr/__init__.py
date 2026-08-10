@@ -304,7 +304,7 @@ PROBE_ENGINE = "tesseract"
 PROBE_MAX_SIDE = 1200
 
 
-def _shrink_for_probe(image: Image.Image) -> Image.Image:
+def shrink_for_probe(image: Image.Image) -> Image.Image:
     """下読み用に縮める。小さい画像はそのまま。"""
     longest = max(image.width, image.height)
     if longest <= PROBE_MAX_SIDE:
@@ -354,7 +354,7 @@ def recognize_card(image: Image.Image, provider_name: str | None = None) -> tupl
     for angle in (270, 90):
         try:
             turned = image.rotate(angle, expand=True)
-            _, probe = _recognize_once(_shrink_for_probe(turned), PROBE_ENGINE)
+            _, probe = _recognize_once(shrink_for_probe(turned), PROBE_ENGINE)
         except Exception:  # noqa: BLE001 - 回して失敗しても元の結果で続ける
             continue
         if looks_unreadable(probe):

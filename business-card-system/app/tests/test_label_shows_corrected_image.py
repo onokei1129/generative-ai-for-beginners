@@ -92,7 +92,7 @@ class TestTheShownImageStaysCheap:
         source = (APP / "poc" / "one_card.py").read_text(encoding="utf-8")
         body = source[source.index("def write_image") : source.index("def emit")]
 
-        assert "upright" in body
+        assert "detect_rotation" in body, "向きを直していない"
         for heavy in ("deskew", "enhance", "detect_card_quads"):
             assert heavy not in body, f"{heavy} は表示には要らない"
 
