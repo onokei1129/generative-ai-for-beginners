@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -29,6 +30,20 @@ sys.path.insert(0, str(APP / "src"))
 sys.path.insert(0, str(APP))
 
 from poc import label  # noqa: E402
+
+# 温めるのは裏のスレッドなので、頼み終わるまで待つ。
+#
+# はじめは立ち上げ直後に見ていたが、手元では通り、CIでは落ちた。速い機械
+# ではたまたま間に合っていただけで、**試験の側の競合**だった。裏方が動く
+# 仕掛けを、動く前に確かめていたことになる。
+WARM_UP_LIMIT = 15.0
+
+
+def wait_for(asked: list, limit: float = WARM_UP_LIMIT) -> list:
+    deadline = time.monotonic() + limit
+    while not asked and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return asked
 
 
 def a_folder_of_cards(root: Path, names: list[str]) -> None:
@@ -45,7 +60,7 @@ class TestTheFirstCardIsWarmedAtStart:
         a_folder_of_cards(tmp_path, ["a.png", "b.png", "c.png"])
 
         with TestClient(label.build_app(tmp_path, True)):
-            pass  # 立ち上げと後片付けだけ。画面は開かない。
+            wait_for(asked)  # 立ち上げと後片付けだけ。画面は開かない。
 
         assert asked, "起動しても1枚目を温めていない"
         assert Path(asked[0]).name == "a.png"
@@ -69,7 +84,7 @@ class TestItWarmsTheCardTheScreenOpens:
             (tmp_path / done).write_text("{}", encoding="utf-8")
 
         with TestClient(label.build_app(tmp_path, True)):
-            pass
+            wait_for(asked)
 
         assert asked, "起動しても温めていない"
         assert Path(asked[0]).name == "c.png", "入力済みの名刺を温めている"
@@ -85,7 +100,7 @@ class TestItWarmsTheCardTheScreenOpens:
             (tmp_path / done).write_text("{}", encoding="utf-8")
 
         with TestClient(label.build_app(tmp_path, True)):
-            pass
+            wait_for(asked)
 
         assert asked and Path(asked[0]).name == "a.png"
 
