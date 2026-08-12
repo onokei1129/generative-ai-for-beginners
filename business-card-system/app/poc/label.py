@@ -1182,7 +1182,10 @@ PAGE = """
 // turns: 名刺ごとに利用者が回した角度（時計回りの合計）。向きの自動判定は
 // 外すことがあり、外した1枚は画像を見ながらの手入力ができない。押した分は
 // 名刺ごとに覚えて、前へ戻っても保つ。
-let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set(), timer: null, turns: {} };
+// ocrReady: 下書きが一度でも返ってきたか。OCRの読み取り機は最初の1枚で
+// モデルを読み込むため、その回の1枚目だけ待ち時間が桁違いになる。バーに
+// 出す文を分けるのに使う（`showBar` を参照）。
+let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set(), timer: null, turns: {}, ocrReady: false };
 
 async function boot() {
   const meta = await (await fetch('/api/files')).json();
@@ -1354,6 +1357,9 @@ async function show(i) {
     return;
   }
   if (state.index !== i) return;   // 待っている間に別の名刺へ移った
+  // 一度でも下書きが返れば、読み取り機のモデルは読み込み済み。以降の
+  // 待ち時間は桁が違うので、バーに出す文も変える（`showBar` を参照）。
+  state.ocrReady = true;
   document.getElementById('next').disabled = false;
 
   for (const f of state.fields) {
@@ -1395,6 +1401,17 @@ function showBar(seconds) {
   document.getElementById('ocrsec').textContent = seconds + '秒';
   // 20秒を超えたら、待たずに進められることだけ添える。バーの外に出すのは、
   // 中を秒数だけにしておくため（実テストで、長い文だと読み飛ばされた）。
+  //
+  // ただし**その回の1枚目だけは別の文にする**。OCRの読み取り機は最初の1枚で
+  // モデルを読み込む。実測で開発機 13秒、利用者の環境では45秒かかっており、
+  // そのあいだ画面は空欄のままになる。何が起きているか分からないため、
+  // 実テストでは「サーバーが落ちている」と受け取られた。2枚目からは先読みが
+  // 効いてほぼ待ち時間が無いので、そのことも併せて伝える。
+  if (seconds >= 5 && !state.ocrReady) {
+    slow.textContent = 'OCRの準備をしています（この回の1枚目だけ。45秒ほど）。'
+      + '2枚目からは待ち時間はほぼありません。';
+    return;
+  }
   slow.textContent = seconds >= 20
     ? '時間がかかっています。「スキップ」で次へ進めます。'
     : '';
