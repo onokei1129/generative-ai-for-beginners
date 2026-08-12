@@ -1262,18 +1262,44 @@ async function showImageError() {
     return;
   }
 
-  try {
-    const alive = await fetch('/api/files', { cache: 'no-store' });
-    if (alive.ok) {
-      box.textContent = '画像を表示できません（この1枚だけの問題です。入力は続けられます）';
-      return;
-    }
-  } catch (e) { /* 落ちている */ }
+  if (await serverIsAlive()) {
+    box.textContent = '画像を表示できません（この1枚だけの問題です。入力は続けられます）';
+    return;
+  }
 
   box.innerHTML = '<b>サーバーが応答していません。</b>'
     + 'このあとの名刺もすべて画像が出ません。'
     + '「ラベル付けを始める」の黒い画面を閉じて、もう一度開いてください。'
     + '（黒い画面の最後の行が原因の手がかりです）';
+}
+
+// サーバーが生きているか。落ちているのか、この1枚の問題なのかを分ける。
+async function serverIsAlive() {
+  try {
+    return (await fetch('/api/files', { cache: 'no-store' })).ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 下書きを取りに行く。**繋がらなかったときは一度だけ待って掛け直す。**
+//
+// 実テスト（版 0f9608c、7枚目）で、画像は出ているのに下書きだけが
+// `TypeError: Failed to fetch` になった。これは応答の中身の話ではなく、
+// 繋ぐこと自体に失敗している。画像が出ている以上サーバーは生きているので、
+// **一時的に応答しなかった**——見張り役がサーバーを立ち上げ直した直後なら、
+// 立ち上がるまでの数秒がこれにあたる。
+//
+// そのまま「取得できませんでした」と出すと、利用者は空欄から手入力する
+// しかない。掛け直せば済む場面なので、一度だけ待って試す。
+// 二度失敗したら諦めて、呼び出し元が理由を出す。
+async function askForLabel(url) {
+  try {
+    return await (await fetch(url)).json();
+  } catch (first) {
+    await new Promise(done => setTimeout(done, 2000));
+    return await (await fetch(url, { cache: 'no-store' })).json();
+  }
 }
 
 function imageUrl(name) {
@@ -1354,15 +1380,24 @@ async function show(i) {
   const url = '/api/label/' + encodeURIComponent(file.name) + '?draft=' + useDraft;
   let data;
   try {
-    data = await (await fetch(url)).json();
+    data = await askForLabel(url);
   } catch (e) {
     // 取れなくても手を止めない。空欄のまま入力できるようにする
     if (state.index !== i) return;
     if (state.timer) clearInterval(state.timer);
     showBar(null);
     document.getElementById('next').disabled = false;
-    src.textContent = 'OCRの結果を取得できませんでした。空欄から入力してください。';
+    // **サーバーが落ちているのかどうかを分けて出す。**
+    // 画像の側は前からこれを分けていたが、下書きの側は「取得できません
+    // でした」の一文だけだった。実テストでは、画像が出ているのに下書き
+    // だけが失敗する形で出ており、この一文からは何が起きたのか分から
+    // ない（サーバーが落ちて立ち上げ直した直後なのか、この1枚の問題なのか）。
+    src.textContent = 'OCRの結果を取得できませんでした。原因を調べています…';
     src.className = 'source warn';
+    src.textContent = (await serverIsAlive())
+      ? 'OCRの結果を取得できませんでした（この1枚だけの問題です）。空欄から入力してください。'
+      : 'サーバーが応答していません。「ラベル付けを始める」の黒い画面を閉じて、'
+        + 'もう一度開いてください。（黒い画面の最後の行が原因の手がかりです）';
     return;
   }
   if (state.index !== i) return;   // 待っている間に別の名刺へ移った

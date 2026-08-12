@@ -200,9 +200,11 @@ class TestSwitchingCards:
         _counting_ocr(monkeypatch)
         html = TestClient(build_app(cards, prefill=True)).get("/").text
 
+        # 頼む場所は下書きを取りに行く呼び出しで見る。取り方（掛け直しの
+        # 有無など）は変わりうるが、**消してから読む順番**がこの試験の内容。
         body = html[html.index("async function show("):]
         clearing = body.index("input.value = ''")
-        fetching = body.index("await fetch(url)")
+        fetching = body.index("askForLabel(url)")
 
         assert clearing < fetching, "値を消す前に読み込んでいる"
 
