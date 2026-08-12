@@ -984,28 +984,37 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         return JSONResponse({"ok": True, "moved": moved, "to": str(destination)})
 
     def warm_up_at_start() -> None:
-        """立ち上げたらすぐ、1枚目のOCRを裏で始める。
+        """立ち上げたらすぐ、**画面が最初に開く名刺**のOCRを裏で始める。
 
         先読みは「利用者が名刺を開いたら、その次の2枚を進める」作りなので、
-        **1枚目だけは誰も温めていなかった**。EasyOCR のモデルの読み込みが
+        最初の1枚だけは誰も温めていなかった。EasyOCR のモデルの読み込みが
         そこに乗る。実測（この機械）:
 
             easyocr（1回目・モデル読み込み込み）  16.2秒
             tesseract                              2.1秒
             併用ぜんぶ（2回目・温まった状態）      3.5秒
 
-        1枚目だけ十数秒かかり、画面は空欄のまま進まない。実テストでも最初に
-        「立ち上げ時に既にサーバが落ちている」と報告されており、記録にも
-        1枚目の画像だけが残って途切れた起動がある（08/04 12:00:57）。
+        温める名刺を間違えないこと
+        --------------------------
+        画面は**入力済みを飛ばして、最初の未入力の名刺**から開く
+        （`findIndex(f => !f.labeled)`）。ところが最初はフォルダの先頭を
+        温めており、入力済みの名刺を読んでいた。読み取り機は1本しかないので、
+        利用者が開いた名刺はその後ろに並ぶ。実テストで **45秒が65秒に
+        悪化した**（入力済み20枚、画面は3枚目から開く場合）:
 
-        起動と同時に始めれば、利用者がブラウザを開いて画面を見るまでの
-        あいだに済む。失敗しても起動は止めない——先読みは速くするための
-        仕掛けで、無くても動く。
+            起動 → 1枚目（入力済み）を温める   45秒
+                 → 画面が要求した3枚目が待つ  +20秒
+
+        温めるのは、画面が実際に開く1枚に合わせる。ずれると、待ち時間を
+        減らすつもりの仕掛けが待ち時間を増やす。
         """
         try:
-            first = next(
-                (p for p in image_files() if not _crashed_reason(p.name)), None
-            )
+            todo = [
+                p for p in image_files()
+                if not label_path(p).exists() and not _crashed_reason(p.name)
+            ]
+            # 全部入力済みなら画面は先頭を開く（`firstTodo` が無いときの動き）。
+            first = todo[0] if todo else next(iter(image_files()), None)
         except Exception:  # noqa: BLE001 - 温められなくても起動する
             return
         if first is None:

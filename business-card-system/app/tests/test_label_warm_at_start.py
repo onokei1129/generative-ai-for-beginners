@@ -50,6 +50,53 @@ class TestTheFirstCardIsWarmedAtStart:
         assert asked, "起動しても1枚目を温めていない"
         assert Path(asked[0]).name == "a.png"
 
+
+class TestItWarmsTheCardTheScreenOpens:
+    """画面は入力済みを飛ばす。温めるほうも合わせる。
+
+    合っていないと、読み取り機が1本しかないため、利用者が開いた名刺は
+    温めている名刺の後ろに並ぶ。実テストで **45秒が65秒に悪化した**
+    （入力済み20枚、画面は3枚目から開く場合）。
+    """
+
+    def test_it_skips_the_ones_already_labeled(self, tmp_path: Path, monkeypatch):
+        asked: list[str] = []
+        monkeypatch.setattr(
+            label, "run_in_child", lambda args: asked.append(args[1]) or {"fields": {}, "text": ""}
+        )
+        a_folder_of_cards(tmp_path, ["a.png", "b.png", "c.png"])
+        for done in ("a.json", "b.json"):
+            (tmp_path / done).write_text("{}", encoding="utf-8")
+
+        with TestClient(label.build_app(tmp_path, True)):
+            pass
+
+        assert asked, "起動しても温めていない"
+        assert Path(asked[0]).name == "c.png", "入力済みの名刺を温めている"
+
+    def test_all_labeled_falls_back_to_the_first(self, tmp_path: Path, monkeypatch):
+        """全部入力済みなら画面は先頭を開く。温めるほうも先頭にする。"""
+        asked: list[str] = []
+        monkeypatch.setattr(
+            label, "run_in_child", lambda args: asked.append(args[1]) or {"fields": {}, "text": ""}
+        )
+        a_folder_of_cards(tmp_path, ["a.png", "b.png"])
+        for done in ("a.json", "b.json"):
+            (tmp_path / done).write_text("{}", encoding="utf-8")
+
+        with TestClient(label.build_app(tmp_path, True)):
+            pass
+
+        assert asked and Path(asked[0]).name == "a.png"
+
+    def test_the_screen_and_the_warm_up_use_the_same_rule(self):
+        """画面側の選び方（入力済みを飛ばす）と食い違わせない。"""
+        source = (APP / "poc" / "label.py").read_text(encoding="utf-8")
+
+        assert "findIndex(f => !f.labeled)" in source, "画面側の選び方が変わっている"
+        body = source[source.index("def warm_up_at_start") : source.index("at_start.append")]
+        assert "label_path(p).exists()" in body, "温める側が入力済みを飛ばしていない"
+
     def test_an_empty_folder_does_not_break_startup(self, tmp_path: Path, monkeypatch):
         monkeypatch.setattr(label, "run_in_child", lambda args: {"fields": {}, "text": ""})
 
