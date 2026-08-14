@@ -56,7 +56,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
-def run_ocr(path: Path) -> dict:
+# その回の1枚目だと伝えられたときの合図と、そのとき使う軽い読み取り機。
+FIRST_CARD_HINT = "first"
+QUICK_PROVIDER = "tesseract"
+
+
+def provider_for(hint: str | None) -> str | None:
+    """1枚目の合図を、実際に使う読み取り機に直す。None は設定どおり。
+
+    落とすのは**併用構成のときだけ**。併用は EasyOCR のモデルを読み込むため
+    最初の1枚に実測45秒かかるが、それ以外の構成ではその読み込みが無いので、
+    落とす理由も無い。設定を無視して tesseract を強制すると、擬似OCRや
+    別のサービスを指定している環境まで置き換えてしまう。
+    """
+    if hint != FIRST_CARD_HINT:
+        return None
+
+    from bcards.config import settings
+    from bcards.services.ocr import COMBINED
+
+    if (settings.ocr_provider or "").lower() != COMBINED:
+        return None
+    return QUICK_PROVIDER
+
+
+def run_ocr(path: Path, hint: str | None = None) -> dict:
+    """1枚を読む。`hint` に1枚目の合図が来たら、軽い読み取り機で済ませる。"""
     from bcards.services.images import process_file
     from bcards.services.ocr import recognize_card
 
@@ -66,7 +91,7 @@ def run_ocr(path: Path) -> dict:
     if not cards:
         raise RuntimeError("画像を1枚も取り出せませんでした")
 
-    output, parsed = recognize_card(cards[0].ocr_image)
+    output, parsed = recognize_card(cards[0].ocr_image, provider_for(hint))
     return {
         "fields": {key: str(value or "") for key, value in parsed["fields"].items()},
         "text": output.text if output is not None else "",
@@ -184,7 +209,8 @@ def dispatch(mode: str, args: list[str]) -> dict:
     if mode == "ocr":
         if not args:
             raise BadRequest("ファイルが要ります")
-        return run_ocr(Path(args[0]))
+        hint = args[1] if len(args) > 1 else None
+        return run_ocr(Path(args[0]), hint)
     if mode == "image":
         if len(args) < 2:
             raise BadRequest("出力先が要ります")
