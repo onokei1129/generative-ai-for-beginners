@@ -372,6 +372,34 @@ def save_record(record: dict[str, dict], verdicts: list[Verdict], out: Path) -> 
         print(f"（記録を残せませんでした: {exc}）", file=sys.stderr)
 
 
+def write_or_warn(label: str, out: Path, write) -> bool:
+    """一覧を書き出す。書けなくても仕分けを失敗にしない。
+
+    実テストで、2回目の仕分けがこれで止まった:
+
+        PermissionError: [Errno 13] Permission denied: 'sort.md'
+        [エラー] 仕分けに失敗しました。
+
+    **判定も記録もコピーも終わったあと**の話で、失敗したのは一覧の書き出し
+    だけだった。それでも全体が失敗として終わり、次に動かすとまた同じところ
+    まで進んで同じ止まり方をする。
+
+    Windows では、そのファイルを別のソフトで開いていると書き込めない。
+    開き直せば済む話なので、理由と直し方を出して先へ進む。
+    """
+    try:
+        write(out)
+    except OSError as exc:
+        print(f"{label}を書き出せませんでした: {out}", file=sys.stderr)
+        print(f"  理由: {exc}", file=sys.stderr)
+        print("  そのファイルを別のソフト（Excel・エディタなど）で開いていませんか。", file=sys.stderr)
+        print("  閉じてからもう一度実行すると書き出せます。", file=sys.stderr)
+        print("  **仕分け自体は終わっています**（判定・記録・コピーは済んでいます）。", file=sys.stderr)
+        return False
+    print(f"{label}: {out}")
+    return True
+
+
 def write_csv(verdicts: list[Verdict], out: Path) -> None:
     with out.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
@@ -568,11 +596,11 @@ def main() -> int:
         print(f"  PYTHONPATH=src .venv/bin/python poc/runner.py --real {dest} --out real.md")
 
     if args.csv:
-        write_csv(verdicts, Path(args.csv))
-        print(f"CSV: {args.csv}")
+        write_or_warn("CSV", Path(args.csv), lambda out: write_csv(verdicts, out))
     if args.report:
-        write_report(verdicts, Path(args.report), source)
-        print(f"レポート: {args.report}")
+        write_or_warn(
+            "レポート", Path(args.report), lambda out: write_report(verdicts, out, source)
+        )
 
     return 0
 

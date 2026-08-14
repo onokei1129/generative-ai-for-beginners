@@ -165,3 +165,78 @@ class TestTheRecordSurvivesTrouble:
         entry = next(iter(kept.values()))
         assert entry["label"] == "business_card"
         assert "size" in entry and "mtime" in entry
+
+
+class TestALockedOutputDoesNotFailTheRun:
+    """一覧を書けなくても、仕分けは失敗にしない。
+
+    実テストで、2回目の仕分けがこれで止まった:
+
+        PermissionError: [Errno 13] Permission denied: 'sort.md'
+        [エラー] 仕分けに失敗しました。
+
+    判定も記録もコピーも終わったあとの話で、失敗したのは一覧の書き出しだけ
+    だった。それでも全体が失敗として終わっていた。Windows では、そのファイルを
+    別のソフトで開いていると書き込めない。
+    """
+
+    def locked(self, tmp_path: Path) -> Path:
+        out = tmp_path / "sort.md"
+        out.write_text("開いたまま", encoding="utf-8")
+        return out
+
+    def test_it_keeps_going(self, tmp_path: Path, monkeypatch):
+        source = tmp_path / "scans"
+        source.mkdir()
+        a_scan(source / "a.png")
+        record = tmp_path / "記録.json"
+        report = self.locked(tmp_path)
+
+        def denied(_: Path) -> None:
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(classify, "write_report", lambda *a, **k: denied(report))
+
+        # 例外で終わらず、判定は行われる。
+        assert run(source, record, "--report", str(report)) == ["a.png"]
+
+    def test_the_record_is_still_kept(self, tmp_path: Path, monkeypatch):
+        """記録が残らないと、次に動かしてまた全件を判定し直すことになる。"""
+        source = tmp_path / "scans"
+        source.mkdir()
+        a_scan(source / "a.png")
+        record = tmp_path / "記録.json"
+        report = self.locked(tmp_path)
+
+        monkeypatch.setattr(
+            classify,
+            "write_report",
+            lambda *a, **k: (_ for _ in ()).throw(PermissionError(13, "Permission denied")),
+        )
+        run(source, record, "--report", str(report))
+
+        assert record.exists(), "記録が残っていない"
+
+    def test_it_says_what_to_do(self, tmp_path: Path, capsys):
+        out = tmp_path / "sort.md"
+
+        def denied(_: Path) -> None:
+            raise PermissionError(13, "Permission denied")
+
+        assert classify.write_or_warn("レポート", out, denied) is False
+        said = capsys.readouterr().err
+        assert "開いていませんか" in said, "直し方を出していない"
+        assert "仕分け自体は終わっています" in said, "何が終わったのかを出していない"
+
+    def test_a_real_unwritable_path_is_caught(self, tmp_path: Path):
+        """作り物の失敗だけでなく、実際に書けない先でも止まらないこと。"""
+        source = tmp_path / "scans"
+        source.mkdir()
+        a_scan(source / "a.png")
+        record = tmp_path / "記録.json"
+        # フォルダを書き出し先に指定すると、実際に書き込みが失敗する。
+        blocked = tmp_path / "フォルダ"
+        blocked.mkdir()
+
+        assert run(source, record, "--report", str(blocked)) == ["a.png"]
+        assert record.exists(), "記録が残っていない"
