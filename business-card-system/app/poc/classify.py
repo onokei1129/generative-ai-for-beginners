@@ -22,12 +22,25 @@ ScanSnap の保存先のように名刺・領収書・その他の書類が同�
 
 **不明** に落ちたものは人が見て振り分ける前提。誤って領収書を名刺として
 処理するより、迷ったら人に投げるほうが安全なため、閾値は控えめにしてある。
+
+## 増えたぶんだけを見る
+
+スキャンフォルダは増えていく一方で、既にあるファイルの中身は変わらない。
+それを毎回すべて判定し直していたため、数枚足すだけでも全件ぶんの時間を
+待つことになっていた（1枚に数秒、実テストでは200枚を超えている）。
+
+前回の判定を `poc/仕分けの記録.json` に残し、大きさと更新時刻が変わって
+いないファイルは判定を省く。CSVとレポートには省いたぶんも含めて**全件**を
+出すので、全体を見る用途はこれまでどおり使える。
+
+判定の仕組みを変えたときは `--recheck` で全件を判定し直す。
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import re
 import shutil
 import sys
@@ -282,6 +295,83 @@ def collect_files(directory: Path, recursive: bool) -> list[Path]:
     )
 
 
+# 前回の判定を覚えておく先。
+#
+# スキャンフォルダは増えていく一方で、中身は変わらない。それを毎回すべて
+# 判定し直していた。1枚に数秒かかるので、数枚足すたびに全件ぶんの時間を
+# 待つことになる（実テストでは200枚を超えている）。
+RECORD_NAME = "仕分けの記録.json"
+RECORD_PATH = Path(__file__).resolve().parent / RECORD_NAME
+
+
+def file_mark(path: Path) -> dict:
+    """同じファイルかどうかを見分ける印。大きさと更新時刻で見る。
+
+    中身を読んで指紋を取る手もあるが、判定を省くために全件を読むのでは
+    本末転倒になる。取り込んだファイルは書き換わらないので、大きさと
+    更新時刻が変わっていなければ同じものとして扱ってよい。差し替えられた
+    場合は更新時刻が変わるため、判定し直しになる。
+    """
+    info = path.stat()
+    return {"size": info.st_size, "mtime": int(info.st_mtime)}
+
+
+def load_record(path: Path) -> dict[str, dict]:
+    """前回までの判定を読む。読めなければ空で始める（判定し直すだけ）。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 記録が無い・壊れていても止めない
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def remembered(record: dict[str, dict], path: Path) -> Verdict | None:
+    """前回と同じファイルなら、そのときの判定を返す。違えば None。"""
+    kept = record.get(str(path.resolve()))
+    if not kept:
+        return None
+    try:
+        if {"size": kept["size"], "mtime": kept["mtime"]} != file_mark(path):
+            return None
+    except (KeyError, OSError):
+        return None
+    return Verdict(
+        path=path,
+        label=kept.get("label", "unknown"),
+        score=float(kept.get("score", 0.0)),
+        width=int(kept.get("width", 0)),
+        height=int(kept.get("height", 0)),
+        ratio=float(kept.get("ratio", 0.0)),
+        reasons=list(kept.get("reasons", [])),
+        error=kept.get("error", ""),
+    )
+
+
+def save_record(record: dict[str, dict], verdicts: list[Verdict], out: Path) -> None:
+    """判定を記録へ足す。読めた文字は残さない（CSVにも出さないため）。"""
+    for verdict in verdicts:
+        try:
+            mark = file_mark(verdict.path)
+        except OSError:
+            continue
+        record[str(verdict.path.resolve())] = {
+            **mark,
+            "label": verdict.label,
+            "score": verdict.score,
+            "width": verdict.width,
+            "height": verdict.height,
+            "ratio": verdict.ratio,
+            "reasons": verdict.reasons,
+            "error": verdict.error,
+        }
+    try:
+        out.write_text(
+            json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
+    except OSError as exc:  # noqa: BLE001 - 残せなくても仕分けは終わっている
+        print(f"（記録を残せませんでした: {exc}）", file=sys.stderr)
+
+
 def write_csv(verdicts: list[Verdict], out: Path) -> None:
     with out.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
@@ -368,6 +458,16 @@ def main() -> int:
     parser.add_argument("--recursive", action="store_true", help="サブフォルダも対象にする")
     parser.add_argument("--no-ocr", action="store_true", help="OCRを使わず形状だけで判定する（高速だが精度は落ちる）")
     parser.add_argument("--limit", type=int, default=0, help="先頭N件だけ処理する（動作確認用）")
+    parser.add_argument(
+        "--record",
+        default=str(RECORD_PATH),
+        help=f"前回の判定を覚えておくファイル（既定: poc/{RECORD_NAME}）",
+    )
+    parser.add_argument(
+        "--recheck",
+        action="store_true",
+        help="前回の判定を使わず、全件を判定し直す（判定の仕組みを変えたとき）",
+    )
     args = parser.parse_args()
 
     source = Path(args.directory).expanduser()
@@ -386,9 +486,27 @@ def main() -> int:
         print(f"対象ファイルがありません（{'/'.join(IMAGE_SUFFIXES)}）: {source}", file=sys.stderr)
         return 2
 
+    # 前回の判定を使い、増えたぶんだけを見る。
+    #
+    # スキャンフォルダは増えていく一方で、既にあるファイルの中身は変わらない。
+    # それを毎回すべて判定し直していたため、数枚足すたびに全件ぶんの時間を
+    # 待つことになっていた（1枚に数秒、実テストでは200枚を超えている）。
+    record_path = Path(args.record).expanduser()
+    record = {} if args.recheck else load_record(record_path)
+    known: list[Verdict] = []
+    todo: list[Path] = []
+    for path in files:
+        before = None if args.recheck else remembered(record, path)
+        (known.append(before) if before is not None else todo.append(path))
+
+    if known:
+        print(f"前回の判定を使います: {len(known)} 件（{record_path}）")
+    if not todo:
+        print("増えたファイルはありません。")
+
     # 判定を始める前にOCRが動くか確かめる。動かないまま全件を形状だけで判定すると、
     # 縦横比が名刺に近い領収書がそのまま名刺として通ってしまう。
-    if not args.no_ocr:
+    if todo and not args.no_ocr:
         try:
             probe_ocr()
         except OcrUnavailable as exc:
@@ -402,16 +520,27 @@ def main() -> int:
             print("  （その場合、名刺と断定はせず『不明』が増えます）。", file=sys.stderr)
             return 2
 
-    print(f"{len(files)} 件を判定します...")
-    verdicts: list[Verdict] = []
-    for index, path in enumerate(files, start=1):
+    if todo:
+        print(f"{len(todo)} 件を判定します...")
+    fresh: list[Verdict] = []
+    for index, path in enumerate(todo, start=1):
         try:
             verdict = classify_file(path, use_ocr=not args.no_ocr)
         except OcrUnavailable as exc:
             print(f"途中でOCRが使えなくなりました: {exc}", file=sys.stderr)
+            # ここまでの判定は記録へ残す。次に動かしたとき、また同じところ
+            # までやり直させない。
+            save_record(record, fresh, record_path)
             return 2
-        verdicts.append(verdict)
-        print(f"  [{index}/{len(files)}] {path.name}: {verdict.label_ja}（{verdict.score:+.1f}）")
+        fresh.append(verdict)
+        print(f"  [{index}/{len(todo)}] {path.name}: {verdict.label_ja}（{verdict.score:+.1f}）")
+
+    save_record(record, fresh, record_path)
+
+    # CSVとレポートには**全件**を出す。判定を省いたぶんも含めないと、
+    # 「増えたぶんだけの一覧」になってしまい、全体を見る用に使えない。
+    order = {path: index for index, path in enumerate(files)}
+    verdicts = sorted(known + fresh, key=lambda v: order.get(v.path, 0))
 
     counts = {key: sum(1 for v in verdicts if v.label == key) for key in ("business_card", "receipt", "unknown")}
     print()
@@ -421,14 +550,20 @@ def main() -> int:
         dest = Path(args.copy_to).expanduser()
         dest.mkdir(parents=True, exist_ok=True)
         copied = 0
-        for verdict in verdicts:
+        # **今回判定したぶんだけコピーする。**
+        #
+        # 以前は毎回すべてコピーし直していた。ラベル入力の画面で「これは
+        # 名刺ではない」と外した1枚は not-cards へ移されるが、次に仕分けを
+        # 動かすと同じファイルが戻ってきてしまう。外した判断が消えるうえ、
+        # 同じ1枚を何度も突き返されることになる。
+        for verdict in fresh:
             if verdict.label == "business_card":
                 shutil.copy2(verdict.path, dest / verdict.path.name)
                 copied += 1
             elif verdict.label == "unknown" and args.copy_unknown:
                 (dest / "unknown").mkdir(exist_ok=True)
                 shutil.copy2(verdict.path, dest / "unknown" / verdict.path.name)
-        print(f"{copied} 件を {dest} へコピーしました。")
+        print(f"{copied} 件を {dest} へコピーしました（今回判定したぶん）。")
         print("PoCに掛ける場合は、各画像に同名の .json（正解ラベル）を用意してから")
         print(f"  PYTHONPATH=src .venv/bin/python poc/runner.py --real {dest} --out real.md")
 

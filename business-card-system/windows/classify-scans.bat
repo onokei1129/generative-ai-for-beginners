@@ -40,6 +40,8 @@ echo 読み込み元: !SCANDIR!
 echo 書き出し先: %CD%\poc\real-cards
 echo.
 echo 判定には1枚あたり数秒かかります。枚数が多い場合はしばらくお待ちください。
+echo 2回目からは、前回から増えたぶんだけを判定します。
+echo 　（判定の仕組みを変えたときは全件を見直します）
 echo.
 
 .venv\Scripts\python poc\classify.py "!SCANDIR!" --copy-to .\poc\real-cards --copy-unknown --csv sort.csv --report sort.md
