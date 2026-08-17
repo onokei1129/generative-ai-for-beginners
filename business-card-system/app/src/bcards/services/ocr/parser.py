@@ -10,6 +10,8 @@ import re
 import unicodedata
 from typing import Any
 
+from .romaji import name_to_hiragana
+
 # 語を空白で区切らない文字（かな・漢字・全角記号）。この間の空白はOCRの癖。
 # ハングルとキリル文字は語を空白で区切るため含めない。
 CJK = (
@@ -1721,6 +1723,81 @@ def split_person_name(full: str) -> tuple[str, str]:
     return text, ""
 
 
+def _fill_kana_from_romaji(
+    fields: dict[str, Any],
+    confidence: dict[str, float],
+    lines: list[str],
+    spaced_lines: list[str],
+    used: set[int],
+    name_index: int | None,
+) -> None:
+    """氏名の脇に刷られたローマ字を、ふりがなにする。
+
+    日本の名刺は、ふりがなの位置にローマ字を刷ることが多い。
+
+        木村 央志
+        Nakaji Kimura          ← ふりがなの位置
+
+    ここまでの処理は「ひらがなだけの行」からしかふりがなを取らないので、
+    この形の名刺はふりがなが空欄のままだった。実テスト（223枚）ではこの
+    形が多く、そのぶんがすべて手入力になっていた。
+
+    変換そのものは `services/ocr/romaji` にある。長音が落ちて刷られるため
+    素朴な変換の実測は74%で、外れるのは 佐藤（さと）・太郎（たろ）のような
+    **漢字を見れば読みが分かる**名前。当たるのは 央志＝なかじ のような
+    **ローマ字が唯一の手がかり**である珍しい読み。画面では未確認（黄色）で
+    出るので、誤りは気づける側に寄る。
+
+    **漢字かなの氏名が取れているときだけ掛ける。** ローマ字の変換は
+    `Mike`（みけ）`Kate`（かて）のような英語名も通してしまう。外国名の
+    名刺（`Patricio Vasquez` `German Kurnikov`）でふりがなを埋めると、
+    読みでない綴りが登録される。同じ名刺に漢字かなの氏名があることが、
+    そのローマ字が日本語の音写である証拠になる。
+
+    確度は 0.5。印字されたふりがな（0.7）より弱い——読み取った文字では
+    なく、そこから導いたものなので。
+    """
+    if not _has_japanese(f"{fields['last_name']}{fields['first_name']}"):
+        return
+
+    found: list[tuple[int, int, str, str]] = []
+    for index, line in enumerate(lines):
+        if index in used or _has_japanese(line):
+            continue
+        if not _looks_like_person_name(line, fields["email"]):
+            continue
+        # 姓は最後の語（`split_person_name` を参照）。`Nakaji Kimura` は
+        # 姓=Kimura・名=Nakaji で、漢字の 木村／央志 と並びが逆になる。
+        last, first = split_person_name(spaced_lines[index])
+        last_kana, first_kana = name_to_hiragana(last), name_to_hiragana(first)
+        # 片方だけ入れない。姓と名がずれたふりがなは、空欄より悪い。
+        if not last_kana or not first_kana:
+            continue
+        away = abs(index - name_index) if name_index is not None else index
+        found.append((away, index, last_kana, first_kana))
+
+    if not found:
+        return
+    # 氏名の行にいちばん近いものを採る。
+    #
+    # **地名は綴りでは弾けない。** `Shibuya Tokyo` も日本語のローマ字なので
+    # きれいに変換でき、しぶや／ときょ がふりがなに入っていた。語彙で弾く
+    # 手も使えない——千葉・足立・太田・中野・目黒・荒川・品川は、どれも
+    # 区名であると同時に実在の姓で、落とせば本物の氏名を巻き添えにする。
+    #
+    # 位置で分けるしかない。ローマ字の氏名は氏名の脇に刷られ、住所の断片は
+    # 住所の塊の中にある。実テスト24枚目では氏名の4行あと（読み取りの行の
+    # 順番は印字の順番と違うので、隣とは限らない）。
+    #
+    # これでも住所の断片が氏名のすぐ脇に来れば入る。画面では未確認（黄色）
+    # で出るので直せるが、**取りこぼしではなく誤りとして残る**ことは承知
+    # のうえで採っている。
+    _, index, last_kana, first_kana = min(found)
+    fields["last_name_kana"], fields["first_name_kana"] = last_kana, first_kana
+    confidence["last_name_kana"] = 0.5
+    used.add(index)
+
+
 def parse_fields(lines: list[str]) -> dict[str, Any]:
     """OCRの行リストから名刺項目を抽出する。"""
     # spaced: 空白を残したまま正規化した行。氏名・ふりがなの分割に使う。
@@ -2414,6 +2491,10 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             confidence["last_name_kana"] = 0.7
             used.add(index)
             break
+
+    # ふりがなの位置にローマ字が刷られている名刺。
+    if not fields["last_name_kana"] and not fields["first_name_kana"]:
+        _fill_kana_from_romaji(fields, confidence, cleaned, spaced_lines, used, name_index)
 
     # ロゴ・QRコード・飾り罫が英数字1〜4文字として読まれ、項目の前後に付く。
     # 実データでは会社名が `© 沖縄県東京事務所`、住所が
