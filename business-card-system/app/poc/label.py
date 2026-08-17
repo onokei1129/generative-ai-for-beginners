@@ -1362,6 +1362,10 @@ async function show(i) {
   document.getElementById('filename').textContent = file.name;
   document.getElementById('imgerror').textContent = '';
   document.getElementById('ocrtext').textContent = '';
+  // 「この1枚を調べる」の書き出し案内も消す。残すと**別の名刺のファイルを
+  // 送らせる**——実テストの画面では、24枚目（Donuts）を見ているのに
+  // 19枚目（迎 亮一）の書き出しファイルを送るよう案内されていた。
+  document.getElementById('inspected').textContent = '';
   // 前の名刺の画像を消してから頼む。`src` を差し替えるだけでは**新しい画像が
   // 届くまで前の画像が出たまま**になる。欄は先に返るので、その間ずれて見える
   // ——実テストの21枚目では、欄が『高岡 徹』なのに画像は前の名刺のままだった。

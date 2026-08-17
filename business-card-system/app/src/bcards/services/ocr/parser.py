@@ -570,6 +570,11 @@ TITLE_TAIL_WORDS = (
     "格",
 )
 
+# 漢字（と踊り字）だけでできた行と、そのときの氏名の長さの上限。
+# 由来は `_looks_like_person_name` の説明を参照。
+KANJI_ONLY_RE = re.compile(r"[一-龥々〆]+")
+MAX_KANJI_NAME = 8
+
 
 # 横棒に見えて、日本語の語の中には出てこない文字。ASCII のハイフンへ寄せる。
 #
@@ -1511,6 +1516,27 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     # の氏名はもっと長い（実データの `ANA FERNANDEZ DEL RIO` は空白を除いて
     # 18文字あり、12文字で切っていたため氏名が空になっていた）。
     if len(text) > (12 if _has_japanese(text) else 32):
+        return False
+    # 漢字だけの行には、さらに短い上限を置く。
+    #
+    # 12文字という上限は、かなで書く外国名（`オロブスキー スタニスラフ`）に
+    # 合わせたもの。漢字の氏名はそこまで長くならない。姓は最長でも5文字
+    # （`勘解由小路` `左衛門三郎`）で、実際に多いのは4文字まで（`小比類巻`
+    # `勅使河原`）。名を足しても8文字を超えることはまず無い。
+    #
+    # 空いた4文字ぶんに職名が入っていた。実テスト19枚目（沖縄労働局）:
+    #
+    #     印字        需給調整事業専門相談員
+    #     tesseract   需給 調整 事業 専門 相談      ← 末尾の「員」が落ちる
+    #     → 姓『需給調整事業』／名『専門相談』
+    #
+    # 「員」が読めていれば役職の語尾（`TITLE_TAIL_WORDS`）で弾けたが、
+    # 1文字落ちただけで氏名になっていた。**姓が6文字の日本人はいない**ので、
+    # 語に頼らず長さで断てる。
+    #
+    # かなを1文字でも含む行はこの上限を使わない（`オロブスキー` のような
+    # 音写の氏名を巻き添えにしないため）。
+    if len(text) > MAX_KANJI_NAME and KANJI_ONLY_RE.fullmatch(text):
         return False
     if any(keyword in line for keyword in COMPANY_KEYWORDS + TITLE_KEYWORDS + DEPARTMENT_KEYWORDS):
         return False
