@@ -98,3 +98,46 @@ class TestTheSlogan:
         got = parse_fields(["株式会社サンプル", "とみた", "おさむ", "冨田 修"])["fields"]
 
         assert (got["last_name_kana"], got["first_name_kana"]) == ("とみた", "おさむ")
+
+
+class TestTheSloganCanComeInEitherOrder:
+    """標語の2行は、順番が入れ替わって読まれることがある。
+
+    実テスト19枚目（沖縄労働局）のロゴの標語で、tesseract が逆順に読んでいた:
+
+        印字        ひと、くらし、
+                    みらいのために
+
+        tesseract   みらい の た め に      ← こちらが先
+                    ひと 、 く らし 、       ← 読点で終わる行が後ろ
+
+    歯止めは手前しか見ていなかったため、この向きでは効かず、
+    せい『みらいの』／めい『ために』としてふりがなに入っていた。
+    """
+
+    TESSERACT = [
+        "沖縄 労働 局 HRA EB",
+        "う",
+        "給 調整 事業 室",
+        "みらい の た め に",
+        "ひと 、 く らし 、",
+        "給 調 整 事業 専門 相談 買",
+        "〒900-0006",
+        "E-mail : mukai-ryouichipm3@mhlw.go.jp",
+    ]
+
+    def test_the_slogan_does_not_become_a_reading(self):
+        got = parse_fields(self.TESSERACT)["fields"]
+
+        assert got["last_name_kana"] == ""
+        assert got["first_name_kana"] == ""
+
+    def test_the_same_holds_when_the_order_is_printed(self):
+        """印字どおりの順番でも、これまでどおり除外する。"""
+        printed = list(self.TESSERACT)
+        printed[3], printed[4] = printed[4], printed[3]
+
+        got = parse_fields(printed)["fields"]
+
+        assert got["last_name_kana"] == ""
+        assert got["first_name_kana"] == ""

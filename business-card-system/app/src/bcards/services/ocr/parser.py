@@ -811,19 +811,46 @@ def _continues_into_next_line(text: str) -> bool:
     return bool(re.search(r"\d", stripped)) and len(stripped.split()) >= 2
 
 
-def _follows_an_unfinished_sentence(lines: list[str], index: int) -> bool:
-    """その行が、読点で終わったひらがなの文の続きか。
+def _nearest_hiragana_line(lines: list[str], index: int, step: int) -> str | None:
+    """その向きで最初に見つかるひらがなの行。無ければ None。"""
+    at = index + step
+    while 0 <= at < len(lines):
+        line = lines[at]
+        if line and (_is_hiragana_only(line) or _is_hiragana_sentence(line)):
+            return line
+        at += step
+    return None
 
-    手前をさかのぼり、**最初に見つかるひらがなだけの行**を見る。それが
-    読点で終わっていれば、この行はその文の続き。ひらがなの行が見つかる
-    前に別のひらがなの行があれば、そちらが続きなので打ち切る。
+
+def _belongs_to_a_slogan(lines: list[str], index: int) -> bool:
+    """その行が、読点で終わったひらがなの文の一部か。
+
+    **前後の両方を見る。** 読み取り機が返す行の順番は印字の順番と違い、
+    標語の2行が入れ替わることがある。実テスト19枚目（沖縄労働局）の
+    ロゴの標語では、tesseract が逆順に読んでいた:
+
+        印字        ひと、くらし、
+                    みらいのために
+
+        tesseract   みらい の た め に      ← こちらが先
+                    ひと 、 く らし 、       ← 読点で終わる行が後ろ
+
+    手前しか見ていなかったため、この向きでは歯止めが効かず、
+    せい『みらいの』／めい『ために』としてふりがなに入っていた。
+
+    どちらの向きでも、**最初に見つかるひらがなの行**だけを見る。間に別の
+    ひらがなの行があれば、そちらが続きなので打ち切る。
     """
-    for before in range(index - 1, -1, -1):
-        line = lines[before]
-        if not line or not _is_hiragana_only(line) and not _is_hiragana_sentence(line):
-            continue
-        return _is_hiragana_sentence(line) and bool(re.search(r"[、,；;・]$", line))
-    return False
+    def unfinished(line: str | None) -> bool:
+        return bool(
+            line
+            and _is_hiragana_sentence(line)
+            and re.search(r"[、,；;・]$", line)
+        )
+
+    return unfinished(_nearest_hiragana_line(lines, index, -1)) or unfinished(
+        _nearest_hiragana_line(lines, index, 1)
+    )
 
 
 def _is_hiragana_sentence(text: str) -> bool:
@@ -2345,17 +2372,11 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
             # 落ちた）。見るのは前の行だけにする。
             if index > 0 and _is_hiragana_sentence(cleaned[index - 1]):
                 continue
-            # 前の行が入れ替わっていることがある。標語が2段組みの行に入って
-            # いると、段に切った時点で右段が「前の行」になる（実テスト 18枚目）。
-            #
-            #     ひと 、 くら し 、   電 給 調 EE
-            #     みらい の だ め に
-            #        ↓ 段に切ると
-            #     ひと、くらし、 / 電給調EE / みらいのだめに
-            #
-            # `、` で終わるひらがなの行は、そこで終わっていない文。**次に来る
-            # ひらがなの行は、間に何行挟まっていても続き**とみなす。
-            if _follows_an_unfinished_sentence(cleaned, index):
+            # 標語の2行は、順番が入れ替わって読まれることがある（実テスト
+            # 19枚目では tesseract が逆順に読んでいた）。段組みでも同じことが
+            # 起きる（実テスト18枚目）。`、` で終わるひらがなの行はそこで
+            # 終わっていない文なので、**その前後のひらがなの行は続き**とみなす。
+            if _belongs_to_a_slogan(cleaned, index):
                 continue
             last, first = split_person_name(spaced_lines[index])
             # 姓の読みが1文字の氏名は無い。1文字になるのは、ひらがなに見えた
