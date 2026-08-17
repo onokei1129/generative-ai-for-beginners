@@ -682,6 +682,9 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             ],
             "files": rows,
             "prefill": prefill,
+            # 落ちたときに送っていただく記録の在り処。**生きているうちに**
+            # 渡しておく。落ちてから訊きに行っても繋がらない。
+            "logs": [str(LOG_PATH), str(CRASH_PATH)],
         })
 
     @app.get("/api/image/{name}")
@@ -1226,13 +1229,16 @@ PAGE = """
 // drafts: この回に下書きが返ってきた数。OCRの読み取り機はモデルの読み込みに
 // 時間がかかり、その回の最初のうちだけ待ち時間が桁違いになる。バーに出す文を
 // 分けるのに使う（`showBar` を参照）。
-let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set(), timer: null, turns: {}, drafts: 0 };
+// logs: 落ちたときに送っていただく記録の在り処。落ちてからでは訊きに行けない
+// ので、生きているうちに控えておく（`serverDied` を参照）。
+let state = { files: [], fields: [], index: 0, prefill: false, unverified: new Set(), timer: null, turns: {}, drafts: 0, logs: [] };
 
 async function boot() {
   const meta = await (await fetch('/api/files')).json();
   state.fields = meta.fields;
   state.files = meta.files;
   state.prefill = meta.prefill;
+  state.logs = meta.logs || [];
   document.getElementById('version').textContent = '版 ' + (meta.version || '不明');
   const draftBox = document.getElementById('draft');
   draftBox.checked = meta.prefill;
@@ -1299,10 +1305,28 @@ async function showImageError() {
     return;
   }
 
-  box.innerHTML = '<b>サーバーが応答していません。</b>'
-    + 'このあとの名刺もすべて画像が出ません。'
-    + '「ラベル付けを始める」の黒い画面を閉じて、もう一度開いてください。'
-    + '（黒い画面の最後の行が原因の手がかりです）';
+  box.textContent = serverDiedNotice('このあとの名刺もすべて画像が出ません。');
+}
+
+// サーバーが落ちたときの案内。**記録の在り処を必ず添える。**
+//
+// 以前は「黒い画面の最後の行が原因の手がかりです」とだけ出していた。同じ
+// 一文で「閉じてください」と案内しているので、そのとおりにすると**手がかり
+// は消える**。実テストでは、落ちた回の記録が3度お願いしても届かなかった。
+//
+// 記録は2つのファイルにも残る。こちらは黒い画面を閉じても消えない。
+//
+// 在り処は起動時に受け取って控えてある（`boot`）。落ちてから訊きに行っても
+// 繋がらない——実テスト24枚目では、この状態で「この1枚を調べる」を押して
+// `TypeError: Failed to fetch` になっていた。
+function serverDiedNotice(extra) {
+  let text = 'サーバーが応答していません。' + (extra || '')
+    + '「ラベル付けを始める」の黒い画面を閉じて、もう一度開いてください。';
+  if (state.logs.length) {
+    text += ' 原因の記録は次のファイルに残ります（黒い画面を閉じても消えません）。'
+      + 'これを送っていただけると原因を追えます: ' + state.logs.join('　/　');
+  }
+  return text;
 }
 
 // サーバーが生きているか。落ちているのか、この1枚の問題なのかを分ける。
@@ -1432,8 +1456,7 @@ async function show(i) {
     src.className = 'source warn';
     src.textContent = (await serverIsAlive())
       ? 'OCRの結果を取得できませんでした（この1枚だけの問題です）。空欄から入力してください。'
-      : 'サーバーが応答していません。「ラベル付けを始める」の黒い画面を閉じて、'
-        + 'もう一度開いてください。（黒い画面の最後の行が原因の手がかりです）';
+      : serverDiedNotice();
     return;
   }
   if (state.index !== i) return;   // 待っている間に別の名刺へ移った
@@ -1596,7 +1619,11 @@ document.getElementById('inspect').onclick = async () => {
       ? '書き出しました: ' + data.path + '　このファイルを送ってください。'
       : '書き出せませんでした: ' + (data.error || '');
   } catch (err) {
-    note.textContent = '書き出せませんでした: ' + err;
+    // `TypeError: Failed to fetch` は**サーバーが落ちている印**。そのまま
+    // 出しても利用者には読めない（実テスト24枚目の画面がこれだった）。
+    note.textContent = (await serverIsAlive())
+      ? '書き出せませんでした: ' + err
+      : serverDiedNotice();
   }
 };
 // 保存済みの札は下書きを作っていないので、欄を開いたときにだけ読みに行く。

@@ -57,7 +57,15 @@ class TestItSaysWhichKindOfFailure:
         assert "await serverIsAlive()" in label.PAGE, "下書きの失敗で確かめていない"
 
     def test_it_tells_them_the_server_is_down(self):
-        assert "サーバーが応答していません。「ラベル付けを始める」" in label.PAGE
+        """落ちているときの案内を出す。
+
+        文言は1か所（`serverDiedNotice`）にまとめてある——画像・下書き・
+        書き出しの3か所で書き分けると、直しが片方に残る。文の並びではなく
+        **その案内を使っているか**を見る。
+        """
+        assert "function serverDiedNotice(" in label.PAGE
+        assert "サーバーが応答していません" in label.PAGE
+        assert label.PAGE.count("serverDiedNotice") >= 2, "案内を使っていない"
 
     def test_it_tells_them_it_is_just_this_card(self):
         assert "この1枚だけの問題です）。空欄から入力してください。" in label.PAGE
