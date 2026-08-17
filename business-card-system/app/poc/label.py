@@ -279,6 +279,116 @@ def _log_step(what: str) -> None:
         pass
 
 
+# 生きているあいだ、時刻を上書きし続ける小さなファイル。
+#
+# 記録（ラベル入力ログ.txt）に残るのは**名刺の処理だけ**で、画面が繋がらなく
+# なれば処理は来ない。つまり次の2つで記録は同じところで止まり、区別できない。
+#
+#     ア  プロセスごと外から止められた（窓を閉じた／終了させられた）
+#     イ  生きているが応答しない
+#
+# 実テスト（08/17）の記録では、`--- 終了 ---`（atexit）も
+# `サーバーが落ちました`（見張り役）も無く、`落ちた記録.txt`（faulthandler）
+# も空だった。つまり見張り役とサーバーが一緒に、Python の後始末を1行も
+# 通さずに止まっている。そこまでは分かるが、アとイは分けられない。
+#
+# この印の時刻が進み続けていればイ、止まっていればア。
+ALIVE_PATH = Path(__file__).resolve().parent / "動いている印.txt"
+
+_heartbeat_thread = None
+
+
+def memory_in_use() -> int | None:
+    """このプロセスが使っているメモリ（MB）。測れなければ None。
+
+    測れない環境で落ちては本末転倒なので、失敗は黙って None にする。
+    追加の依存は入れない（psutil は使わない）。
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            class Counters(ctypes.Structure):
+                _fields_ = [
+                    ("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            counters = Counters()
+            counters.cb = ctypes.sizeof(Counters)
+            handle = ctypes.windll.kernel32.GetCurrentProcess()
+            if not ctypes.windll.psapi.GetProcessMemoryInfo(
+                handle, ctypes.byref(counters), counters.cb
+            ):
+                return None
+            return int(counters.WorkingSetSize) // (1024 * 1024)
+
+        import resource
+
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # Linux は KB、macOS はバイトで返す。
+        return int(peak) // (1024 if sys.platform != "darwin" else 1024 * 1024)
+    except Exception:  # noqa: BLE001 - 測れなくても本筋を止めない
+        return None
+
+
+def note_alive() -> None:
+    """生きている印を**上書き**する。追記しない（際限なく増えるため）。"""
+    import datetime
+
+    stamp = datetime.datetime.now().strftime("%m/%d %H:%M:%S")
+    used = memory_in_use()
+    line = f"{stamp}  版 {_RUNNING_VERSION}"
+    if used is not None:
+        line += f"  メモリ {used}MB"
+    try:
+        ALIVE_PATH.write_text(line + "\n", encoding="utf-8")
+    except Exception:  # noqa: BLE001 - 書けなくても本筋を止めない
+        pass
+
+
+def start_heartbeat(seconds: float = 5.0):
+    """印を打ち続ける裏方を始める。止めるための呼び出しを返す。
+
+    **表に出ない裏方（daemon）にすること。** 待ち続ける裏方が残ると、
+    閉じてもプロセスが終われなくなる。
+    """
+    import threading
+
+    global _heartbeat_thread
+    done = threading.Event()
+
+    def tick() -> None:
+        while not done.is_set():
+            note_alive()
+            done.wait(seconds)
+
+    _heartbeat_thread = threading.Thread(target=tick, name="alive", daemon=True)
+    _heartbeat_thread.start()
+    return done.set
+
+
+def report_last_alive() -> None:
+    """前回いつまで動いていたかを、立ち上げ直したときに知らせる。"""
+    try:
+        text = ALIVE_PATH.read_text(encoding="utf-8").strip()
+    except Exception:  # noqa: BLE001 - 読めなくても起動を止めない
+        return
+    if not text:
+        return
+    print(f"【前回、最後に動いていたのは】 {text}")
+    print()
+
+
 def _log_text(what: str, body: str) -> None:
     """本文を指定して記録する（子プロセス側の traceback を残すのに使う）。"""
     import datetime
@@ -684,7 +794,7 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             "prefill": prefill,
             # 落ちたときに送っていただく記録の在り処。**生きているうちに**
             # 渡しておく。落ちてから訊きに行っても繋がらない。
-            "logs": [str(LOG_PATH), str(CRASH_PATH)],
+            "logs": [str(LOG_PATH), str(CRASH_PATH), str(ALIVE_PATH)],
         })
 
     @app.get("/api/image/{name}")
@@ -1799,10 +1909,15 @@ def supervise(argv: list[str]) -> int:
 def main() -> int:
     # 前回の記録を先に知らせる（有効にすると追記で混ざるため、その前に読む）。
     report_last_crash()
+    # 前回いつまで動いていたか。上書きするので、これも読むのは書く前。
+    report_last_alive()
     # いちばん先に有効にする。落ちるのは重い処理の最中とは限らない。
     enable_crash_report()
     # どの版が動き出したかを記録に残す。あとから記録を読むときの起点になる。
     note_start()
+    # 生きている印を打ち続ける。「応答していません」が出たときに、プロセスが
+    # 消えているのか、生きているが応答しないのかを分ける（`ALIVE_PATH` を参照）。
+    start_heartbeat()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("directory", help="名刺画像の入っているフォルダ")
     parser.add_argument("--port", type=int, default=8100)
