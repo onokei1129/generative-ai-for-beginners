@@ -271,6 +271,9 @@ def _log_step(what: str) -> None:
     """
     import datetime
 
+    global _current_step
+
+    _current_step = what
     stamp = datetime.datetime.now().strftime("%m/%d %H:%M:%S")
     try:
         with LOG_PATH.open("a", encoding="utf-8") as handle:
@@ -325,9 +328,30 @@ def memory_in_use() -> int | None:
 
             counters = Counters()
             counters.cb = ctypes.sizeof(Counters)
-            handle = ctypes.windll.kernel32.GetCurrentProcess()
-            if not ctypes.windll.psapi.GetProcessMemoryInfo(
-                handle, ctypes.byref(counters), counters.cb
+
+            # 型を指定しないと、`GetCurrentProcess` の返り値は 32ビットの整数
+            # として受け取られる。64ビットの Windows が求めるのは 64ビットの
+            # 取っ手（HANDLE）なので、そのまま渡すと上位が欠けた別物になり、
+            # 呼び出しは**必ず**失敗する。実際に失敗していた——08/18 に届いた
+            # 印には、あるはずのメモリが出ていない。
+            #
+            #     08/18 14:00:31  版 0fc8340 08/17 08:36
+            #
+            # 測れなければ黙って None にする作りなので、8日のあいだ、この欄は
+            # 空のままだと気付けなかった。落ちる原因としてメモリ不足を疑って
+            # いるのに、肝心のメモリだけが記録されていなかったことになる。
+            kernel32 = ctypes.windll.kernel32
+            psapi = ctypes.windll.psapi
+            kernel32.GetCurrentProcess.argtypes = []
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi.GetProcessMemoryInfo.argtypes = [
+                wintypes.HANDLE,
+                ctypes.POINTER(Counters),
+                wintypes.DWORD,
+            ]
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+            if not psapi.GetProcessMemoryInfo(
+                kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb
             ):
                 return None
             return int(counters.WorkingSetSize) // (1024 * 1024)
@@ -341,8 +365,37 @@ def memory_in_use() -> int | None:
         return None
 
 
+# 印を何行ぶん残すか。5秒ごとなので、240行で直近20分ぶんになる。
+# 1行あたり60文字ほど、ファイル全体で15KBに収まる。
+ALIVE_KEEP = 240
+
+# いま何をしているか。`_log_step` が書き換える。印に添えておくと、
+# 止まったときに「どの名刺の、どの工程で」が印だけで分かる。
+_current_step = "待機"
+
+
 def note_alive() -> None:
-    """生きている印を**上書き**する。追記しない（際限なく増えるため）。"""
+    """生きている印を打つ。直近 `ALIVE_KEEP` 行だけ残す。
+
+    はじめは1行への**上書き**にしていた。ところが08/18に届いた印は、
+    狙いどおり1行きりで——
+
+        08/18 14:00:31  版 0fc8340 08/17 08:36
+
+    ——**この1行では、肝心の区別が付かなかった**。印が止まっているのか
+    進み続けているのかは、画面に「応答していません」が出ている**その最中に**
+    見に行かないと判らない。落ちたあとで受け取っても、時刻が1つあるだけで、
+    そこで止まったのか、その後も打たれ続けたのかが読めないためである。
+
+    直近ぶんを残せば、1度受け取るだけで形が見える。
+
+        止まった時刻    最後の行の時刻が、画面が止まった時刻と揃うか
+        メモリの増え方  落ちる直前に伸びていれば、足りなくなった疑いが濃い
+        最後の工程      どの名刺の、どの工程の最中だったか
+
+    際限なく増えないよう行数で切る。これが上書きにしていた理由だったので、
+    そこは行数の上限で引き受ける。
+    """
     import datetime
 
     stamp = datetime.datetime.now().strftime("%m/%d %H:%M:%S")
@@ -350,10 +403,35 @@ def note_alive() -> None:
     line = f"{stamp}  版 {_RUNNING_VERSION}"
     if used is not None:
         line += f"  メモリ {used}MB"
+    line += f"  {_current_step}"
+    append_alive_line(line)
+
+
+def append_alive_line(line: str) -> None:
+    """印を1行足し、古い行を落とす。書けなくても本筋は止めない。
+
+    **書き換えは一気に差し替える。** このファイルは、動いている最中に
+    利用者が開いて見る。そのまま上書きすると、中身を消してから書くまでの
+    あいだに読まれることがあり、空や書きかけが見える。5秒ごとに書くので
+    出会う機会は少なくないうえ、よりによって「動いているか」を確かめたい
+    ときに空を見せることになる。別名で書いてから差し替えれば、読む側には
+    前の中身か新しい中身のどちらかしか見えない。
+    """
     try:
-        ALIVE_PATH.write_text(line + "\n", encoding="utf-8")
+        kept = [t for t in ALIVE_PATH.read_text(encoding="utf-8").splitlines() if t.strip()]
+    except Exception:  # noqa: BLE001 - 無ければ、読めなければ、新しく始める
+        kept = []
+    kept = kept[-(ALIVE_KEEP - 1) :]
+    body = "\n".join([*kept, line]) + "\n"
+    interim = ALIVE_PATH.with_name(ALIVE_PATH.name + ".書きかけ")
+    try:
+        interim.write_text(body, encoding="utf-8")
+        os.replace(interim, ALIVE_PATH)
     except Exception:  # noqa: BLE001 - 書けなくても本筋を止めない
-        pass
+        try:
+            interim.unlink()
+        except Exception:  # noqa: BLE001 - 消せなくても本筋を止めない
+            pass
 
 
 def start_heartbeat(seconds: float = 5.0):
@@ -367,6 +445,15 @@ def start_heartbeat(seconds: float = 5.0):
     global _heartbeat_thread
     done = threading.Event()
 
+    # 直近ぶんを残すようにしたので、前回の行がそのまま残っている。区切りを
+    # 入れておかないと、どこからが今回の起動なのかが読めない。
+    import datetime
+
+    append_alive_line(
+        f"{datetime.datetime.now().strftime('%m/%d %H:%M:%S')}"
+        f"  --- ここから今回の起動 --- 版 {_RUNNING_VERSION}"
+    )
+
     def tick() -> None:
         while not done.is_set():
             note_alive()
@@ -378,14 +465,21 @@ def start_heartbeat(seconds: float = 5.0):
 
 
 def report_last_alive() -> None:
-    """前回いつまで動いていたかを、立ち上げ直したときに知らせる。"""
+    """前回いつまで動いていたかを、立ち上げ直したときに知らせる。
+
+    印は直近ぶんを残すので、そのまま出すと画面が埋まる。ここで要るのは
+    **最後の1行**——止まった時刻と、そのときのメモリと工程——だけである。
+    残りは在り処を示して、送っていただくときに読む。
+    """
     try:
-        text = ALIVE_PATH.read_text(encoding="utf-8").strip()
+        lines = [t for t in ALIVE_PATH.read_text(encoding="utf-8").splitlines() if t.strip()]
     except Exception:  # noqa: BLE001 - 読めなくても起動を止めない
         return
-    if not text:
+    if not lines:
         return
-    print(f"【前回、最後に動いていたのは】 {text}")
+    print(f"【前回、最後に動いていたのは】 {lines[-1]}")
+    if len(lines) > 1:
+        print(f"  そこまでの{len(lines)}行はこちらに残っています: {ALIVE_PATH}")
     print()
 
 
