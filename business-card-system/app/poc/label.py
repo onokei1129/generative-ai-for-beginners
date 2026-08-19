@@ -301,8 +301,12 @@ ALIVE_PATH = Path(__file__).resolve().parent / "動いている印.txt"
 _heartbeat_thread = None
 
 
-def memory_in_use() -> int | None:
-    """このプロセスが使っているメモリ（MB）。測れなければ None。
+def memory_in_use(pid: int | None = None) -> int | None:
+    """メモリの使用量（MB）。測れなければ None。`pid` 省略で自分自身。
+
+    **他のプロセスも測れるようにしてある。** 重い処理はすべて子プロセスに
+    出してあるので、親だけを測っても、いちばん見たいところが見えない。
+    実テストの落下11件は**すべてOCRの最中**で、そのOCRは子が担っている。
 
     測れない環境で落ちては本末転倒なので、失敗は黙って None にする。
     追加の依存は入れない（psutil は使わない）。
@@ -344,23 +348,42 @@ def memory_in_use() -> int | None:
             psapi = ctypes.windll.psapi
             kernel32.GetCurrentProcess.argtypes = []
             kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
             psapi.GetProcessMemoryInfo.argtypes = [
                 wintypes.HANDLE,
                 ctypes.POINTER(Counters),
                 wintypes.DWORD,
             ]
             psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
-            if not psapi.GetProcessMemoryInfo(
-                kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb
-            ):
-                return None
+
+            opened = None
+            if pid is None:
+                handle = kernel32.GetCurrentProcess()
+            else:
+                # 0x0400 PROCESS_QUERY_INFORMATION | 0x0010 PROCESS_VM_READ
+                opened = handle = kernel32.OpenProcess(0x0400 | 0x0010, False, pid)
+                if not handle:
+                    return None
+            try:
+                if not psapi.GetProcessMemoryInfo(
+                    handle, ctypes.byref(counters), counters.cb
+                ):
+                    return None
+            finally:
+                if opened:
+                    kernel32.CloseHandle(opened)
             return int(counters.WorkingSetSize) // (1024 * 1024)
 
-        import resource
-
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        # Linux は KB、macOS はバイトで返す。
-        return int(peak) // (1024 if sys.platform != "darwin" else 1024 * 1024)
+        # Linux は `/proc` から**いま**の使用量を読む。`getrusage` が返すのは
+        # これまでの最大値で、いちど膨らむと下がらない。増え方を追いたいので
+        # 最大値では役に立たない（そして他のプロセスは測れない）。
+        where = "self" if pid is None else str(pid)
+        for row in Path(f"/proc/{where}/status").read_text().splitlines():
+            if row.startswith("VmRSS:"):
+                return int(row.split()[1]) // 1024
+        return None
     except Exception:  # noqa: BLE001 - 測れなくても本筋を止めない
         return None
 
@@ -402,9 +425,35 @@ def note_alive() -> None:
     used = memory_in_use()
     line = f"{stamp}  版 {_RUNNING_VERSION}"
     if used is not None:
-        line += f"  メモリ {used}MB"
+        line += f"  親 {used}MB"
+    for lane, amount in child_memory().items():
+        line += f"  {lane} {amount}MB"
     line += f"  {_current_step}"
     append_alive_line(line)
+
+
+def child_memory() -> dict[str, int]:
+    """生きている子プロセスの使用量（MB）を列ごとに返す。
+
+    **落下11件はすべてOCRの最中に起きている。** そのOCRは子が担うので、
+    親だけを測っても肝心のところが見えない。子が膨らんで足りなくなって
+    いるのなら、落ちる直前の数行にそれが出る。
+
+    錠は取らない。印を打つ裏方が待たされると、生きているのに印が止まり、
+    それこそ「消えた」と読み違える。読むだけなので取り違えても害はない。
+    """
+    found: dict[str, int] = {}
+    for lane in LANES:
+        try:
+            worker = _workers[lane]
+            if worker is None or not worker.alive():
+                continue
+            amount = memory_in_use(worker.process.pid)
+        except Exception:  # noqa: BLE001 - 測れなくても本筋を止めない
+            continue
+        if amount is not None:
+            found[lane] = amount
+    return found
 
 
 def append_alive_line(line: str) -> None:

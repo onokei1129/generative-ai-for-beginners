@@ -234,6 +234,66 @@ class TestItIsOfferedToTheOperator:
         assert str(stamp) in out, "残りの在り処を示していない"
 
 
+class TestTheChildReading:
+    """落下11件はすべてOCRの最中。そのOCRは子プロセスが担う。"""
+
+    def test_it_measures_another_process(self):
+        """親だけ測っても、いちばん見たいところが見えない。"""
+        import subprocess
+
+        # 立ち上がりきる前に測ると、まだ何も積んでいない。育つのを待つ。
+        child = subprocess.Popen(
+            [sys.executable, "-c", "bytearray(60*1024*1024); print('ready', flush=True); import time; time.sleep(30)"],
+            stdout=subprocess.PIPE,
+        )
+        try:
+            child.stdout.readline()
+            amount = label.memory_in_use(child.pid)
+        finally:
+            child.kill()
+            child.wait(timeout=5)
+
+        assert amount is not None, "他のプロセスを測れていない"
+        assert amount > 0
+
+    def test_the_readings_are_not_the_peak(self):
+        """増え方を追いたい。最大値では、下がったことが分からない。"""
+        first = label.memory_in_use()
+        blob = bytearray(80 * 1024 * 1024)
+        grown = label.memory_in_use()
+        del blob
+
+        if first is not None and grown is not None:
+            assert grown >= first
+
+    def test_no_children_means_nothing_to_add(self, monkeypatch):
+        monkeypatch.setattr(label, "_workers", {lane: None for lane in label.LANES})
+
+        assert label.child_memory() == {}
+
+    def test_a_dead_child_is_skipped(self, monkeypatch):
+        class Gone:
+            process = type("P", (), {"pid": 999999})()
+
+            def alive(self):
+                return False
+
+        monkeypatch.setattr(label, "_workers", {lane: Gone() for lane in label.LANES})
+
+        assert label.child_memory() == {}
+
+    def test_it_does_not_wait_on_the_lane_lock(self, tmp_path, monkeypatch):
+        """錠で待たされると、生きているのに印が止まり「消えた」と読み違える。"""
+        stamp = tmp_path / "動いている印.txt"
+        monkeypatch.setattr(label, "ALIVE_PATH", stamp)
+        held = label.lane_lock("ocr")
+
+        with held:
+            label.note_alive()  # 錠を取ろうとすれば、ここで止まる
+
+        assert stamp.read_text(encoding="utf-8").strip()
+
+
 class TestTheMemoryReading:
     def test_it_is_a_number_or_nothing(self):
         """測れない環境では黙って省く。ここで落ちては本末転倒。"""
