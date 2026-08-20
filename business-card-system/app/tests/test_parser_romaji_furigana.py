@@ -277,3 +277,63 @@ class TestPrintedFuriganaStillWins:
         ])["fields"]
 
         assert (got["last_name_kana"], got["first_name_kana"]) == ("やまだ", "たろう")
+
+
+class TestWhichWordIsTheSurname:
+    """名刺のローマ字は、姓が先のものと名が先のものが両方ある。
+
+        木村 央志                笠間　信一郎
+        Nakaji Kimura   ← 名 姓   Kasama Shinichiro   ← 姓 名
+
+    最後の語を姓と決め打つと、後者で2欄とも入れ替わる。長音が落ちて1欄が
+    惜しいのとは重さが違う。
+    """
+
+    def test_the_surname_can_come_first(self):
+        """実物35枚目（笠間 信一郎／Kasama Shinichiro）。"""
+        got = parse_fields([
+            "株式会社フレイムハーツ",
+            "代表取締役　COO",
+            "笠間　信一郎",
+            "Kasama Shinichiro",
+            "東京都港区南麻布3-20-1",
+        ])["fields"]
+
+        assert got["last_name_kana"] == "かさま"
+
+    def test_the_surname_can_come_last(self):
+        """実物24枚目（木村 央志／Nakaji Kimura）。"""
+        got = parse_fields([
+            "株式会社Donuts",
+            "木村 央志",
+            "Nakaji Kimura",
+            "ゲーム統括部",
+        ])["fields"]
+
+        assert got["last_name_kana"] == "きむら"
+
+    def test_a_surname_ending_in_ro_is_not_taken_for_a_given_name(self):
+        """`城`（宮城）と `黒`（石黒・目黒）は、`ro` で終わる姓の作り。
+
+        名らしい語尾として拾うと、姓のほうを名だと**自信を持って**言い切る
+        ことになる。決めないほうがまだよい。
+        """
+        from bcards.services.ocr.parser import _is_given_name
+
+        assert not _is_given_name("Ishiguro")
+        assert not _is_given_name("Meguro")
+        assert not _is_given_name("Miyashiro")
+        assert _is_given_name("Ichiro")
+        assert _is_given_name("Shinichiro")
+
+    def test_short_words_are_not_judged_by_their_tail(self):
+        from bcards.services.ocr.parser import _is_given_name
+
+        assert not _is_given_name("Ko")
+        assert not _is_given_name("Kuro")
+
+    def test_it_does_not_guess_when_neither_word_looks_like_a_given_name(self):
+        """`Nakaji Kimura` はどちらも名らしくない。決めずに最後の語を姓とする。"""
+        from bcards.services.ocr.parser import _order_by_given_name
+
+        assert _order_by_given_name("Kimura", "Nakaji", "きむら", "なかじ") == ("きむら", "なかじ")

@@ -1154,6 +1154,14 @@ def strip_postal_prefix(text: str) -> str:
 # 空欄のほうがよい（空欄なら入力する人が気づく）。
 FOREIGN_POSTAL_RE = re.compile(r"^\d{5,6}$")
 
+# ハイフンの代わりに空白で刷られた（読まれた）郵便番号。実テスト24枚目は
+# `〒151-0053` と刷られているのに `151 0053` と読まれ、空欄になっていた。
+#
+# **行全体がこの形のときだけ**採る。ゆるめると `TEL 03-7161-2135` の一部を
+# 郵便番号にしてしまう類の誤りに戻る（`POSTAL_RE` の上の説明を参照）。
+# 電話番号は塊が3つ以上あるので（`090 8587 7873`）、行全体という条件で外れる。
+SPACED_POSTAL_RE = re.compile(r"^(\d{3})\s(\d{4})$")
+
 
 # 住所らしさの最低限。読み崩れた断片を住所に入れないための歯止め。
 #
@@ -1723,6 +1731,59 @@ def split_person_name(full: str) -> tuple[str, str]:
     return text, ""
 
 
+# 名に多く、姓にはまず出ない語尾。ローマ字の姓名の並びを決めるのに使う。
+#
+#   ろう  太郎 Taro／一郎 Ichiro／信一郎 Shinichiro／健太郎 Kentaro
+#   こ    花子 Hanako／美智子 Michiko
+#   すけ  大輔 Daisuke／龍之介 Ryunosuke
+#
+# 姓の語尾と衝突するものは外す。`城`（Miyashiro 宮城）と `黒`（Ishiguro
+# 石黒・Meguro 目黒）は、どちらも `ro` で終わる**姓**の作りである。
+_GIVEN_NAME_TAILS = ("ro", "ko", "suke")
+_SURNAME_TAILS_IN_RO = ("shiro", "guro", "kuro")
+
+# これより短い語では語尾を手がかりにしない（`Ko` だけの語など）。
+_MIN_TAIL_LENGTH = 4
+
+
+def _is_given_name(word: str) -> bool:
+    """その語が名らしいか。語尾だけで見る。"""
+    low = word.lower()
+    if len(low) < _MIN_TAIL_LENGTH or not low.endswith(_GIVEN_NAME_TAILS):
+        return False
+    return not low.endswith(_SURNAME_TAILS_IN_RO)
+
+
+def _order_by_given_name(last: str, first: str, last_kana: str, first_kana: str):
+    """ローマ字の姓名の並びを、名らしい語尾から決める。
+
+    **名刺のローマ字は、姓が先のものと名が先のものが両方ある。**
+
+        木村 央志                笠間　信一郎
+        Nakaji Kimura   ← 名 姓   Kasama Shinichiro   ← 姓 名
+
+    綴りだけでは、どちらが姓かは分からない。`split_person_name` は最後の語を
+    姓とするので、`Kasama Shinichiro` では姓と名が入れ替わる。**並びを
+    取り違えると2欄とも誤る**ので、長音が落ちて1欄が惜しいのとは重さが違う。
+
+    字数と拍数の釣り合いで決めようとしたが、これは**使えなかった**。
+    長音が落ちるため `信一郎` は `Shinichiro`→`しにちろ`（4拍）に縮み、
+    `笠間`＝`かさま`（3拍）とほとんど並ぶ。頼りにした差が、名刺に刷られる
+    時点で消えている。
+
+    語尾のほうが残る。`ろう`（太郎・一郎・信一郎）と `こ`（花子）と
+    `すけ`（大輔）は名に多く、姓にはまず出ない。片方だけが名らしいときに
+    限って、そちらを名とする。両方・どちらでもないときは決めない
+    （`Nakaji Kimura` は決まらず、今までどおり最後の語を姓とする）。
+    """
+    if _is_given_name(first) and not _is_given_name(last):
+        # 最後の語が姓――今までどおり。
+        return last_kana, first_kana
+    if _is_given_name(last) and not _is_given_name(first):
+        return first_kana, last_kana
+    return last_kana, first_kana
+
+
 def _fill_kana_from_romaji(
     fields: dict[str, Any],
     confidence: dict[str, float],
@@ -1770,6 +1831,8 @@ def _fill_kana_from_romaji(
         # 姓=Kimura・名=Nakaji で、漢字の 木村／央志 と並びが逆になる。
         last, first = split_person_name(spaced_lines[index])
         last_kana, first_kana = name_to_hiragana(last), name_to_hiragana(first)
+        if last_kana and first_kana:
+            last_kana, first_kana = _order_by_given_name(last, first, last_kana, first_kana)
         # 片方だけ入れない。姓と名がずれたふりがなは、空欄より悪い。
         if not last_kana or not first_kana:
             continue
@@ -1920,6 +1983,19 @@ def parse_fields(lines: list[str]) -> dict[str, Any]:
                 confidence["address"] = 0.7
                 address_index = index
             used.add(index)
+
+    # 日本の形が、空白で区切られて読まれた場合。
+    if not fields["postal_code"]:
+        for index, line in enumerate(cleaned):
+            if index in used:
+                continue
+            match = SPACED_POSTAL_RE.match(line.strip())
+            if match:
+                fields["postal_code"] = f"{match.group(1)}-{match.group(2)}"
+                # ハイフンのもの（0.95）より弱い。区切りが読めていないため。
+                confidence["postal_code"] = 0.7
+                used.add(index)
+                break
 
     # 日本の形が取れなかった場合の、海外の郵便番号。
     #

@@ -55,48 +55,125 @@ class Sample:
     truth: dict[str, str] = field(default_factory=dict)
 
 
+# かな1音ずつのローマ字。日英併記の名刺に刷るローマ字を作るために使う。
+_KANA = {
+    "きゃ": "kya", "きゅ": "kyu", "きょ": "kyo", "しゃ": "sha", "しゅ": "shu", "しょ": "sho",
+    "ちゃ": "cha", "ちゅ": "chu", "ちょ": "cho", "にゃ": "nya", "にゅ": "nyu", "にょ": "nyo",
+    "ひゃ": "hya", "ひゅ": "hyu", "ひょ": "hyo", "みゃ": "mya", "みゅ": "myu", "みょ": "myo",
+    "りゃ": "rya", "りゅ": "ryu", "りょ": "ryo", "ぎゃ": "gya", "ぎゅ": "gyu", "ぎょ": "gyo",
+    "じゃ": "ja", "じゅ": "ju", "じょ": "jo", "びゃ": "bya", "びゅ": "byu", "びょ": "byo",
+    "ぴゃ": "pya", "ぴゅ": "pyu", "ぴょ": "pyo",
+    "あ": "a", "い": "i", "う": "u", "え": "e", "お": "o",
+    "か": "ka", "き": "ki", "く": "ku", "け": "ke", "こ": "ko",
+    "が": "ga", "ぎ": "gi", "ぐ": "gu", "げ": "ge", "ご": "go",
+    "さ": "sa", "し": "shi", "す": "su", "せ": "se", "そ": "so",
+    "ざ": "za", "じ": "ji", "ず": "zu", "ぜ": "ze", "ぞ": "zo",
+    "た": "ta", "ち": "chi", "つ": "tsu", "て": "te", "と": "to",
+    "だ": "da", "ぢ": "ji", "づ": "zu", "で": "de", "ど": "do",
+    "な": "na", "に": "ni", "ぬ": "nu", "ね": "ne", "の": "no",
+    "は": "ha", "ひ": "hi", "ふ": "fu", "へ": "he", "ほ": "ho",
+    "ば": "ba", "び": "bi", "ぶ": "bu", "べ": "be", "ぼ": "bo",
+    "ぱ": "pa", "ぴ": "pi", "ぷ": "pu", "ぺ": "pe", "ぽ": "po",
+    "ま": "ma", "み": "mi", "む": "mu", "め": "me", "も": "mo",
+    "や": "ya", "ゆ": "yu", "よ": "yo",
+    "ら": "ra", "り": "ri", "る": "ru", "れ": "re", "ろ": "ro",
+    "わ": "wa", "を": "o", "ん": "n",
+}
+
+
+def to_romaji(kana: str) -> str:
+    """かなを、名刺に刷られる形のローマ字にする。
+
+    **長音を落とす。** 名刺のローマ字は旅券式のヘボンで刷られ、`さとう` は
+    `Sato`、`いとう` は `Ito`、`たろう` は `Taro` になる。合成名刺にだけ
+    `Satou` と刷ってしまうと、ここから読みを起こす仕掛け
+    （`_fill_kana_from_romaji`）が、実物では起きない好条件で測られる。
+    実物223枚がそう刷られている以上、合成でもそう刷る。
+    """
+    out, i = "", 0
+    while i < len(kana):
+        if kana[i] == "っ":
+            nxt = to_romaji(kana[i + 1 :])
+            return out + (nxt[0] if nxt else "") + nxt
+        pair = kana[i : i + 2]
+        if pair in _KANA:
+            out += _KANA[pair]
+            i += 2
+            continue
+        out += _KANA.get(kana[i], kana[i])
+        i += 1
+    # 旅券式の長音。`ou`→`o`、`oo`→`o`、`uu`→`u`。`ii` は残す（新潟＝Niigata）。
+    for double, single in (("ou", "o"), ("oo", "o"), ("uu", "u")):
+        out = out.replace(double, single)
+    return out
+
+
+def printed_romaji(person: dict[str, str]) -> str:
+    """名刺に刷るローマ字の行。並びは名刺ごとに違う。
+
+    実物では両方の並びが使われている。24枚目は `Nakaji Kimura`（名 姓）、
+    35枚目は `Kasama Shinichiro`（姓 名）。片方だけで測ると、並びを
+    取り違える誤りが表に出ない。
+    """
+    last = to_romaji(person["last_name_kana"]).capitalize()
+    first = to_romaji(person["first_name_kana"]).capitalize()
+    if person.get("romaji_order") == "first_last":
+        return f"{first} {last}"
+    return f"{last} {first}"
+
+
 PEOPLE: list[dict[str, str]] = [
     {
-        "last_name": "山田", "first_name": "太郎", "last_name_kana": "やまだ", "first_name_kana": "たろう",
+        "last_name": "山田", "first_name": "太郎", "last_name_kana": "やまだ", "first_name_kana": "たろう", "romaji_order": "last_first",
         "company_name": "株式会社サンプル商事", "department_name": "営業本部 第一営業部", "title": "部長",
         "postal_code": "100-0001", "address": "東京都千代田区千代田1-1-1",
         "tel": "03-1234-5678", "mobile": "090-1234-5678", "fax": "03-1234-5679",
         "email": "taro.yamada@example.co.jp", "url": "https://www.example.co.jp",
     },
     {
-        "last_name": "佐藤", "first_name": "花子", "last_name_kana": "さとう", "first_name_kana": "はなこ",
+        "last_name": "佐藤", "first_name": "花子", "last_name_kana": "さとう", "first_name_kana": "はなこ", "romaji_order": "first_last",
         "company_name": "テクノロジー株式会社", "department_name": "開発部", "title": "主任",
         "postal_code": "530-0001", "address": "大阪府大阪市北区梅田2-2-2",
         "tel": "06-9876-5432", "mobile": "080-2222-3333", "fax": "",
         "email": "hanako.sato@example.jp", "url": "https://tech.example.jp",
     },
     {
-        "last_name": "鈴木", "first_name": "一郎", "last_name_kana": "すずき", "first_name_kana": "いちろう",
+        "last_name": "鈴木", "first_name": "一郎", "last_name_kana": "すずき", "first_name_kana": "いちろう", "romaji_order": "last_first",
         "company_name": "合同会社みらいデザイン", "department_name": "クリエイティブ室", "title": "代表社員",
         "postal_code": "460-0008", "address": "愛知県名古屋市中区栄3-3-3",
         "tel": "052-111-2222", "mobile": "", "fax": "052-111-2223",
         "email": "ichiro@mirai.example", "url": "",
     },
     {
-        "last_name": "田中", "first_name": "健二", "last_name_kana": "たなか", "first_name_kana": "けんじ",
+        "last_name": "田中", "first_name": "健二", "last_name_kana": "たなか", "first_name_kana": "けんじ", "romaji_order": "first_last",
         "company_name": "株式会社ロジスティクス九州", "department_name": "物流企画部", "title": "課長",
         "postal_code": "812-0011", "address": "福岡県福岡市博多区博多駅前4-4-4",
         "tel": "092-333-4444", "mobile": "070-4444-5555", "fax": "",
         "email": "tanaka@logi-kyushu.example", "url": "https://logi-kyushu.example",
     },
     {
-        "last_name": "高橋", "first_name": "美咲", "last_name_kana": "たかはし", "first_name_kana": "みさき",
+        "last_name": "高橋", "first_name": "美咲", "last_name_kana": "たかはし", "first_name_kana": "みさき", "romaji_order": "last_first",
         "company_name": "北海道フーズ株式会社", "department_name": "商品開発部", "title": "係長",
         "postal_code": "060-0001", "address": "北海道札幌市中央区北一条西5-5-5",
         "tel": "011-555-6666", "mobile": "090-6666-7777", "fax": "011-555-6667",
         "email": "takahashi@hokkaido-foods.example", "url": "",
     },
     {
-        "last_name": "伊藤", "first_name": "直樹", "last_name_kana": "いとう", "first_name_kana": "なおき",
+        "last_name": "伊藤", "first_name": "直樹", "last_name_kana": "いとう", "first_name_kana": "なおき", "romaji_order": "first_last",
         "company_name": "一般社団法人日本データ協会", "department_name": "調査研究センター", "title": "主任研究員",
         "postal_code": "150-0002", "address": "東京都渋谷区渋谷6-6-6",
         "tel": "03-7777-8888", "mobile": "", "fax": "03-7777-8889",
         "email": "ito@jda.example", "url": "https://jda.example",
+    },
+    {
+        # 名が3文字の人。姓と名の字数が違う名刺が1枚も無いと、ローマ字の
+        # 並びを取り違えても表に出ない（実物35枚目 `Kasama Shinichiro` の形）。
+        "last_name": "中村", "first_name": "陽一郎", "last_name_kana": "なかむら",
+        "first_name_kana": "よういちろう", "romaji_order": "last_first",
+        "company_name": "中村精密工業株式会社", "department_name": "生産技術部", "title": "工場長",
+        "postal_code": "460-0008", "address": "愛知県名古屋市中区栄3-15-33",
+        "tel": "052-222-3333", "mobile": "090-4444-5555", "fax": "052-222-3334",
+        "email": "y.nakamura@nakamura-seimitsu.example", "url": "",
     },
 ]
 
@@ -156,7 +233,7 @@ def render_bilingual(person: dict[str, str]) -> Image.Image:
     draw.line([(0, 96), (image.width, 96)], fill="#c8ccd2", width=2)
 
     draw.text((60, 34), person["company_name"], font=_font(FONT_GOTHIC, 36), fill="#111111")
-    romaji = f"{person['first_name_kana'].upper()} {person['last_name_kana'].upper()}"
+    romaji = printed_romaji(person)
     draw.text((60, 132), person["department_name"], font=_font(FONT_GOTHIC, 22), fill="#444444")
     draw.text((60, 168), person["title"], font=_font(FONT_GOTHIC, 22), fill="#444444")
     draw.text((60, 226), f"{person['last_name']} {person['first_name']}",
