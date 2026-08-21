@@ -9,13 +9,28 @@ from __future__ import annotations
 
 import json
 
-import httpx
 import pytest
 from PIL import Image
 
 from bcards.services.ocr import extract_fields
 from bcards.services.ocr.base import OcrOutput
 from bcards.services.ocr.llm_extractor import ExtractedCardFields, LlmFieldExtractor
+
+# SDKに渡す模擬トランスポートは、**そのSDKが使っている httpx** で作ること。
+#
+# anthropic 1.x は HTTP層を httpx から、その維持されている分家 httpx2 へ移した。
+# 古いほうの `httpx.Client` を渡すと、組み立てた時点で TypeError になる
+# （`Expected an instance of httpx2.Client`）。CI は requirements の
+# `anthropic>=0.60` から新しいほうを取ってくるので、手元が 0.x のままでも
+# CI だけが落ちる。実際にそうなった。
+#
+# 本体（llm_extractor.py）は自前の HTTP を持たないので影響を受けない。
+# 壊れるのはこの模擬だけである。どちらの版でも動くよう、SDKが使っている
+# ほうに合わせて取り込む。
+try:  # anthropic 1.x
+    import httpx2 as httpx
+except ImportError:  # anthropic 0.x
+    import httpx
 
 OCR_TEXT = "株式会社サンプル商事\n営業本部\n山田 太郎\nTEL 03-1234-5678"
 
