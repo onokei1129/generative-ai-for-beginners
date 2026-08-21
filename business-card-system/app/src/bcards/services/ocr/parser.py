@@ -25,7 +25,18 @@ CJK = (
 )
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-URL_RE = re.compile(r"(?:https?://|www\.)[\w\-./?%&=~+#:]+", re.IGNORECASE)
+# URL。**ホスト名に点を必ず求める。**
+#
+# 以前は `https?://` のあとに文字が続きさえすれば通していたため、実テスト
+# 34枚目（ITAKO）で `http://www itakoh.cojo/` が空白で切れた前半だけを拾い、
+# URL欄に `http://www` が入っていた。ホストとして成立しておらず、意味が無い。
+#
+# 空欄なら人が気づいて入力できる。もっともらしい断片は、そのまま登録される。
+URL_RE = re.compile(
+    r"(?:https?://[\w\-]+(?:\.[\w\-]+)+|www\.[\w\-]+(?:\.[\w\-]+)*)"
+    r"[\w\-./?%&=~+#:]*",
+    re.IGNORECASE,
+)
 # 郵便番号。3桁-4桁だが、電話番号の一部（`070-9385`-4004）に当たってはいけない。
 #
 # 実データ（韓国の方の名刺）で `HP 070-9385-4004` の前半を郵便番号として取り、
@@ -56,7 +67,19 @@ POSTAL_MARK_RE = re.compile(rf"[{POSTAL_MARKS}]\s*$")
 # 国番号のあとは「数字と区切りの並び」として扱う。桁数は E.164 の15桁までに収める。
 INTL_PHONE = r"\+\d{1,3}(?:[\s\-.()]{0,2}\d){6,14}"
 DOMESTIC_PHONE = r"0\d{1,4}[-ー－(\s]\d{1,4}[)\-ー－\s]?\d{3,4}"
-PHONE_RE = re.compile(f"(?:{INTL_PHONE}|{DOMESTIC_PHONE})")
+
+# 市外局番を丸括弧で囲む書き方。実テスト34枚目（ITAKO）の `TEL (03) 6313-7096`
+# が**空欄**になっていた。国内の形は先頭が `0` の並びだけを見ていたので、
+# 頭に `(` が付くだけで外れる。印字にも読み取りにも問題は無く、こちらが
+# 見ていなかった。
+#
+# 既存の形を緩めず、別の枝として足す。緩めると `TEL 03-7161-2135` の一部を
+# 郵便番号にしていた類の、もっともらしい誤りに近づく。
+PAREN_PHONE = r"\(0\d{1,4}\)\s*\d{1,4}[-ー－\s]?\d{3,4}"
+
+# 丸括弧つきを先に見る。あとに置くと `DOMESTIC_PHONE` が括弧の中だけを
+# 拾って `03) 6313-7096` のような欠けた形になる。
+PHONE_RE = re.compile(f"(?:{INTL_PHONE}|{PAREN_PHONE}|{DOMESTIC_PHONE})")
 
 COMPANY_KEYWORDS = (
     "株式会社",
@@ -1181,7 +1204,18 @@ KATAKANA_RE = re.compile(r"[\u30a1-\u30fa]")
 ADDRESS_AT_RE = re.compile(r"(?<=[A-Za-z0-9])@(?=[A-Za-z0-9])")
 
 
+# 読み違えられた都道府県の字。実テスト34枚目（ITAKO）で `東京都新宿区` が
+# `東京者新宿区` と読まれていた。`者` と `都` は形が近い。
+#
+# **`東京都` だけを直す。** 都を使う自治体は東京だけなので、`東京者` が正しい
+# 語である可能性は無い。他の字（県→懸 など）はここに足さない——実際に見た
+# 誤りだけを直す。当てずっぽうで足すと、正しい住所を壊す側に回る。
+MISREAD_PREFECTURE = ((("東京者"), "東京都"),)
+
+
 def repair_address_symbols(text: str) -> str:
+    for wrong, right in MISREAD_PREFECTURE:
+        text = text.replace(wrong, right)
     return ADDRESS_AT_RE.sub("-", text)
 
 
@@ -1553,6 +1587,17 @@ def _looks_like_person_name(line: str, email: str = "") -> bool:
     if any(word in text for word in NOT_A_NAME_WORDS_JA):
         return False
     if re.search(r"\d", text):
+        return False
+    # 役職の字が残っている行は氏名ではない。実テスト34枚目（ITAKO）で、
+    # 印字の `代表取締役` が EasyOCR に `代千取橋役` と読まれ、姓『代千』／
+    # 名『取橋役』になっていた。tesseract は同じ名刺の `河野 修 弘` を正しく
+    # 読めていたのに、**併合はエンジンごとの埋まり具合で選ぶため同数で並び、
+    # 先の EasyOCR が勝っていた**。ここで弾けば、正しいほうが残る。
+    #
+    # `締` は氏名に出ない字なので、どこにあっても弾く。
+    # `役` は**末尾のときだけ**弾く。`役所`（役所広司）のように先頭に来る姓が
+    # 実在するので、どこでも弾くと本物の氏名を巻き添えにする。
+    if "締" in text or text.endswith("役"):
         return False
     # 住所の語を含む姓は珍しくない（`中村` `木村` `村上` `市川` `町田`）。
     # 1つ含むだけで弾くと、これらの氏名が空になる。住所は複数の語を含むので
