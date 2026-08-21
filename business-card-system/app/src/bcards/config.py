@@ -53,8 +53,9 @@ class Settings:
     # OCR プロバイダ: mock / tesseract / paddle / easyocr / combined / azure
     #
     # 既定は combined（EasyOCR と tesseract の併用）。論点Cの計測で、項目
-    # 正答率 68.0% → 74.9%、1枚あたりの修正 4.2 → 3.2 項目になった
-    # （ocr-decision-2026-08.md §6）。
+    # 正答率 64.8% → 78.2%、1枚あたりの修正 4.6 → 2.9 項目になった
+    # （ocr-decision-2026-08.md §6）。数値は 2026/08/20 の測り直し後のもの
+    # （ocr-poc-report.md §0。それ以前の 68.0% → 74.9% とは物差しが違う）。
     #
     # EasyOCR は依存が大きく（約1.5GB）requirements.txt には入れていない。
     # 入っていない環境では tesseract だけで動く（＝従来どおり）。黙って

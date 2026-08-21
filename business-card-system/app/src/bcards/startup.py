@@ -112,14 +112,14 @@ def check_configuration() -> list[Finding]:
         )
 
     # 併用構成で片方のエンジンが入っていないと、見た目は正常なまま精度だけが
-    # 戻る（75.3% → 68.0%）。動くので気づけない。ここで知らせる。
+    # 戻る（78.2% → 64.8%）。動くので気づけない。ここで知らせる。
     if settings.ocr_provider == COMBINED:
         for label, module in _missing_engines():
             findings.append(
                 Finding(
                     "warning",
                     f"併用構成ですが {label}（{module}）が入っていません。"
-                    "残ったエンジンだけで動くため、項目正答率が 75.3% から 68.0% に戻ります。"
+                    "残ったエンジンだけで動くため、項目正答率が 78.2% から 64.8% に戻ります。"
                     "pip install -r requirements-combined.txt を実行してください。",
                 )
             )
