@@ -1076,12 +1076,21 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 "ocr_text": "",
             })
         filled = [k for k, v in values.items() if v]
+        # その回の1枚目は軽い読み取り機で読んでいる。裏で読み直しているあいだ
+        # `revising` を立てておき、画面はそれが下りるのを待って**触っていない
+        # 欄だけ**差し替える（`_mark_provisional` を参照）。
+        revising = is_provisional(name)
         return JSONResponse({
             "values": values,
-            "source": "OCRの下書きです。黄色の欄は未確認です。画像と見比べて直してください。",
+            "source": (
+                "OCRの下書きです。黄色の欄は未確認です。画像と見比べて直してください。"
+                + ("　いま精度の高い読み取りを裏で走らせています。"
+                   "終わると、まだ触っていない欄だけ差し替わります。" if revising else "")
+            ),
             "kind": "draft",
             "prefilled": filled,
             "ocr_text": ocr_text,
+            "revising": revising,
         })
 
     def _ocr_draft(path: Path) -> tuple[dict[str, str], str | None, str]:
@@ -1113,9 +1122,13 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
         try:
             try:
                 step = "OCR（別プロセス）"
-                payload = run_in_child(["ocr", str(path), hint_for_now()])
+                hint = hint_for_now()
+                payload = run_in_child(["ocr", str(path), hint])
                 values = {key: str(payload["fields"].get(key, "") or "") for key in FIELD_KEYS}
                 result = (values, None, payload.get("text", ""))
+                if hint == FIRST_CARD_HINT:
+                    # この1枚だけ軽い読み取り機で読んでいる。**あとで読み直す。**
+                    _mark_provisional(path)
             except Exception as exc:
                 # 画面には要約しか出せないので、原因を追えるようにコンソールへ全文を出す
                 _log_failure(f"{step}（{path.name}）")
@@ -1135,6 +1148,53 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
                 finished = _running.pop(path.name, None)
             if finished is not None:
                 finished.set()
+
+    # その回の1枚目は軽い読み取り機で読む（`hint_for_now` を参照）。その結果を
+    # そのまま残さず、裏で読み直す名刺の名前を持っておく。
+    _provisional: set[str] = set()
+
+    def _mark_provisional(path: Path) -> None:
+        """1枚目の下書きに「読み直しが要る」印を付け、裏方を起こす。
+
+        **開き直すたび、再開する名刺がその1枚目になる。** 実テストでは
+        アプリが11回落ちており、そのたびに止まった名刺から再開している。
+        つまり**いま作業している名刺が、毎回いちばん精度の低い読み方をされ、
+        その結果はその回のあいだ覚え込まれたまま**だった。35枚目（笠間
+        信一郎）では、姓が `Sele]` と読まれて氏名の欄がローマ字になっていた。
+
+        軽いほうで即座に下書きを出す狙い（45秒の空白を作らない）は変えない。
+        モデルが温まったところで読み直し、**利用者がまだ触っていない欄だけ**
+        差し替える。待ち時間は増えず、精度は戻る。
+        """
+        with _cache_lock:
+            _provisional.add(path.name)
+        threading.Thread(target=_revise, args=(path,), daemon=True).start()
+
+    def is_provisional(name: str) -> bool:
+        with _cache_lock:
+            return name in _provisional
+
+    def _revise(path: Path) -> None:
+        """1枚目を、既定の読み取り機で読み直してキャッシュを差し替える。
+
+        読み直せなくても元の下書きは残す。**印だけは必ず外す**——外し忘れると
+        画面がいつまでも良い結果を待つ。
+        """
+        # **`開始 …` `完了 …` の形で書かないこと。** `cards_that_crashed` は
+        # 工程名を見ず名刺の名前だけを拾うので、その形にすると、読み直しの
+        # 途中で落ちたときにこの名刺が「触ってはいけない名刺」になる。軽い
+        # ほうの下書きは既に出来ていて作業できるのに、それを塞ぐことになる。
+        try:
+            _log_step(f"読み直しに入る: {path.name}")
+            payload = run_in_child(["ocr", str(path), ""])
+            values = {key: str(payload["fields"].get(key, "") or "") for key in FIELD_KEYS}
+            _remember(path.name, (values, None, payload.get("text", "")))
+        except Exception:  # noqa: BLE001 - 読み直せなくても元の下書きで進める
+            _log_failure(f"読み直し（{path.name}）")
+        finally:
+            _log_step(f"読み直しを終えた: {path.name}")
+            with _cache_lock:
+                _provisional.discard(path.name)
 
     def _warm_worker() -> None:
         """並んだ先読みを1件ずつ片付ける。この裏方は1本しか立てない。"""
@@ -1723,7 +1783,10 @@ async function show(i) {
   }
   // OCRが入れた欄は「未確認」として色を付ける。触れば消える
   state.unverified = new Set(data.prefilled || []);
+  state.touched = new Set();
   for (const key of state.unverified) mark(key, true);
+  // その回の1枚目は軽い読み取り機で読んでいる。裏の読み直しを待つ。
+  if (data.revising) waitForRevision(i);
 
   if (state.timer) clearInterval(state.timer);
   showBar(null);
@@ -1790,7 +1853,64 @@ function clearMarks() {
   state.unverified = new Set();
 }
 
+// その回の1枚目を、裏で読み直した結果に差し替える。
+//
+// **開き直すたび、再開する名刺がその1枚目になる。** アプリが落ちるたびに
+// 止まった名刺から再開するので、いま作業している名刺が毎回いちばん精度の
+// 低い読み方をされていた（実テスト35枚目：姓が `Sele]` と読まれ、氏名の欄が
+// ローマ字になった）。
+//
+// 軽いほうで即座に出す狙いは変えない。読み直しが終わったところで、
+// **まだ一度も触っていない欄だけ**差し替える。
+async function waitForRevision(i) {
+  const name = state.files[i].name;
+  // 5秒ごとに24回まで（2分）。それを超えたら諦める——読み直しが失敗しても
+  // 元の下書きは残っており、入力は続けられる。
+  for (let n = 0; n < 24; n += 1) {
+    await new Promise(r => setTimeout(r, 5000));
+    if (state.index !== i) return;          // 別の名刺へ移った
+    let data;
+    try {
+      const res = await fetch('/api/label/' + encodeURIComponent(name) + '?draft=1',
+                              { cache: 'no-store' });
+      data = await res.json();
+    } catch (e) { return; }                 // サーバーが落ちた。元の下書きで続ける
+    if (state.index !== i) return;
+    if (data.kind !== 'draft') return;      // 保存済みになった、など
+    if (data.revising) continue;
+    applyRevision(data);
+    return;
+  }
+}
+
+function applyRevision(data) {
+  const fresh = new Set(data.prefilled || []);
+  let changed = 0;
+  for (const f of state.fields) {
+    if (state.touched.has(f.key)) continue;   // 触った欄は動かさない
+    const input = document.getElementById('f_' + f.key);
+    if (!input) continue;
+    const next = data.values[f.key] || '';
+    if (input.value !== next) changed += 1;
+    input.value = next;
+    if (fresh.has(f.key)) state.unverified.add(f.key);
+    else state.unverified.delete(f.key);
+    mark(f.key, fresh.has(f.key));
+  }
+  renderUnverified();
+  const src = document.getElementById('source');
+  src.textContent = 'OCRの下書きです。黄色の欄は未確認です。画像と見比べて直してください。'
+    + (changed
+        ? `　（精度の高い読み取りが終わり、まだ触っていない ${changed} 項目を差し替えました）`
+        : '　（精度の高い読み取りが終わりました。変わった欄はありません）');
+}
+
 function confirmField(key) {
+  // **触った欄は必ず覚える。** 読み直しの結果で差し替えてよいのは、
+  // 利用者がまだ一度も触っていない欄だけ（`applyRevision` を参照）。
+  // 未確認だったかどうかとは別に記録する——空欄に自分で入力した欄は
+  // 未確認に入っていないので、ここで抜けると差し替えの対象になってしまう。
+  if (state.touched) state.touched.add(key);
   if (!state.unverified.has(key)) return;
   state.unverified.delete(key);
   mark(key, false);

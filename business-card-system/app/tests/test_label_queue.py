@@ -59,16 +59,20 @@ def _counting_ocr(monkeypatch, seconds: float = 0.0):
 
 class TestNoDuplicateWork:
     def test_same_image_is_not_processed_twice(self, cards: Path, monkeypatch):
-        """先読み中の画像へ進んでも、OCRは1回で済むこと。"""
+        """先読み中の画像へ進んでも、1枚につきOCRは1回で済むこと。
+
+        ただし**その回の1枚目だけは2回**（軽い読み取り＋読み直し。
+        `_mark_provisional` を参照）。3枚ぶんで 3 + 1 回になる。
+        """
         calls = _counting_ocr(monkeypatch, seconds=0.6)
         client = TestClient(build_app(cards, prefill=True))
 
         client.get("/api/label/card01.jpg")  # ここで card02/03 の先読みが始まる
         time.sleep(0.1)  # 先読みが終わる前に次へ進む
         client.get("/api/label/card02.jpg")
-        time.sleep(1.5)  # 先読みが終わるのを待つ
+        time.sleep(2.5)  # 先読みと読み直しが終わるのを待つ
 
-        assert len(calls) == 3, f"3枚に対して{len(calls)}回OCRしている"
+        assert len(calls) == 4, f"3枚（1枚目は読み直しを含む）に対して{len(calls)}回OCRしている"
 
     def test_waiting_request_gets_the_result(self, cards: Path, monkeypatch):
         """待たされた側も結果を受け取れること（待って空になっては困る）。"""

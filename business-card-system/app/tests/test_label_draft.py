@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -58,7 +59,12 @@ def test_failure_is_not_remembered(cards: Path, monkeypatch):
 
 
 def test_success_is_remembered(cards: Path, monkeypatch):
-    """成功はキャッシュすること（1枚あたり数秒かかるため）。"""
+    """成功はキャッシュすること（1枚あたり数秒かかるため）。
+
+    **その回の1枚目だけは2回読む。** 1回目は軽い読み取り機（画面をすぐ出す
+    ため）、2回目は既定の読み取り機での読み直し（`_mark_provisional` を参照）。
+    数えているのはそれ以上増えないこと——要求のたびに読み直してはいない。
+    """
     import poc.label as label_module
 
     calls = {"n": 0}
@@ -72,8 +78,32 @@ def test_success_is_remembered(cards: Path, monkeypatch):
     client = TestClient(build_app(cards, prefill=True))
     client.get("/api/label/card01.jpg")
     client.get("/api/label/card01.jpg")
+    time.sleep(0.3)  # 裏の読み直しが走りきるのを待つ
+    client.get("/api/label/card01.jpg")
 
-    assert calls["n"] == 1
+    assert calls["n"] == 2, "1枚目は「軽い読み取り＋読み直し」の2回で済むはず"
+
+
+def test_a_later_card_is_read_once(cards: Path, monkeypatch):
+    """2枚目からは読み直しが無いので1回で済む。"""
+    import poc.label as label_module
+
+    calls = {"n": 0}
+
+    def _once(args):
+        calls["n"] += 1
+        return {"fields": {"company_name": "テクノロジー株式会社"}, "text": ""}
+
+    monkeypatch.setattr(label_module, "run_in_child", _once)
+
+    client = TestClient(build_app(cards, prefill=True))
+    client.get("/api/label/card01.jpg")   # 1枚目（軽い読み取り＋読み直し）
+    time.sleep(0.3)
+    before = calls["n"]
+    client.get("/api/label/card02.jpg")
+    client.get("/api/label/card02.jpg")
+
+    assert calls["n"] - before == 1
 
 
 def test_error_names_the_failing_step(cards: Path, monkeypatch):
