@@ -337,3 +337,38 @@ class TestWhichWordIsTheSurname:
         from bcards.services.ocr.parser import _order_by_given_name
 
         assert _order_by_given_name("Kimura", "Nakaji", "きむら", "なかじ") == ("きむら", "なかじ")
+
+
+class TestTheOrderAppliesToTheNameItself:
+    """漢字の氏名が読めないと、ローマ字が氏名の欄に入る。
+
+    実テスト35枚目（笠間 信一郎／Kasama Shinichiro）の画面では、漢字が
+    読めておらず
+
+        姓  Shinichiro      ← 名が姓の欄に
+        名  Kasama
+
+    となっていた。並びの規則をふりがなを起こす経路にだけ掛けていたため、
+    ローマ字がそのまま氏名になる経路では掛からなかった。分割そのものに移す。
+    """
+
+    def test_the_surname_first_form(self):
+        got = parse_fields([
+            "株式会社フレイムハーツ",
+            "代表取締役　COO",
+            "Kasama Shinichiro",
+            "東京都港区南麻布3-20-1",
+        ])["fields"]
+
+        assert (got["last_name"], got["first_name"]) == ("Kasama", "Shinichiro")
+
+    def test_the_given_name_first_form_is_unchanged(self):
+        got = parse_fields(["株式会社サンプル", "Taro Yamada", "東京都"])["fields"]
+
+        assert (got["last_name"], got["first_name"]) == ("Yamada", "Taro")
+
+    def test_a_foreign_name_is_unchanged(self):
+        """`Sangeon Lee` は最後の語が姓。名らしい語尾が無いので触らない。"""
+        got = parse_fields(["ACME Inc", "Sangeon Lee", "Seoul"])["fields"]
+
+        assert (got["last_name"], got["first_name"]) == ("Lee", "Sangeon")

@@ -1758,6 +1758,21 @@ def split_person_name(full: str) -> tuple[str, str]:
                 and parts[1].lower() not in KOREAN_SURNAMES
             ):
                 return parts[0], parts[1]
+            # 日本語の氏名をローマ字で刷る名刺は、姓が先のものと名が先のものが
+            # 両方ある。
+            #
+            #     木村 央志                笠間　信一郎
+            #     Nakaji Kimura   ← 名 姓   Kasama Shinichiro   ← 姓 名
+            #
+            # 名に多い語尾（`ろう`／`こ`／`すけ`）が**後ろの語**にあるときだけ
+            # 入れ替える。判断できないものは今までどおり最後の語を姓とする。
+            #
+            # この規則は以前、ふりがなを起こす経路にだけ掛けていた。しかし
+            # 漢字の氏名が読めず**ローマ字が氏名の欄に入る**ことがあり
+            # （実テスト35枚目）、そこでは掛からないまま
+            # 姓『Shinichiro』／名『Kasama』になっていた。分割そのものに移す。
+            if len(parts) == 2 and _is_given_name(parts[1]) and not _is_given_name(parts[0]):
+                return parts[0], parts[1]
             given = [parts[0]]
             rest = list(parts[1:])
             # `John A. Smith` の `A.` は中間名の頭文字。名のほうに残す。
@@ -1874,10 +1889,9 @@ def _fill_kana_from_romaji(
             continue
         # 姓は最後の語（`split_person_name` を参照）。`Nakaji Kimura` は
         # 姓=Kimura・名=Nakaji で、漢字の 木村／央志 と並びが逆になる。
+        # 並びは `split_person_name` が決める（`_is_given_name` を参照）。
         last, first = split_person_name(spaced_lines[index])
         last_kana, first_kana = name_to_hiragana(last), name_to_hiragana(first)
-        if last_kana and first_kana:
-            last_kana, first_kana = _order_by_given_name(last, first, last_kana, first_kana)
         # 片方だけ入れない。姓と名がずれたふりがなは、空欄より悪い。
         if not last_kana or not first_kana:
             continue
