@@ -1585,7 +1585,8 @@ function fieldHtml(key) {
   return `<div class="field">
     <label for="f_${f.key}">${f.label}</label>
     <input id="f_${f.key}" name="${f.key}" type="text"
-           oninput="confirmField('${f.key}')" onfocus="confirmField('${f.key}')">
+           oninput="confirmField('${f.key}'); markTouched('${f.key}')"
+           onfocus="confirmField('${f.key}')">
     ${f.hint ? `<div class="hint">${f.hint}</div>` : ''}
   </div>`;
 }
@@ -1905,12 +1906,20 @@ function applyRevision(data) {
         : '　（精度の高い読み取りが終わりました。変わった欄はありません）');
 }
 
-function confirmField(key) {
-  // **触った欄は必ず覚える。** 読み直しの結果で差し替えてよいのは、
-  // 利用者がまだ一度も触っていない欄だけ（`applyRevision` を参照）。
-  // 未確認だったかどうかとは別に記録する——空欄に自分で入力した欄は
-  // 未確認に入っていないので、ここで抜けると差し替えの対象になってしまう。
+// 利用者が**自分で書き換えた**欄を覚える。読み直しの結果で差し替えてよいのは、
+// ここに入っていない欄だけ（`applyRevision` を参照）。
+//
+// **焦点が当たっただけでは記録しない。** 下書きを当てたあと最初の欄へ自動で
+// 焦点を移しており（`first.focus()`）、`onfocus` で記録すると**姓は毎回
+// 触ったことになって、読み直しの結果を受け取れない**。実際に版 ea5c1a6 の
+// 画面でそうなっていた——姓だけ黄色が消え、差し替えの対象から外れていた。
+//
+// 未確認の色（黄色）が焦点で消えるのは以前からの動きで、そのままにする。
+function markTouched(key) {
   if (state.touched) state.touched.add(key);
+}
+
+function confirmField(key) {
   if (!state.unverified.has(key)) return;
   state.unverified.delete(key);
   mark(key, false);

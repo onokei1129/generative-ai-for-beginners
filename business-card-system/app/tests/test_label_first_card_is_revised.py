@@ -161,3 +161,31 @@ class TestTheRevisionIsNotMistakenForACrash:
         log.write_text("08/24 10:00:00  開始 OCR b.png\n", encoding="utf-8")
 
         assert label.cards_that_crashed(log) == {"b.png"}
+
+
+class TestFocusIsNotAnEdit:
+    """焦点が当たっただけの欄は、読み直しの結果を受け取れること。
+
+    下書きを当てたあと、画面は最初の欄（姓）へ自動で焦点を移す
+    （`first.focus()`）。`onfocus` で「触った」と記録すると、**姓は毎回
+    触ったことになり、読み直しの結果から外れる**。
+
+    実際に版 ea5c1a6 の画面でそうなっていた。35枚目で姓だけ黄色が消えており、
+    このままでは姓が `Kasama`（軽い読み取りの結果）のまま、名だけが読み直しの
+    結果に入れ替わって、ちぐはぐな氏名になる。
+    """
+
+    def test_touched_is_recorded_on_input_only(self):
+        """`markTouched` は `oninput` からだけ呼ぶ。`onfocus` からは呼ばない。"""
+        page = label.PAGE if hasattr(label, "PAGE") else None
+        source = page if page else Path(label.__file__).read_text(encoding="utf-8")
+
+        assert 'oninput="confirmField(\'${f.key}\'); markTouched(\'${f.key}\')"' in source
+        assert 'onfocus="confirmField(\'${f.key}\')"' in source
+        assert 'onfocus="confirmField(\'${f.key}\'); markTouched' not in source
+
+    def test_the_screen_still_moves_focus_to_the_first_field(self):
+        """自動で焦点を移す動きは変えていない（変えると入力の手間が増える）。"""
+        source = Path(label.__file__).read_text(encoding="utf-8")
+
+        assert "first.focus();" in source
