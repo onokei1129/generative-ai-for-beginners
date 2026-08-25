@@ -189,3 +189,30 @@ class TestFocusIsNotAnEdit:
         source = Path(label.__file__).read_text(encoding="utf-8")
 
         assert "first.focus();" in source
+
+
+class TestTheRevisionIsVisible:
+    """読み直しが効いたかどうかを、画面で確かめられること。"""
+
+    def test_the_read_text_is_replaced_too(self):
+        """「OCRが読んだ文字を見る」も差し替える。
+
+        ここを忘れると軽いほうの結果が残り続ける。項目が空のときに
+        「読めていないのか、取り出せていないのか」を切り分けるための欄なので、
+        古いままでは用をなさない。
+        """
+        source = Path(label.__file__).read_text(encoding="utf-8")
+        start = source.index("function applyRevision(")
+        body = source[start : source.index("function confirmField(", start)]
+
+        assert "ocrtext" in body, "読んだ文字を差し替えていない"
+
+    def test_it_waits_long_enough_for_the_model_to_load(self):
+        """読み直しはモデルの読み込み（実測45秒）から始まり、先読みと同じ列に
+        並ぶ。2分では足りず、終わっているのに差し替わらない形になる。
+        """
+        source = Path(label.__file__).read_text(encoding="utf-8")
+        start = source.index("async function waitForRevision(")
+        body = source[start : source.index("function applyRevision(", start)]
+
+        assert "n < 60" in body, "待受が短すぎる"

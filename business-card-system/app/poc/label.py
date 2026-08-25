@@ -1865,9 +1865,14 @@ function clearMarks() {
 // **まだ一度も触っていない欄だけ**差し替える。
 async function waitForRevision(i) {
   const name = state.files[i].name;
-  // 5秒ごとに24回まで（2分）。それを超えたら諦める——読み直しが失敗しても
-  // 元の下書きは残っており、入力は続けられる。
-  for (let n = 0; n < 24; n += 1) {
+  // 5秒ごとに60回まで（5分）。
+  //
+  // 2分では足りない。読み直しはモデルの読み込み（実測45秒）から始まるうえ、
+  // 次の名刺の先読みと**同じ列**に並ぶので、その後ろに回ると1〜2分待つ。
+  // 途中で諦めると、終わっているのに差し替わらないという分かりにくい形になる。
+  //
+  // 超えたら諦める——読み直しが失敗しても元の下書きは残り、入力は続けられる。
+  for (let n = 0; n < 60; n += 1) {
     await new Promise(r => setTimeout(r, 5000));
     if (state.index !== i) return;          // 別の名刺へ移った
     let data;
@@ -1897,6 +1902,14 @@ function applyRevision(data) {
     if (fresh.has(f.key)) state.unverified.add(f.key);
     else state.unverified.delete(f.key);
     mark(f.key, fresh.has(f.key));
+  }
+  // **読んだ文字も差し替える。** ここを忘れると、「OCRが読んだ文字を見る」に
+  // 軽いほうの結果が残り続ける。項目が空のときに原因を切り分けるための欄
+  // なので、古いままでは用をなさない（実際、読み直しが効いたかどうかを
+  // 確かめる手立てが無かった）。
+  if (data.ocr_text) {
+    state.ocrLoaded = true;
+    document.getElementById('ocrtext').textContent = data.ocr_text;
   }
   renderUnverified();
   const src = document.getElementById('source');
