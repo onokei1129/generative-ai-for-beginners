@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>人物の統合</h1>
+<p class="page-desc">統合元の名刺はすべて統合先へ移動します。統合元は論理削除されます。</p>
+<form method="get" action="/admin/merge" class="panel">
+  <div class="form-grid"><div><label>氏名で検索</label><input type="text" name="q" value="{{ q }}"></div></div>
+  <div class="actions"><button type="submit">検索</button></div>
+</form>
+
+{% if persons %}
+<form method="post" action="/admin/merge" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-grid">
+    <div><label>統合元（消える側）</label>
+      <select name="source_id">{% for p in persons %}<option value="{{ p.person_id }}">{{ p.full_name }}（名刺 {{ p.cards|length }} 枚）</option>{% endfor %}</select></div>
+    <div><label>統合先（残る側）</label>
+      <select name="target_id">{% for p in persons %}<option value="{{ p.person_id }}">{{ p.full_name }}（名刺 {{ p.cards|length }} 枚）</option>{% endfor %}</select></div>
+    <div><label>理由</label><input type="text" name="reason"></div>
+  </div>
+  <div class="actions"><button type="submit" class="danger" onclick="return confirm('人物を統合します。よろしいですか？');">統合する</button></div>
+</form>
+{% endif %}
+{% endblock %}

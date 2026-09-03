@@ -1,0 +1,9 @@
+# EasyOCR を使う場合だけインストールする（OCRエンジンの比較：論点C）。
+#
+# PyTorch を伴うため依存が大きい。初回実行時にモデルの重みを取得するため
+# 外部への通信が必要になる（GitHub のリリース）。取得後はオフラインで動く。
+#
+#   pip install -r requirements-easyocr.txt
+#   BCARDS_OCR_PROVIDER=easyocr ./run.sh
+#   python -m poc.runner --only G        # 精度の比較
+easyocr>=1.7

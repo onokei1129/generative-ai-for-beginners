@@ -1,13 +1,22 @@
 name: Azure Static Web Apps CI/CD
 
+# ─────────────────────────────────────────────────────────────────────
+# このフォークでは自動実行を止めています。
+#
+# 理由: フォーク元（microsoft/generative-ai-for-beginners）の教材向けの
+# チェックで、このリポジトリで追加した business-card-system には当てはまらない
+# ためです。具体的には
+#   ・教材ノートブックが2023年から参照している画像の欠落を毎回報告する
+#   ・Microsoft の流入計測用トラッキングID（wt.mc_id）を社内文書にも要求する
+#   ・Azure のデプロイに必要な認証情報がこのフォークに無い
+# という内容で、いずれも直すべきものではありません。
+#
+# ファイルは残してあるので、元に戻すときは下の on: を元の内容へ差し替えます
+# （git log でこのコミットを見れば元の指定が分かります）。
+# 手動で走らせたい場合は Actions タブから Run workflow で実行できます。
+# ─────────────────────────────────────────────────────────────────────
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build_and_deploy_job:

@@ -1,0 +1,11 @@
+# PaddleOCR を使う場合だけインストールする（OCRエンジンの比較：論点C）。
+#
+# 依存が大きい（インストール後 約1.4GB）ため requirements.txt には入れない。
+# 初回実行時にモデルの重みを取得するため外部への通信が必要になる
+# （HuggingFace / ModelScope / BOS のいずれか）。取得後はオフラインで動く。
+#
+#   pip install -r requirements-paddle.txt
+#   BCARDS_OCR_PROVIDER=paddle ./run.sh
+#   python -m poc.runner --only F        # 精度の比較
+paddlepaddle>=3.0
+paddleocr>=3.0

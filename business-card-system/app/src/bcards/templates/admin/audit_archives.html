@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>監査ログのアーカイブ</h1>
+<p class="page-desc">
+  監査ログは追記専用です。{% if archive_after_days %}{{ archive_after_days }}日{% else %}—{% endif %}を過ぎたログを
+  オブジェクトストレージへ書き出してDBから外し、{% if retention_days %}{{ retention_days }}日{% else %}無期限で{% endif %}保持します。
+  期間はシステム設定から変更できます。
+</p>
+
+<div class="panel">
+  <table>
+    <tr><th>DBにある監査ログ</th><td>{{ db_rows }} 件{% if oldest_in_db %}<span class="muted small">（最古 {{ oldest_in_db|dt("%Y-%m-%d") }}）</span>{% endif %}</td></tr>
+    <tr><th>アーカイブ対象</th><td>{{ pending_rows }} 件</td></tr>
+    <tr><th>アーカイブ済み</th><td>{{ archived_rows }} 件 / {{ (archived_bytes / 1024 / 1024)|round(2) }} MB</td></tr>
+    <tr><th>アーカイブへ移すまで</th><td>{% if archive_after_days %}{{ archive_after_days }} 日{% else %}移さない{% endif %}</td></tr>
+    <tr><th>保持期間</th><td>{% if retention_days %}{{ retention_days }} 日{% else %}無期限{% endif %}</td></tr>
+  </table>
+</div>
+
+<form method="post" action="/admin/audit/archives/run" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">いま実行する</button>
+  <span class="small muted">通常は日次バッチ（<code>ops/archive_logs.py</code>）から実行します。</span>
+</form>
+
+<h2>アーカイブ一覧</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>対象期間</th><th>件数</th><th>容量</th><th>作成日時</th><th>チェックサム</th><th></th></tr>
+    {% for archive in archives %}
+    <tr>
+      <td class="nowrap small">{{ archive.period_from|dt("%Y-%m-%d") }} 〜 {{ archive.period_to|dt("%Y-%m-%d") }}</td>
+      <td>{{ archive.row_count }}</td>
+      <td class="small">{{ (archive.byte_size / 1024)|round(1) }} KB</td>
+      <td class="nowrap small">{{ archive.created_at|dt("%Y-%m-%d %H:%M") }}</td>
+      <td class="small mono muted">{{ (archive.checksum or "")[:16] }}</td>
+      <td><a href="/admin/audit/archives/{{ archive.log_archive_id }}/download">ダウンロード</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">アーカイブはまだありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<p class="small muted">
+  形式は JSON Lines（gzip圧縮）です。1行が1件の監査ログに対応します。
+  ダウンロードした操作自体も監査ログに記録されます。<br>
+  変更履歴（名刺の変更前後）はアーカイブ対象外です。要件§10のとおり名刺データに保存期限がないため、
+  変更履歴も名刺と同じく無期限にDBへ保持します。
+</p>
+{% endblock %}

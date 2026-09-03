@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>会社一覧</h1>
+<form method="get" action="/companies" class="panel">
+  <div class="form-grid"><div><label>会社名</label><input type="text" name="q" value="{{ q }}"></div></div>
+  <div class="actions"><button type="submit">検索</button></div>
+</form>
+<div class="table-wrap">
+  <table>
+    <tr><th>会社名</th><th>名刺数</th><th></th></tr>
+    {% for company in companies %}
+    <tr>
+      <td><a href="/companies/{{ company.company_id }}">{{ company.name }}</a></td>
+      <td>{{ counts.get(company.company_id, 0) }}</td>
+      <td><a href="/cards?company_id={{ company.company_id }}">名刺を検索</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="muted">該当する会社はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

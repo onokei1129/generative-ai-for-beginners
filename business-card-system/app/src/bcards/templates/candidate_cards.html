@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>対象名刺の選択</h1>
+<p class="page-desc">{{ person.full_name if person else "" }}</p>
+<div class="table-wrap">
+  <table>
+    <tr><th>名刺ID</th><th>会社 / 部署 / 役職</th><th>状態</th><th>登録日</th></tr>
+    {% for card in cards %}
+    <tr>
+      <td class="mono">{{ card.card_id }}</td>
+      <td>{{ card.company_display }} {{ card.department_name or "" }} {{ card.title or "" }}</td>
+      <td>{% if card.is_latest %}<span class="badge latest">最新</span>{% else %}<span class="badge past">過去</span>{% endif %}</td>
+      <td class="small muted">{{ card.created_at|dt("%Y-%m-%d") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+<div class="actions"><a class="btn secondary" href="/imports/items/{{ item_id }}">確認画面へ戻る</a></div>
+{% endblock %}

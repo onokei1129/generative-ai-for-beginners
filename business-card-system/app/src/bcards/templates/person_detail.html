@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ person.full_name }}</h1>
+<p class="page-desc">{{ person.full_name_kana }} / 名刺 {{ cards|length }} 枚</p>
+
+<h2>名刺履歴（時系列）</h2>
+<div class="timeline">
+  {% for card in cards %}
+  <div class="entry">
+    <div>
+      <strong>{{ card.company_display }}</strong> {{ card.department_name or "" }} {{ card.title or "" }}
+      {% if card.deleted_at %}<span class="badge deleted">削除済み</span>{% elif card.is_latest %}<span class="badge latest">最新</span>{% else %}<span class="badge past">過去</span>{% endif %}
+    </div>
+    <div class="small muted">
+      登録 {{ card.created_at|dt }}
+      {% if card.exchanged_on %}/ 名刺交換日 {{ card.exchanged_on|dt("%Y-%m-%d") }}{% endif %}
+      {% if card.superseded_by_card_id %}/ 後継の名刺あり{% endif %}
+    </div>
+    <div class="small">
+      {% for v in card.contact_values("tel") %}TEL {{ v }} {% endfor %}
+      {% for v in card.contact_values("email") %}{{ v }} {% endfor %}
+    </div>
+    <div class="small"><a href="/cards/{{ card.card_id }}">名刺を開く</a></div>
+  </div>
+  {% else %}
+  <p class="muted">名刺がありません。</p>
+  {% endfor %}
+</div>
+{% endblock %}

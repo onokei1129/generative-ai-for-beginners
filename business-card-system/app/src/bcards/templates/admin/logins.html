@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ログイン履歴</h1>
+<div class="table-wrap">
+  <table>
+    <tr><th>日時</th><th>ログインID</th><th>結果</th><th>IP</th><th>端末</th><th>ブラウザ</th></tr>
+    {% for a in attempts %}
+    <tr>
+      <td class="nowrap small">{{ a.attempted_at|dt("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ a.login_id }}</td>
+      <td>{% if a.result == "success" %}<span class="badge latest">成功</span>{% else %}<span class="badge deleted">{{ a.result }}</span>{% endif %}</td>
+      <td class="mono small">{{ a.ip_address }}</td>
+      <td class="mono small">{{ (a.device_id or "")[:12] }}</td>
+      <td class="small muted">{{ (a.user_agent or "")[:60] }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">履歴はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

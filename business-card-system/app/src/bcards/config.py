@@ -1,0 +1,112 @@
+"""アプリケーション設定。
+
+環境変数で上書きできる値のみを扱う。運用中に管理者が変更する値
+（無操作ログアウト時間、容量アラート閾値など）は AppSetting テーブル側で管理する。
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+APP_DIR = BASE_DIR.parent.parent
+
+
+def _env(key: str, default: str) -> str:
+    return os.environ.get(key, default)
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    return _env(key, "1" if default else "0").lower() in ("1", "true", "yes", "on")
+
+
+class Settings:
+    # 実行環境（development / production）。production では起動時チェックを厳格にする
+    env: str = _env("BCARDS_ENV", "development")
+
+    # データベース
+    database_url: str = _env("BCARDS_DATABASE_URL", f"sqlite:///{APP_DIR / 'storage' / 'bcards.db'}")
+    # 本番では Alembic で管理するため 0 にする（起動時の自動テーブル作成を止める）
+    auto_create_tables: bool = _env_bool("BCARDS_AUTO_CREATE_TABLES", True)
+    db_pool_size: int = int(_env("BCARDS_DB_POOL_SIZE", "5"))
+    db_max_overflow: int = int(_env("BCARDS_DB_MAX_OVERFLOW", "10"))
+
+    # オブジェクトストレージ（local / s3。services/storage.py 参照）
+    storage_backend: str = _env("BCARDS_STORAGE_BACKEND", "local")
+    storage_dir: Path = Path(_env("BCARDS_STORAGE_DIR", str(APP_DIR / "storage" / "objects")))
+    s3_bucket: str = _env("BCARDS_S3_BUCKET", "")
+    s3_key_prefix: str = _env("BCARDS_S3_KEY_PREFIX", "business-cards")
+    s3_region: str = _env("BCARDS_S3_REGION", "")
+    s3_endpoint_url: str = _env("BCARDS_S3_ENDPOINT_URL", "")  # MinIO等のS3互換ストレージ用
+    s3_sse: str = _env("BCARDS_S3_SSE", "AES256")  # 保存時暗号化。空文字で無効
+    # 使用量の集計をキャッシュする秒数。0で毎回集計する。
+    # 集計はローカルなら全走査、S3ならバケット全体のリストになるため、画面表示のたびには行わない
+    storage_usage_cache_seconds: float = float(_env("BCARDS_STORAGE_USAGE_CACHE_SECONDS", "300"))
+
+    # セッション
+    secret_key: str = _env("BCARDS_SECRET_KEY", "dev-secret-key-change-me")
+    session_cookie: str = "bcards_session"
+    device_cookie: str = "bcards_device"
+    secure_cookie: bool = _env_bool("BCARDS_SECURE_COOKIE", False)
+
+    # OCR プロバイダ: mock / tesseract / paddle / easyocr / combined / azure
+    #
+    # 既定は combined（EasyOCR と tesseract の併用）。論点Cの計測で、項目
+    # 正答率 64.8% → 78.2%、1枚あたりの修正 4.6 → 2.9 項目になった
+    # （ocr-decision-2026-08.md §6）。数値は 2026/08/20 の測り直し後のもの
+    # （ocr-poc-report.md §0。それ以前の 68.0% → 74.9% とは物差しが違う）。
+    #
+    # EasyOCR は依存が大きく（約1.5GB）requirements.txt には入れていない。
+    # 入っていない環境では tesseract だけで動く（＝従来どおり）。黙って
+    # 精度が戻らないよう、起動時と poc/doctor.py で知らせる。
+    ocr_provider: str = _env("BCARDS_OCR_PROVIDER", "combined")
+    ocr_languages: str = _env("BCARDS_OCR_LANGUAGES", "jpn+jpn_vert+eng")
+    # PaddleOCR / EasyOCR を使う場合のみ（任意インストール。app/README.md 参照）。
+    # 言語の指定方法がプロバイダごとに違うため別の設定にしている。
+    ocr_paddle_language: str = _env("BCARDS_OCR_PADDLE_LANGUAGE", "japan")
+    ocr_easyocr_languages: str = _env("BCARDS_OCR_EASYOCR_LANGUAGES", "ja,en")
+    # tesseract が使うOpenMPスレッド数。ワーカーを複数動かす場合、既定のまま
+    # （＝CPU数）にすると各プロセスがCPUを奪い合って極端に遅くなる（app/README.md 参照）。
+    ocr_thread_limit: int = int(_env("BCARDS_OCR_THREAD_LIMIT", "1"))
+    # 1回のOCR呼び出しの上限秒数。超えるとそのファイルはエラーにして次へ進む
+    ocr_timeout_seconds: int = int(_env("BCARDS_OCR_TIMEOUT_SECONDS", "120"))
+
+    # Azure AI Document Intelligence を使う場合のみ設定（services/ocr/providers.py）
+    azure_di_endpoint: str = _env("BCARDS_AZURE_DI_ENDPOINT", "")
+    azure_di_key: str = _env("BCARDS_AZURE_DI_KEY", "")
+
+    # 項目分離の方式: rule（ルールベース）/ llm（Claude API）/ auto（LLMが使えれば使う）
+    field_extractor: str = _env("BCARDS_FIELD_EXTRACTOR", "auto")
+    llm_model: str = _env("BCARDS_LLM_MODEL", "claude-opus-5")
+    llm_effort: str = _env("BCARDS_LLM_EFFORT", "low")
+
+    # 取込ワーカー（キュー方式）
+    worker_enabled: bool = _env_bool("BCARDS_WORKER_ENABLED", True)
+    worker_concurrency: int = int(_env("BCARDS_WORKER_CONCURRENCY", "2"))
+    worker_poll_seconds: float = float(_env("BCARDS_WORKER_POLL_SECONDS", "1.0"))
+    worker_lease_seconds: int = int(_env("BCARDS_WORKER_LEASE_SECONDS", "600"))
+
+    # 画像
+    display_max_edge: int = int(_env("BCARDS_DISPLAY_MAX_EDGE", "1600"))
+    thumbnail_max_edge: int = int(_env("BCARDS_THUMBNAIL_MAX_EDGE", "400"))
+    min_card_width_px: int = int(_env("BCARDS_MIN_CARD_WIDTH_PX", "600"))
+    blur_threshold: float = float(_env("BCARDS_BLUR_THRESHOLD", "80"))
+
+    # 保存容量（アラート判定に使用。本番では契約容量を設定する）
+    storage_quota_bytes: int = int(_env("BCARDS_STORAGE_QUOTA_BYTES", str(50 * 1024 ** 3)))
+
+    # IP制限を強制するか（開発時は 0 にして無効化できる）
+    enforce_ip_restriction: bool = _env_bool("BCARDS_ENFORCE_IP_RESTRICTION", True)
+
+    # X-Forwarded-For を信用してよいプロキシのCIDR（カンマ区切り）。
+    # 未設定の場合はヘッダを一切信用せず、TCP接続元のアドレスを使う。
+    # ロードバランサやリバースプロキシの背後で動かす場合のみ設定する。
+    trusted_proxy_cidrs: list[str] = [
+        cidr.strip() for cidr in _env("BCARDS_TRUSTED_PROXIES", "").split(",") if cidr.strip()
+    ]
+
+
+settings = Settings()
+settings.storage_dir.mkdir(parents=True, exist_ok=True)
+(APP_DIR / "storage").mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>システム設定</h1>
+<p class="page-desc">変更内容は変更履歴と監査ログに記録されます。</p>
+<form method="post" action="/admin/settings" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% for key, default in defaults.items() %}
+  <div class="field">
+    <label>{{ key }}</label>
+    {% if default is sameas true or default is sameas false %}
+      <label class="small" style="display:flex;gap:6px;align-items:center;color:var(--ink)">
+        <input type="checkbox" name="{{ key }}" value="1" {% if values[key] %}checked{% endif %}> 有効にする
+      </label>
+    {% elif default is number %}
+      <input type="number" name="{{ key }}" value="{{ values[key] }}">
+    {% elif key == "admin_external_access_mode" %}
+      <select name="{{ key }}">
+        <option value="always" {% if values[key] == "always" %}selected{% endif %}>always（常時許可）</option>
+        <option value="on_demand" {% if values[key] == "on_demand" %}selected{% endif %}>on_demand（許可した管理者のみ）</option>
+        <option value="denied" {% if values[key] == "denied" %}selected{% endif %}>denied（禁止）</option>
+      </select>
+    {% elif key == "card_edit_policy" %}
+      <select name="{{ key }}">
+        <option value="all_users" {% if values[key] == "all_users" %}selected{% endif %}>all_users（全利用者が編集可・推奨）</option>
+        <option value="owner_and_admin" {% if values[key] == "owner_and_admin" %}selected{% endif %}>owner_and_admin（登録者と管理者のみ）</option>
+      </select>
+    {% else %}
+      <input type="text" name="{{ key }}" value="{{ values[key] }}">
+    {% endif %}
+    <div class="small muted">{{ descriptions.get(key, "") }}</div>
+  </div>
+  {% endfor %}
+  <div class="field"><label>変更理由</label><input type="text" name="reason"></div>
+  <div class="actions"><button type="submit">保存する</button></div>
+</form>
+{% endblock %}

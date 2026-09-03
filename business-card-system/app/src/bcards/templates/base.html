@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} | {{ APP_NAME }}</title>
+<link rel="stylesheet" href="/static/app.css">
+{% if auto_refresh %}<meta http-equiv="refresh" content="3">{% endif %}
+</head>
+<body>
+{% if user %}
+<header class="topbar">
+  <a class="brand" href="/">{{ APP_NAME }}</a>
+  <nav>
+    <a href="/cards">名刺検索</a>
+    <a href="/imports/upload">アップロード</a>
+    <a href="/imports">取込状況</a>
+    <a href="/companies">会社</a>
+    <a href="/export">CSV出力</a>
+    {% if user.is_admin %}<a href="/admin">管理</a>{% endif %}
+  </nav>
+  <div class="user-area">
+    <a href="/mypage">{{ user.display_name }}{% if user.is_admin %}（管理者）{% endif %}</a>
+    <form method="post" action="/logout" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="link">ログアウト</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+
+<main class="container">
+  {% if flash %}<div class="alert success">{{ flash }}</div>{% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <span>{{ APP_NAME }}</span>
+  <span>登録された名刺は会社の共有情報資産です。CSV出力・上書き・削除は監査ログに記録されます。</span>
+</footer>
+</body>
+</html>

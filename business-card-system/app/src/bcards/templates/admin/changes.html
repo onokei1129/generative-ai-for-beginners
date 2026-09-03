@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>変更履歴（全体）</h1>
+<div class="table-wrap">
+  <table>
+    <tr><th>日時</th><th>変更者</th><th>対象</th><th>操作</th><th>変更前</th><th>変更後</th><th>理由</th><th>IP</th></tr>
+    {% for entry in history %}
+    <tr>
+      <td class="nowrap small">{{ entry.changed_at|dt }}</td>
+      <td>{{ entry.changed_by_name or "" }}</td>
+      <td class="small mono">{{ entry.target_type }}<div class="muted">{{ entry.target_id[:8] }}</div></td>
+      <td class="small">{{ entry.operation }}</td>
+      <td class="small diff-old">{% if entry.before_value %}{% for k, v in entry.before_value.items() %}<div>{{ k }}: {{ v }}</div>{% endfor %}{% endif %}</td>
+      <td class="small diff-new">{% if entry.after_value %}{% for k, v in entry.after_value.items() %}<div>{{ k }}: {{ v }}</div>{% endfor %}{% endif %}</td>
+      <td class="small">{{ entry.change_reason or "" }}</td>
+      <td class="mono small">{{ entry.ip_address or "" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

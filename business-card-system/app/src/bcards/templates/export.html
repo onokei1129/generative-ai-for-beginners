@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>CSV出力</h1>
+<p class="page-desc">出力した利用者・日時・端末・IPアドレス・件数・条件・項目はすべて記録されます。</p>
+
+<form method="post" action="/export" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <h3>出力対象</h3>
+  <div class="field">
+    <select name="scope">
+      <option value="search_result">検索結果（下の条件に一致するもの）</option>
+      <option value="by_company">指定した会社</option>
+      <option value="by_period">指定した期間</option>
+      <option value="all">全名刺</option>
+    </select>
+  </div>
+
+  <div class="form-grid">
+    <div><label>フリーワード</label><input type="text" name="q" value="{{ params.q or '' }}"></div>
+    <div><label>会社</label>
+      <select name="company_id"><option value="">すべて</option>
+        {% for c in companies %}<option value="{{ c.company_id }}" {% if params.company_id == c.company_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select></div>
+    <div><label>登録者</label>
+      <select name="created_by"><option value="">すべて</option>
+        {% for u in users %}<option value="{{ u.user_id }}" {% if params.created_by == u.user_id %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}
+      </select></div>
+    <div><label>登録日（From）</label><input type="date" name="from" value="{{ params.from or '' }}"></div>
+    <div><label>登録日（To）</label><input type="date" name="to" value="{{ params.to or '' }}"></div>
+  </div>
+  <div class="field">
+    <label class="small" style="display:flex;gap:6px;align-items:center;color:var(--ink)">
+      <input type="checkbox" name="latest_only" value="1" {% if params.latest_only %}checked{% endif %}> 最新の名刺のみ出力する
+    </label>
+  </div>
+
+  <h3>出力項目</h3>
+  <div class="checkbox-list">
+    {% for key, label in columns.items() %}
+    <label><input type="checkbox" name="columns" value="{{ key }}" {% if key in default_columns %}checked{% endif %}> {{ label }}</label>
+    {% endfor %}
+  </div>
+
+  <div class="alert info small">{{ threshold }} 件以上を出力する場合は確認画面が表示されます。</div>
+  <div class="actions">
+    <button type="submit">CSVをダウンロード</button>
+    <a class="btn secondary" href="/export/history">自分の出力履歴</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,10 @@
+.venv/
+storage/*
+!storage/.gitkeep
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 手元で作る作業用フォルダ（練習用サンプル・実名刺・正解ラベル）
+poc/practice/
+poc/real-cards/

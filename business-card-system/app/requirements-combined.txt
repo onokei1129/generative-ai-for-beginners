@@ -1,0 +1,13 @@
+# 読み取りエンジンを2つ併用する場合だけインストールする（論点C：案2の計測結果）。
+#
+# EasyOCR と tesseract の弱点が重ならないため、両方かけて項目ごとに
+# 取れたほうを採ると、合成サンプル20枚で 68.0% → 74.9% になった。
+# 代償は処理時間で、1枚あたり 3.4秒 → 15〜21秒 ほどになる。
+#
+# tesseract は requirements.txt 側（pytesseract）に入っているため、
+# ここで足すのは EasyOCR だけ。
+#
+#   pip install -r requirements-combined.txt
+#   BCARDS_OCR_PROVIDER=combined ./run.sh
+#   python -m poc.runner --only H        # 精度の比較
+-r requirements-easyocr.txt

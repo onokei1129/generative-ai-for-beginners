@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>監査ログ</h1>
+<p class="page-desc">上書き・削除・CSV出力などの重要操作を記録しています。追記専用です。</p>
+<form method="get" action="/admin/audit" class="panel">
+  <div class="form-grid">
+    <div><label>操作</label><select name="action"><option value="">すべて</option>
+      {% for a in actions %}<option value="{{ a }}" {% if params.action == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <div><label>利用者</label><select name="user_id"><option value="">すべて</option>
+      {% for u in users %}<option value="{{ u.user_id }}" {% if params.user_id == u.user_id %}selected{% endif %}>{{ u.display_name }}</option>{% endfor %}</select></div>
+    <div><label>結果</label><select name="result"><option value="">すべて</option>
+      <option value="success" {% if params.result == "success" %}selected{% endif %}>成功</option>
+      <option value="failure" {% if params.result == "failure" %}selected{% endif %}>失敗</option></select></div>
+  </div>
+  <div class="actions"><button type="submit">絞り込む</button><a class="btn secondary" href="/admin/audit">クリア</a></div>
+</form>
+
+<div class="table-wrap">
+  <table>
+    <tr><th>日時</th><th>利用者</th><th>操作</th><th>対象</th><th>結果</th><th>IP / 端末</th><th>詳細</th></tr>
+    {% for log in logs %}
+    <tr>
+      <td class="nowrap small">{{ log.occurred_at|dt("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ log.user_display_name or "-" }}</td>
+      <td class="nowrap">{{ log.action }}</td>
+      <td class="small mono">{{ log.target_type or "" }} {{ (log.target_id or "")[:8] }}</td>
+      <td>{% if log.result == "success" %}<span class="badge latest">成功</span>{% else %}<span class="badge deleted">失敗</span>{% endif %}</td>
+      <td class="small mono">{{ log.ip_address }}<div class="muted">{{ log.os_info or "" }} {{ (log.device_id or "")[:8] }}</div></td>
+      <td class="small muted">{{ log.error_message or (log.detail if log.detail else "") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>マイページ</h1>
+<p class="page-desc">{{ user.display_name }}（{{ user.login_id }}） / {{ "管理者" if user.is_admin else "一般利用者" }}</p>
+
+<div class="grid cols-2">
+  <div class="panel">
+    <h3>パスワードの変更</h3>
+    <form method="post" action="/mypage/password">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field"><label>現在のパスワード</label><input type="password" name="current_password" required></div>
+      <div class="field"><label>新しいパスワード（10文字以上）</label><input type="password" name="new_password" required></div>
+      <div class="actions"><button type="submit">変更する</button></div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h3>多要素認証</h3>
+    {% if user.mfa_enabled %}
+      <p class="small">有効です。管理者が社外から利用する場合に必要です。</p>
+      <form method="post" action="/mypage/mfa/disable">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="actions"><button type="submit" class="secondary">無効にする</button></div>
+      </form>
+    {% elif pending_secret %}
+      <p class="small">認証アプリに次のシークレットを登録し、表示された6桁を入力してください。</p>
+      <p class="mono">{{ pending_secret }}</p>
+      <p class="small muted mono">{{ otpauth }}</p>
+      <form method="post" action="/mypage/mfa/enable">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="secret" value="{{ pending_secret }}">
+        <div class="field"><label>認証コード</label><input type="text" name="code" inputmode="numeric" required></div>
+        <div class="actions"><button type="submit">有効にする</button></div>
+      </form>
+    {% else %}
+      <p class="small muted">未設定です。</p>
+      <form method="post" action="/mypage/mfa/start">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="actions"><button type="submit">設定を開始する</button></div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<h2>自分が登録した名刺</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>氏名</th><th>会社</th><th>登録日時</th><th></th></tr>
+    {% for card in my_cards %}
+    <tr>
+      <td>{{ card.person.full_name }}</td>
+      <td>{{ card.company_display }}</td>
+      <td class="small muted nowrap">{{ card.created_at|dt }}</td>
+      <td><a href="/cards/{{ card.card_id }}">詳細</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">まだありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+<p class="small muted">退職時もここに登録した名刺は削除されず、共有情報として残ります。</p>
+{% endblock %}

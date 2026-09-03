@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>アクセス制御</h1>
+<p class="page-desc">一般利用者は許可IPからのみ利用できます。管理者は設定に応じて社外からも利用できます（多要素認証が必要）。</p>
+
+{% if not enforce %}
+<div class="alert warn">IP制限が環境変数で無効化されています（BCARDS_ENFORCE_IP_RESTRICTION=0）。</div>
+{% endif %}
+{% if not ips %}
+<div class="alert warn">許可IPが未登録のため、現在はすべてのIPからアクセスできます。拠点やVPNのIPを登録してください。</div>
+{% endif %}
+
+<div class="panel">
+  <h3>許可IPアドレスの追加</h3>
+  <form method="post" action="/admin/access/ips">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <div><label>IPアドレス / CIDR</label><input type="text" name="cidr" placeholder="203.0.113.0/24" required></div>
+      <div><label>名称</label><input type="text" name="label" placeholder="本社オフィス"></div>
+      <div><label>適用範囲</label><select name="applies_to"><option value="all">全利用者</option><option value="member_only">一般利用者のみ</option></select></div>
+    </div>
+    <div class="actions"><button type="submit">追加する</button></div>
+  </form>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <tr><th>名称</th><th>CIDR</th><th>適用</th><th>状態</th><th></th></tr>
+    {% for ip in ips %}
+    <tr>
+      <td>{{ ip.label }}</td>
+      <td class="mono">{{ ip.cidr }}</td>
+      <td class="small">{{ "全利用者" if ip.applies_to == "all" else "一般利用者のみ" }}</td>
+      <td>{% if ip.enabled %}<span class="badge latest">有効</span>{% else %}<span class="badge">無効</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/admin/access/ips/{{ ip.allowed_ip_id }}/toggle" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="link">切り替え</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">登録がありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2>端末</h2>
+<div class="table-wrap">
+  <table>
+    <tr><th>端末ID</th><th>利用者</th><th>OS / ブラウザ</th><th>最終利用</th><th>端末名称・信頼</th></tr>
+    {% for device in devices %}
+    <tr>
+      <td class="mono small">{{ device.device_id[:12] }}</td>
+      <td>{{ users[device.user_id].display_name if device.user_id in users else "" }}</td>
+      <td class="small muted">{{ device.os_info or "" }}<div>{{ (device.user_agent or "")[:60] }}</div></td>
+      <td class="small nowrap">{{ device.last_seen_at|dt }}</td>
+      <td>
+        <form method="post" action="/admin/access/devices/{{ device.device_id }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="text" name="device_name" value="{{ device.device_name or '' }}" placeholder="端末名称" style="width:120px">
+          <label class="small" style="display:inline-flex;gap:4px;align-items:center;color:var(--ink)">
+            <input type="checkbox" name="is_trusted" value="1" {% if device.is_trusted %}checked{% endif %}> 信頼
+          </label>
+          <button type="submit" class="link">保存</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">端末の記録はありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
