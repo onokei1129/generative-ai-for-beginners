@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # `python poc/labe
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse  # noqa: E402
 
+from poc.sync_folder import warning_for_this_run
 from poc.samples import FIELD_KEYS  # noqa: E402
 
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".heic", ".pdf")
@@ -938,6 +939,9 @@ def build_app(directory: Path, prefill: bool) -> FastAPI:
             # 落ちたときに送っていただく記録の在り処。**生きているうちに**
             # 渡しておく。落ちてから訊きに行っても繋がらない。
             "logs": [str(LOG_PATH), str(CRASH_PATH), str(ALIVE_PATH)],
+            # 同期フォルダの中で動いていると、記録を何も残さずに消える。
+            # 消えたあとの画面で真っ先に伝えるべきことなので、ここに載せる。
+            "sync_warning": warning_for_this_run(),
         })
 
     @app.get("/api/image/{name}")
@@ -1552,6 +1556,7 @@ async function boot() {
   state.files = meta.files;
   state.prefill = meta.prefill;
   state.logs = meta.logs || [];
+  state.syncWarning = meta.sync_warning || '';
   document.getElementById('version').textContent = '版 ' + (meta.version || '不明');
   const draftBox = document.getElementById('draft');
   draftBox.checked = meta.prefill;
@@ -1636,6 +1641,12 @@ async function showImageError() {
 function serverDiedNotice(extra) {
   let text = 'サーバーが応答していません。' + (extra || '')
     + '「ラベル付けを始める」の黒い画面を閉じて、もう一度開いてください。';
+  // **心当たりがあるなら、先に言う。** 同期フォルダの中で動いていると
+  // 記録が何も残らずに消える。記録を送ってくださいと頼む前に、
+  // こちらで分かっている原因を伝えるほうが早い。
+  if (state.syncWarning) {
+    text += ' 心当たりがあります: ' + state.syncWarning.replace(/\\s+/g, ' ');
+  }
   if (state.logs.length) {
     text += ' 原因の記録は次のファイルに残ります（黒い画面を閉じても消えません）。'
       + 'これを送っていただけると原因を追えます: ' + state.logs.join('　/　');
@@ -2223,6 +2234,15 @@ def main() -> int:
     if not images:
         print(f"画像が見つかりません: {directory}", file=sys.stderr)
         return 2
+
+    # **置き場所の警告は、いちばん先に出す。**
+    # 同期フォルダの中で動いていると、サーバーが記録を何も残さずに消える。
+    # 200枚入力したあとに気づくのでは遅い。
+    warning = warning_for_this_run()
+    if warning:
+        print()
+        print(warning)
+        print()
 
     labeled = sum(1 for p in images if p.with_suffix(".json").exists())
     print(f"対象: {directory}")

@@ -526,10 +526,19 @@ class TestTheMenuOffersEveryStep:
         assert 'if "%CHOICE%"=="0" exit /b 0' in source(MENU)
 
     def test_an_unknown_answer_does_not_close_it(self):
-        """打ち間違えて閉じてしまわないこと。"""
-        text = source(MENU)
+        """打ち間違えて閉じてしまわないこと。
 
-        assert "1 から 7 か 0 を入れてください。" in text
+        案内する番号の範囲は**メニューの中身から導く**。直書きすると、
+        項目を1つ足すたびにこの試験が落ちる——実際に「8 同期フォルダの
+        外へ写す」を足したときに落ちた。落ちること自体は正しいが、
+        直すのは案内の文だけでよく、試験まで書き換えるのは無駄が多い。
+        """
+        text = source(MENU)
+        highest = max(int(n) for n in re.findall(r"^echo   (\d)  \S", text, re.M))
+
+        assert f"1 から {highest} か 0 を入れてください。" in text, (
+            f"メニューは {highest} まであるのに、案内の文が食い違っている"
+        )
         assert text.rstrip().endswith("goto :menu")
 
     def test_it_returns_to_the_menu_after_each_step(self):

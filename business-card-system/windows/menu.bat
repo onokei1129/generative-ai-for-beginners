@@ -43,6 +43,14 @@ echo ============================================
 echo  場所: %HERE%
 echo  版:   %REV%
 echo.
+rem 同期フォルダの中で動かすと、サーバーが記録を何も残さずに消える。
+rem 気づかないまま何百枚も入力してしまうため、入口に必ず出す。
+echo %HERE% | findstr /i "Dropbox OneDrive iCloud" >nul
+if not errorlevel 1 (
+    echo  ** 同期フォルダの中にあります。サーバーが突然消える原因です。 **
+    echo     8 を選ぶと、外へ写せます。
+    echo.
+)
 echo   1  準備する（最新版の取得とセットアップ）
 echo   2  名刺を仕分ける
 echo   3  ラベル入力
@@ -51,6 +59,7 @@ echo.
 echo   5  アプリを起動
 echo   6  この1枚を調べる
 echo   7  動かないとき（診断）
+echo   8  同期フォルダの外へ写す
 echo.
 echo   0  閉じる
 echo.
@@ -67,10 +76,11 @@ if "%CHOICE%"=="4" goto :do_4
 if "%CHOICE%"=="5" goto :do_5
 if "%CHOICE%"=="6" goto :do_6
 if "%CHOICE%"=="7" goto :do_7
+if "%CHOICE%"=="8" goto :do_8
 if "%CHOICE%"=="0" exit /b 0
 if not defined CHOICE goto :menu
 echo.
-echo  1 から 7 か 0 を入れてください。
+echo  1 から 8 か 0 を入れてください。
 echo.
 pause
 goto :menu
@@ -102,4 +112,8 @@ goto :menu
 
 :do_7
 call "%HERE%\doctor.bat"
+goto :menu
+
+:do_8
+call "%HERE%\move-out-of-dropbox.bat"
 goto :menu

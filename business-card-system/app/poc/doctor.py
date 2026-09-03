@@ -188,6 +188,21 @@ OPTIONAL_CHECKS = {"EasyOCR（併用構成のもう一方。既定で使う）"}
 APP_DIR = Path(__file__).resolve().parents[1]
 
 
+def place_report() -> str:
+    """置き場所を調べる。
+
+    ここは他の点検と性格がちがう。部品が動くかどうかではなく、
+    **動いたあとで突然消える置き場所かどうか**を見る。部品はどれも
+    正常なのに消える、という実テストの事象がこれだった。
+    """
+    from poc.sync_folder import warning_for_this_run
+
+    warning = warning_for_this_run()
+    if warning:
+        return warning
+    return "置き場所: 同期フォルダの外。問題ありません。"
+
+
 def child_env() -> dict[str, str]:
     """子プロセスから `bcards` を読めるようにする。
 
@@ -219,6 +234,10 @@ def main() -> int:
     print("=" * 52)
     print(" 動作しない部品を探します（1つずつ別に試します）")
     print("=" * 52)
+    print()
+    # 部品より先に置き場所を見る。**どの部品も正常なのに消える**という
+    # 事象があり、原因は部品ではなく置き場所だった。
+    print(place_report())
     print()
 
     failures: list[tuple[str, int, str]] = []
